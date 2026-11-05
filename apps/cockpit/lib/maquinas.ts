@@ -33,6 +33,8 @@ export type ItemAberto = {
   rotulo: string;
   dono: string | null;
   memoria_mb: number;
+  /** Fatia da máquina inteira no último minuto; null até a 2ª amostra do painel. */
+  cpu_pct?: number | null;
   parado_s: number | null;
   abas: string[];
   pede_confirmacao: boolean;
@@ -131,6 +133,21 @@ export function agrupa(itens: ItemAberto[]): GrupoDeItens[] {
   });
 }
 
+/**
+ * O nome na coluna estreita: sem o que o grupo já diz. Em 390 px, dois "Chrome do
+ * Fluyt…" ficariam iguais. O rótulo inteiro segue no nome acessível do Fechar.
+ */
+export function nomeNaLinha(item: Pick<ItemAberto, 'grupo' | 'rotulo'>): string {
+  if (item.grupo === 'terminal') return item.rotulo.replace(/^Terminal\s+/, '');
+  if (item.grupo === 'agente') return item.rotulo.replace(/^Chrome d[oa]\s+/, '');
+  return item.rotulo;
+}
+
+/** Todo grupo nasce aberto, menos o Protegido: não há o que fazer nele (Rica, 05/11). */
+export function comecaAberto(grupo: Grupo): boolean {
+  return grupo !== 'protegido';
+}
+
 /** `12 min`, `2 h`, `3 d` — a unidade maior basta. Abaixo de um minuto, `1 min`. */
 export function duracao(segundos: number): string {
   const min = Math.max(1, Math.floor(segundos / 60));
@@ -153,6 +170,18 @@ export function textoDoParado(parado_s: number | null, observado_desde: number, 
   const observado = Math.max(0, agora - observado_desde);
   if (parado_s >= observado) return `parado há ${duracao(observado).replace(' ', '+ ')}`;
   return `parado há ${duracao(parado_s)}`;
+}
+
+/** A coluna "Parado": "8 min", "12+ min" ou "—" (em uso, ou o painel ainda não viu). */
+export function paradoCurto(parado_s: number | null, observado_desde: number, agora: number): string {
+  return textoDoParado(parado_s, observado_desde, agora)?.replace('parado há ', '') ?? '—';
+}
+
+/** "3%", "<1%" ou "—" enquanto o painel não tem duas amostras. */
+export function textoDaCpu(cpu_pct: number | null | undefined): string {
+  if (cpu_pct == null) return '—';
+  if (cpu_pct > 0 && cpu_pct < 1) return '<1%';
+  return `${Math.round(cpu_pct)}%`;
 }
 
 /** "2 abas: Supabase, Vercel". Sem abas (ou sem CDP), nada. */

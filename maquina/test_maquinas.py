@@ -217,40 +217,43 @@ def test_rotulo_scope_agente_usa_config_antes_do_processo_e_perfil(linux, agente
     linux.processo(101, ppid=100, args=("bun",))
     linux.scope(f"app.slice/cockpit-tmux-{agente}-a1b2.scope", 100, 101)
     scope = linux.m.scopes()[0]
-    assert linux.m.rotulo(scope, {}) == ("Terminal " + esperado, esperado)
+    assert linux.m.rotulo(scope, {}) == (esperado, esperado)
     assert linux.m.classificar(scope, {}) == "terminal"
     assert linux.m.abertos()["itens"] == [{
-        "id": scope.id, "grupo": "terminal", "rotulo": "Terminal " + esperado,
-        "dono": esperado, "memoria_mb": 3.0, "parado_s": None, "abas": [],
-        "pede_confirmacao": False, "acao_rotulo": None,
+        "id": scope.id, "grupo": "terminal", "rotulo": esperado,
+        "dono": esperado, "memoria_mb": 3.0, "cpu_pct": None, "parado_s": None, "abas": [],
+        "pede_confirmacao": True, "acao_rotulo": "Fechar " + esperado,
     }]
-    falha(403, linux.m.fechar, scope.id)
+    assert linux.m._achar(scope.id) == scope
 
 
 @pytest.mark.parametrize("parados,esperado", [
     ((1800, 1200, 600), 600), ((60, 1200, 600), 60),
-    ((None, 1200, 600), None), ((1800, None, 600), None), ((1800, 1200, None), None),
+    ((None, 1200, 600), None), ((1800, None, 600), 600), ((1800, 1200, None), None),
 ])
-def test_terminal_junta_servidor_e_spawns_por_ppid(linux, monkeypatch, parados, esperado):
+def test_terminal_junta_so_spawn_mais_antigo_e_separa_cadeira(linux, monkeypatch, parados, esperado):
     linux.processo(10, args=("tmux", "-L", "fluytcom", "new-session"), pss=2048, swap=0)
     linux.scope("app.slice/cockpit-tmux-fluytcom-a1b2.scope", 10)
     linux.processo(100, ppid=10, args=("claude",), pss=300 * 1024, swap=0)
     linux.processo(101, ppid=100, args=("bun", "mcp"), pss=100 * 1024, swap=0)
     linux.scope("app.slice/tmux-spawn-aaaa.scope", 100, 101)
-    linux.processo(200, ppid=10, args=("claude",), pss=50 * 1024, swap=0)
+    linux.processo(200, ppid=10, inicio=500, args=("claude",), pss=50 * 1024, swap=0)
     linux.scope("app.slice/tmux-spawn-bbbb.scope", 200)
     scopes = linux.m.scopes()
     tempos = {s.id: tempo for s, tempo in zip(scopes, parados)}
     monkeypatch.setattr(linux.m, "parado", tempos.get)
     assert all(linux.m.classificar(s, {}) == "terminal" for s in scopes)
     assert linux.m.abertos()["itens"] == [{
-        "id": scopes[0].id, "grupo": "terminal", "rotulo": "Terminal Fluyt", "dono": "Fluyt",
-        "memoria_mb": 452.0, "parado_s": esperado, "abas": [],
-        "pede_confirmacao": False, "acao_rotulo": None,
+        "id": scopes[0].id, "grupo": "terminal", "rotulo": "Fluyt", "dono": "Fluyt",
+        "memoria_mb": 52.0, "cpu_pct": None, "parado_s": esperado, "abas": [],
+        "pede_confirmacao": True, "acao_rotulo": "Fechar Fluyt",
+    }, {
+        "id": scopes[1].id, "grupo": "terminal", "rotulo": "Fluyt · cadeira", "dono": "Fluyt",
+        "memoria_mb": 400.0, "cpu_pct": None, "parado_s": parados[1], "abas": [],
+        "pede_confirmacao": True, "acao_rotulo": "Fechar cadeira",
     }]
     for scope in scopes:
-        falha(403, linux.m._achar, scope.id)
-        falha(403, linux.m.fechar, scope.id)
+        assert linux.m._achar(scope.id) == scope
 
 
 def test_terminais_separam_agentes_e_casam_pid_no_scope_do_servidor(linux):
@@ -262,11 +265,11 @@ def test_terminais_separam_agentes_e_casam_pid_no_scope_do_servidor(linux):
         linux.scope(f"app.slice/tmux-spawn-{pid}.scope", pid + 100)
     itens = linux.m.abertos()["itens"]
     assert [(i["rotulo"], i["dono"], i["memoria_mb"]) for i in itens] == [
-        ("Terminal Fluyt", "Fluyt", 4.5), ("Terminal Novo Agente", "Novo Agente", 4.5)]
+        ("Fluyt", "Fluyt", 4.5), ("Novo Agente", "Novo Agente", 4.5)]
 
 
 @pytest.mark.parametrize("args", [("claude",), ("chrome", "--user-data-dir=~/.config/ze-chrome")])
-def test_tmux_spawn_orfao_protegido_sem_casar_parentesco_de_filho(linux, args):
+def test_tmux_spawn_orfao_fechavel_sem_casar_parentesco_de_filho(linux, args):
     linux.processo(10, args=("tmux",))
     linux.scope("app.slice/cockpit-tmux-fluytcom-a1b2.scope", 10)
     linux.processo(20, args=("tmux",))
@@ -276,12 +279,12 @@ def test_tmux_spawn_orfao_protegido_sem_casar_parentesco_de_filho(linux, args):
     linux.scope("app.slice/tmux-spawn-aaaa.scope", 100, 101)
     linux.janelas.append({"pid": 100, "class": "foot"})
     scope = next(s for s in linux.m.scopes() if s.principal.pid == 100)
-    assert linux.m.classificar(scope, linux.m.janelas()) == "protegido"
+    assert linux.m.classificar(scope, linux.m.janelas()) == "terminal"
     item = next(i for i in linux.m.abertos()["itens"] if i["id"] == scope.id)
-    assert item["grupo"] == "protegido" and item["dono"] is None
-    assert item["rotulo"] == "Sessões de terminal (agentes)" and item["memoria_mb"] == 3.0
-    assert item["acao_rotulo"] is None
-    falha(403, linux.m.fechar, scope.id)
+    assert item["grupo"] == "terminal" and item["dono"] is None
+    assert item["rotulo"] == "Terminal" and item["memoria_mb"] == 3.0
+    assert item["acao_rotulo"] == "Fechar Terminal" and item["pede_confirmacao"]
+    assert linux.m._achar(scope.id) == scope
 
 
 def test_parados_30min_exclui_terminais_e_spawns_orfaos(linux, monkeypatch):
@@ -313,7 +316,7 @@ def test_parados_30min_exclui_terminais_e_spawns_orfaos(linux, monkeypatch):
     ("gnome-keyring-daemon.service", "Chaveiro de senhas"),
     ("gnome-keyring-daemon@ssh.service", "Chaveiro de senhas"),
     ("ze_claude.service", "Pasta da VPS (sshfs)"),
-    ("tmux-spawn-45bb3e23-2f45-4847.scope", "Sessões de terminal (agentes)"),
+    ("tmux-spawn-45bb3e23-2f45-4847.scope", "Terminal"),
     ("init.scope", "Sistema"), ("systemd.service", "Sistema"),
     ("systemd-user.service", "Sistema"), ("dbus.service", "Sistema"),
     ("dbus-broker.service", "Sistema"), ("dbus-broker-launch.service", "Sistema"),
@@ -350,10 +353,13 @@ def test_rotulo_desconhecido_usa_unit_legivel(linux, unidade, exe, esperado):
 @pytest.mark.parametrize("nome,args", [
     ("app.slice/cockpit-maquina.service", ("python3", "painel.py")),
     ("app.slice/cockpit-api.service", ("python3",)),
+    ("app.slice/cockpit-v2.service", ("next-server",)),
     ("app.slice/manual.scope", ("python3", "painel.py")),
     ("session.slice/wayland.service", ("foot",)),
     ("app.slice/tmux-spawn.scope", ("claude",)),
     ("app.slice/bot.scope", ("bun", "server.ts")),
+    ("session.slice/claude.scope", ("claude",)),
+    ("session.slice/bot.scope", ("bun",)),
     ("app.slice/ssh.scope", ("sshd",)),
     ("app.slice/tail.scope", ("tailscaled",)),
     ("app.slice/wm.scope", ("Hyprland",)),
@@ -446,6 +452,69 @@ def test_amostras_60s_limiar_parados_30min_sem_pss_cdp(linux, monkeypatch):
     assert linux.m.resumo(0, None)["parados_30min"] == 0
 
 
+@pytest.mark.parametrize("cpus,esperado", [(1, 50.1), (4, 12.5), (None, 50.1)])
+def test_cpu_pct_por_item_usa_delta_intervalo_e_maquina_inteira(linux, monkeypatch, cpus, esperado):
+    monkeypatch.setattr(os, "cpu_count", lambda: cpus)
+    linux.processo(10, cpu=10_000_000_000)
+    linux.processo(11, ppid=10, cpu=20_000_000_000)
+    linux.scope("app.slice/a.scope", 10, 11)
+    assert linux.m.abertos()["itens"][0]["cpu_pct"] is None
+    linux.m.amostrar()
+    assert linux.m.abertos()["itens"][0]["cpu_pct"] is None
+    linux.agora[1] = 120  # Intervalo real, não os 60s mínimos entre amostras.
+    (linux.m.proc / "10/schedstat").write_text("40060000000 0 0")
+    (linux.m.proc / "11/schedstat").write_text("50060000000 0 0")
+    linux.m.amostrar()
+    assert linux.m.abertos()["itens"][0]["cpu_pct"] == esperado
+    novo = Maquinas(home=linux.m.home, proc=linux.m.proc, cgroup=linux.m.cgroup,
+                    relogio=lambda: linux.agora[0], monotono=lambda: linux.agora[1])
+    assert novo.abertos()["itens"][0]["cpu_pct"] == esperado
+
+
+@pytest.mark.parametrize("ausentes,esperado", [((), 3.3), ((10,), 2.2), ((10, 100), None)])
+def test_cpu_terminal_soma_so_principal_e_servidor_cadeira_tem_cpu_propria(linux, monkeypatch,
+                                                                        ausentes, esperado):
+    monkeypatch.setattr(os, "cpu_count", lambda: 4)
+    linux.processo(10, args=("tmux",), cpu=0)
+    linux.scope("app.slice/cockpit-tmux-fluytcom-a1b2.scope", 10)
+    for pid in (100, 200):
+        linux.processo(pid, ppid=10, args=("claude",), cpu=0)
+        linux.scope(f"app.slice/tmux-spawn-{pid}.scope", pid)
+    for pid in ausentes:
+        (linux.m.proc / str(pid) / "schedstat").unlink()
+    linux.m.amostrar()
+    assert all(i["cpu_pct"] is None for i in linux.m.abertos()["itens"])
+    linux.agora[1] = 60
+    for pid, cpu in ((10, 2_640_000_000), (100, 5_280_000_000), (200, 10_560_000_000)):
+        if pid not in ausentes:
+            (linux.m.proc / str(pid) / "schedstat").write_text(f"{cpu} 0 0")
+    linux.m.amostrar()
+    agente, cadeira = linux.m.abertos()["itens"]
+    assert agente["cpu_pct"] == esperado
+    assert cadeira["cpu_pct"] == 4.4
+
+
+def test_observacoes_antigas_sem_cpu_pct_preservam_historico(linux):
+    linux.processo(10, cpu=0)
+    linux.scope("app.slice/a.scope", 10)
+    linux.m.amostrar()
+    linux.agora[:] = [10060, 60]
+    linux.m.amostrar()
+    arquivo = linux.m._arquivo_observacoes
+    dados = json.loads(arquivo.read_text())
+    for obs in dados["observacoes"].values():
+        del obs["cpu_pct"]
+    arquivo.write_text(json.dumps(dados))
+    novo = Maquinas(home=linux.m.home, proc=linux.m.proc, cgroup=linux.m.cgroup,
+                    relogio=lambda: linux.agora[0], monotono=lambda: linux.agora[1])
+    item = novo.abertos()["itens"][0]
+    assert novo.observado_desde == 10000
+    assert item["cpu_pct"] is None and item["parado_s"] == 60
+    linux.agora[:] = [10120, 120]
+    novo.amostrar()
+    assert novo.abertos()["itens"][0]["cpu_pct"] == 0.0
+
+
 @pytest.mark.parametrize("intervalo,mono", [(10, 2410), (300, 2700), (10, 5), (300, 5)])
 def test_observacoes_preservam_40min_e_observado_desde_apos_reinicio(linux, intervalo, mono):
     linux.processo(10, cpu=30_000_000_000)
@@ -463,7 +532,7 @@ def test_observacoes_preservam_40min_e_observado_desde_apos_reinicio(linux, inte
     assert dados["observado_desde"] == 10000
     assert dados["observacoes"][item_id] == {
         "cpus": {"10:100": 30_002_400_000}, "amostrado": 12400,
-        "desde": 10000, "confirmado": True}
+        "desde": 10000, "confirmado": True, "cpu_pct": 0.0}
     assert list(arquivo.parent.iterdir()) == [arquivo]
 
     # Inclui reinício do serviço (<60s) e monotônico reiniciado após reboot.
@@ -581,6 +650,40 @@ def test_fechar_seus_sigterm_e_memoria_antes(linux, sinal_simulado, monkeypatch)
     assert sinal_simulado == [signal.SIGTERM]
 
 
+@pytest.mark.parametrize("alvo_pid", [10, 200, 300])
+def test_fechar_terminal_agente_cadeira_e_orfao_sinaliza_principal(linux, sinal_simulado,
+                                                               monkeypatch, alvo_pid):
+    linux.processo(10, args=("tmux",))
+    linux.processo(11, ppid=10, args=("tmux",))
+    servidor = linux.scope("app.slice/cockpit-tmux-fluytcom-a1b2.scope", 10, 11)
+    pastas = {10: servidor}
+    for pid, ppid in ((100, 11), (200, 11), (300, 1)):
+        linux.processo(pid, ppid=ppid, args=("claude",))
+        pastas[pid] = linux.scope(f"app.slice/tmux-spawn-{pid}.scope", pid)
+    item_id = next(s.id for s in linux.m.scopes() if s.principal.pid == alvo_pid)
+    item = next(i for i in linux.m.abertos()["itens"] if i["id"] == item_id)
+    assert item["pede_confirmacao"]
+    assert item["acao_rotulo"] == {10: "Fechar Fluyt", 200: "Fechar cadeira",
+                                   300: "Fechar Terminal"}[alvo_pid]
+    abrir = os.pidfd_open
+    pids = []
+
+    def pidfd(pid):
+        pids.append(pid)
+        return abrir(pid)
+
+    def sinal(fd, sig):
+        sinal_simulado.append(sig)
+        shutil.rmtree(pastas[alvo_pid])
+
+    monkeypatch.setattr(os, "pidfd_open", pidfd)
+    monkeypatch.setattr(signal, "pidfd_send_signal", sinal)
+    assert linux.m.fechar(item_id) == {"liberou_mb": 3.0 if alvo_pid == 10 else 1.5}
+    assert pids == [alvo_pid] and sinal_simulado == [signal.SIGTERM]
+    assert pastas[100].exists()
+    assert pastas[200 if alvo_pid == 10 else 10].exists()
+
+
 def test_fechar_agente_cdp_browser_version(linux, sinal_simulado, monkeypatch):
     pasta = linux.chrome(headless=True)
     item_id = linux.m.scopes()[0].id
@@ -625,9 +728,10 @@ def test_cdp_falha_fallback_sigterm(linux, sinal_simulado, monkeypatch, falha_em
     assert sinal_simulado == [signal.SIGTERM]
 
 
-def test_fechar_timeout_8s_409_sem_sigkill(linux, sinal_simulado, monkeypatch):
+@pytest.mark.parametrize("nome", ["a.scope", "tmux-spawn-aaaa.scope"])
+def test_fechar_timeout_8s_409_sem_sigkill(linux, sinal_simulado, monkeypatch, nome):
     linux.processo(10)
-    linux.scope("app.slice/a.scope", 10)
+    linux.scope("app.slice/" + nome, 10)
     linux.janelas.append({"pid": 10})
 
     def dormir(segundos):
@@ -765,7 +869,7 @@ def test_http_auth_host_sem_exigir_origin(http_painel, linux, metodo, rota):
 
 def test_http_protegido_403_e_rotas_antigas(http_painel, linux):
     linux.processo(10, args=("claude",))
-    linux.scope("app.slice/tmux-spawn.scope", 10)
+    linux.scope("session.slice/claude.scope", 10)
     status, abertos = http_painel("GET", "/api/maquina/abertos")
     assert status == 200
     status, mensagem = http_painel("POST", "/api/maquina/fechar", json.dumps({"id": abertos["itens"][0]["id"]}))

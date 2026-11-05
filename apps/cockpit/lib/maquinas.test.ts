@@ -3,9 +3,13 @@ import { test } from 'node:test';
 
 import {
   agrupa,
+  comecaAberto,
   maquinasDeFora,
+  nomeNaLinha,
+  paradoCurto,
   seloDaMaquina,
   temperaturaEmAlerta,
+  textoDaCpu,
   textoDaTela,
   textoDasAbas,
   textoDoParado,
@@ -123,4 +127,31 @@ test('mini cartão some com a máquina que o cartão de recursos já mede, sem o
   const lista = [{ id: 'arsenal', nome: 'Arsenal' }, { id: 'note', nome: 'Note' }];
   assert.deepEqual(maquinasDeFora(lista, 'ARSENAL').map((m) => m.id), ['note']);
   assert.deepEqual(maquinasDeFora(lista, 'VPS').map((m) => m.id), ['arsenal', 'note']);
+});
+
+test('Protegido nasce fechado; os outros grupos, abertos', () => {
+  assert.equal(comecaAberto('protegido'), false);
+  for (const grupo of ['seus', 'terminal', 'agente'] as const) assert.equal(comecaAberto(grupo), true);
+});
+
+test('coluna Parado: só o tempo, com o "+" do piso; em uso ou sem leitura, traço', () => {
+  assert.equal(paradoCurto(600, AGORA - 3600, AGORA), '10 min');
+  assert.equal(paradoCurto(3600, AGORA - 720, AGORA), '12+ min');
+  assert.equal(paradoCurto(10, AGORA - 3600, AGORA), '—');
+  assert.equal(paradoCurto(null, AGORA - 3600, AGORA), '—');
+});
+
+test('CPU: arredonda, "<1%" no quase nada e traço sem amostra', () => {
+  assert.equal(textoDaCpu(12.6), '13%');
+  assert.equal(textoDaCpu(0.4), '<1%');
+  assert.equal(textoDaCpu(0), '0%');
+  assert.equal(textoDaCpu(null), '—');
+  assert.equal(textoDaCpu(undefined), '—');
+});
+
+test('nome na linha: tira só o prefixo que o grupo já diz', () => {
+  assert.equal(nomeNaLinha({ grupo: 'terminal', rotulo: 'Terminal Fluyt Com' }), 'Fluyt Com');
+  assert.equal(nomeNaLinha({ grupo: 'terminal', rotulo: 'Fluyt Com' }), 'Fluyt Com');
+  assert.equal(nomeNaLinha({ grupo: 'agente', rotulo: 'Chrome do Fluyt Com' }), 'Fluyt Com');
+  assert.equal(nomeNaLinha({ grupo: 'seus', rotulo: 'Chrome do Rica' }), 'Chrome do Rica');
 });

@@ -1884,6 +1884,13 @@ html[data-troca-agente] .ck-palco {
   background: var(--ck-surface-composer);
   box-shadow: inset 0 1px 0 0 var(--ck-edge-light);
 }
+/* O grupo Protegido da tela Abertos: o que não se fecha fica um degrau ABAIXO da
+ * mesa, fora de alcance — sem fio de luz, com contorno; a pílula sobe para o
+ * `composer` porque o `canvas` dela sumiria aqui. */
+.ck-vps-poco {
+  background: var(--ck-surface-canvas);
+  box-shadow: inset 0 0 0 1px var(--ck-edge-hairline);
+}
 .ck-vps-trilho { background: var(--ck-surface-canvas); }
 .ck-vps-preenche {
   background: var(--ck-text-secondary);
@@ -1893,6 +1900,7 @@ html[data-troca-agente] .ck-palco {
 .ck-vps-medida[data-alerta='true'] :is(.ck-vps-rotulo, .ck-vps-valor) { color: var(--ck-state-attention); }
 .ck-vps-medida[data-alerta='true'] .ck-vps-preenche { background: var(--ck-state-attention); }
 .ck-vps-pilula { background-color: var(--ck-surface-canvas); }
+.ck-vps-poco .ck-vps-pilula { background-color: var(--ck-surface-composer); }
 .ck-vps-botao:not(:disabled):hover .ck-vps-pilula { background-image: linear-gradient(var(--ck-overlay-hover), var(--ck-overlay-hover)); }
 .ck-vps-botao:not(:disabled):active .ck-vps-pilula { background-image: linear-gradient(var(--ck-overlay-pressed), var(--ck-overlay-pressed)); }
 @media (prefers-reduced-motion: reduce) {
@@ -1904,6 +1912,24 @@ html[data-troca-agente] .ck-palco {
 .ck-maquina-mini:active { background-image: linear-gradient(var(--ck-overlay-pressed), var(--ck-overlay-pressed)); }
 .ck-vps-botao:disabled { cursor: default; }
 .ck-vps-botao:disabled:hover .ck-vps-pilula { background-image: none; }
+/* As colunas da tela Abertos: nome · parado · CPU · RAM · ação. Em rem, para
+ * acompanhar o texto ampliado. Abaixo de 360px o Parado cede a vez ao nome. */
+.ck-abertos-grade {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 3rem 2.25rem 3.25rem 4.125rem;
+  column-gap: var(--ck-space-2);
+  align-items: center;
+}
+@media (max-width: 359px) {
+  .ck-abertos-grade { grid-template-columns: minmax(0, 1fr) 0 2.25rem 3.25rem 4.125rem; }
+  .ck-abertos-parado { visibility: hidden; }
+}
+/* Foco de teclado nas pílulas e no Cancelar: véu e fio interno cinza (§9.17). */
+.ck-vps-botao:focus-visible .ck-vps-pilula,
+.ck-abertos-cancelar:focus-visible {
+  background-image: linear-gradient(var(--ck-overlay-hover), var(--ck-overlay-hover));
+  box-shadow: inset 0 0 0 1px var(--ck-edge-functional);
+}
 /* "Liberou 410 MB": o único movimento da tela Abertos — a resposta ao toque
  * de fechar, no gesto de chegada da casa. Com movimento reduzido, aparece. */
 @media (prefers-reduced-motion: no-preference) {

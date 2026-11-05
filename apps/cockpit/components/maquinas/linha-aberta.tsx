@@ -1,23 +1,23 @@
 /**
- * Uma coisa aberta na máquina, com o botão de fechar. Anatomia da tropa, duas
- * linhas: nome e memória; há quanto está parado e as abas, com a pílula curta
- * "Fechar" à direita — o rótulo exato do painel ("Fechar Chrome do Fluyt Com")
- * vai no nome acessível.
+ * Uma coisa aberta na máquina, numa linha só e em colunas fixas: nome, há quanto
+ * está parado, CPU, RAM e a pílula curta "Fechar" — o rótulo exato do painel
+ * ("Fechar Chrome do Fluyt Com") vai no nome acessível.
  *
- * O que pode ter trabalho sem salvar (`pede_confirmacao`, VS Code) confirma EM
- * LINHA, sem modal. Fechou: "Liberou 410 MB" no lugar do botão, o único
- * movimento da tela; a linha sai no próximo ciclo, quando o painel relista.
+ * O que pede confirmação (VS Code, agente, cadeira) confirma EM LINHA, sem
+ * modal: o nome fica, e aviso e botões entram no lugar das medidas. Fechou:
+ * "Liberou 410 MB" no mesmo lugar, o único movimento da tela; a linha sai no
+ * próximo ciclo, quando o painel relista.
  * Falhou: o motivo do painel em `state-fail` e o botão volta.
  *
  * Dono: Daniel (pele).
  */
 'use client';
 
-import { useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode, type Ref } from 'react';
 
-import { IconeVisto } from '@/components/shell/icones';
+import { IconeCadeado, IconeVisto } from '@/components/shell/icones';
 import { formataTamanho } from '@/components/shell/recursos-da-vps';
-import { postFechar, textoDasAbas, textoDoParado, type ItemAberto } from '@/lib/maquinas';
+import { nomeNaLinha, paradoCurto, postFechar, textoDaCpu, textoDasAbas, type ItemAberto } from '@/lib/maquinas';
 
 type Fase = 'parado' | 'confirmando' | 'fechando';
 
@@ -32,6 +32,7 @@ export function PilulaDaMaquina({
   aoTocar: () => void;
   /** A ação que derruba algo (o "Desligar Arsenal" confirmado): texto em `state-fail`. */
   perigo?: boolean;
+  ref?: Ref<HTMLButtonElement>;
 } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'onClick' | 'children'>) {
   return (
     <button
@@ -72,6 +73,61 @@ export function PilulaDaMaquina({
   );
 }
 
+const NUMERO = { fontSize: 'var(--ck-text-sm)', textAlign: 'right', whiteSpace: 'nowrap' } as const;
+
+/** Uma coluna numérica. O rótulo só existe para leitor de tela: quem enxerga lê o cabeçalho. */
+function Medida({ rotulo, valor, cor, classe = '' }: { rotulo: string; valor: string; cor: string; classe?: string }) {
+  return (
+    <span className={`ck-tabular ${classe}`} style={{ ...NUMERO, color: cor }}>
+      <span className="sr-only">{rotulo}: </span>
+      {valor === '—' ? (
+        <>
+          <span aria-hidden="true">—</span>
+          <span className="sr-only">sem dado</span>
+        </>
+      ) : (
+        valor
+      )}
+    </span>
+  );
+}
+
+/** O título das colunas, uma vez por grupo. O Protegido não mede parado: serviço vive parado. */
+export function CabecalhoDasColunas({ comParado = true }: { comParado?: boolean }) {
+  const celula = { fontSize: 'var(--ck-text-xs)', textAlign: 'right', color: 'var(--ck-text-secondary)' } as const;
+  return (
+    <div aria-hidden="true" className="ck-abertos-grade" style={{ minHeight: '20px' }}>
+      {comParado ? <span className="ck-abertos-parado" style={{ ...celula, gridColumn: 2 }}>Parado</span> : null}
+      <span style={{ ...celula, gridColumn: 3 }}>CPU</span>
+      <span style={{ ...celula, gridColumn: 4 }}>RAM</span>
+    </div>
+  );
+}
+
+/** Serviço do sistema: mesmas colunas, sem botão. O cadeado ocupa o lugar do Fechar. */
+export function LinhaProtegida({ item }: { item: ItemAberto }) {
+  const cor = 'var(--ck-text-secondary)';
+  return (
+    <li className="ck-abertos-grade" style={{ minHeight: '32px' }}>
+      <span className="min-w-0 truncate" title={item.rotulo} style={{ gridColumn: '1 / 3', fontSize: 'var(--ck-text-sm)', color: cor }}>
+        {item.rotulo}
+      </span>
+      <Medida rotulo="CPU" valor={textoDaCpu(item.cpu_pct)} cor={cor} />
+      <Medida rotulo="RAM" valor={formataTamanho(item.memoria_mb)} cor={cor} />
+      <IconeCadeado tamanho={14} className="justify-self-end" style={{ color: cor }} />
+    </li>
+  );
+}
+
+/** O que toma o lugar das medidas e do botão enquanto a linha está num gesto. */
+function FimDaLinha({ children, ...resto }: { children: ReactNode } & HTMLAttributes<HTMLSpanElement>) {
+  return (
+    <span className="flex min-w-0 items-center justify-end" style={{ gridColumn: '2 / -1', gap: 'var(--ck-space-2)' }} {...resto}>
+      {children}
+    </span>
+  );
+}
+
 export function LinhaAberta({
   maquina,
   item,
@@ -92,6 +148,16 @@ export function LinhaAberta({
 }) {
   const [fase, setFase] = useState<Fase>('parado');
   const [falha, setFalha] = useState<string | null>(null);
+  const idDoAviso = useId();
+  const botaoFechar = useRef<HTMLButtonElement>(null);
+  const voltaOFoco = useRef(false);
+
+  // Cancelar some com o botão focado: o foco volta ao Fechar, não cai no `body`.
+  useEffect(() => {
+    if (fase !== 'parado' || !voltaOFoco.current) return;
+    voltaOFoco.current = false;
+    botaoFechar.current?.focus();
+  }, [fase]);
 
   async function fecha() {
     setFase('fechando');
@@ -106,103 +172,110 @@ export function LinhaAberta({
     }
   }
 
-  const parado = textoDoParado(item.parado_s, observadoDesde, agora);
   const abas = textoDasAbas(item.abas);
-  const ocupado = fase === 'fechando';
+  const nome = nomeNaLinha(item);
+  const rotuloDaAcao = item.acao_rotulo ?? undefined;
+  // Sempre montada: região viva que nasce com o texto pode não ser anunciada.
+  const anuncio = liberouMb !== null ? `${nome}: liberou ${formataTamanho(liberouMb)}` : falha ? `${nome} não fechou: ${falha}` : '';
 
   return (
-    <li
-      className="flex flex-col"
-      style={{
-        padding: 'var(--ck-space-2) 0 0',
-        borderTop: primeira ? undefined : '1px solid var(--ck-edge-hairline)',
-      }}
-    >
-      <div className="flex items-baseline" style={{ gap: 'var(--ck-space-3)' }}>
-        <span className="min-w-0 truncate" style={{ fontSize: 'var(--ck-text-base)', color: 'var(--ck-text-primary)' }}>
-          {item.rotulo}
-        </span>
-        <span
-          className="ck-tabular ml-auto shrink-0"
-          style={{ fontSize: 'var(--ck-text-sm)', fontWeight: 500, color: 'var(--ck-text-primary)' }}
-        >
-          {formataTamanho(item.memoria_mb)}
-        </span>
-      </div>
-
-      {/* 2ª linha: o detalhe à esquerda, a ação à direita. A confirmação e o
-          "Liberou" entram no lugar da pílula, sem empurrar a lista. */}
-      <div className="flex items-center" style={{ gap: 'var(--ck-space-3)', minHeight: 'var(--ck-touch-min)' }}>
-        {fase === 'confirmando' ? (
-          <span className="min-w-0 flex-1" style={{ fontSize: 'var(--ck-text-sm)', color: 'var(--ck-text-primary)' }}>
-            Pode ter algo sem salvar.
+    <li style={{ borderTop: primeira ? undefined : '1px solid var(--ck-edge-hairline)' }}>
+      <span role="status" className="sr-only">
+        {anuncio}
+      </span>
+      <div className="ck-abertos-grade" style={{ minHeight: 'var(--ck-touch-min)' }}>
+        <span className="flex min-w-0 items-baseline" style={{ gap: 'var(--ck-space-2)' }}>
+          <span className="min-w-0 truncate" title={item.rotulo} style={{ fontSize: 'var(--ck-text-sm)', color: 'var(--ck-text-primary)' }}>
+            {nome}
           </span>
-        ) : (
-          <span
-            className="ck-tabular flex min-w-0 flex-1"
-            style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-text-secondary)', whiteSpace: 'nowrap' }}
-          >
-            {parado ? <span className="shrink-0">{parado}</span> : null}
-            {parado && abas ? <span className="shrink-0">&nbsp;·&nbsp;</span> : null}
-            {abas ? <span className="min-w-0 truncate">{abas}</span> : null}
-          </span>
-        )}
-
-        <span className="flex shrink-0 items-center" style={{ gap: 'var(--ck-space-1)' }}>
-          {/* A região viva recebe só o resultado; os botões ficam fora dela. */}
-          <span
-            role="status"
-            className={liberouMb !== null ? 'ck-maquina-liberou ck-tabular flex items-center' : 'ck-tabular'}
-            style={{
-              gap: 'var(--ck-space-1)',
-              fontSize: liberouMb !== null ? 'var(--ck-text-sm)' : 'var(--ck-text-xs)',
-              fontWeight: liberouMb !== null ? 500 : undefined,
-              color: liberouMb !== null ? 'var(--ck-state-ok)' : 'var(--ck-state-fail)',
-            }}
-          >
-            {liberouMb !== null ? (
-              <>
-                <IconeVisto tamanho={16} className="shrink-0" />
-                Liberou {formataTamanho(liberouMb)}
-              </>
-            ) : falha ? (
-              `Não fechou: ${falha}`
-            ) : null}
-          </span>
-
-          {liberouMb !== null || !item.acao_rotulo ? null : fase === 'confirmando' ? (
+          {/* No celular os títulos não cabem: fica a contagem; de 640px para cima, tudo. */}
+          {abas ? (
             <>
-              <PilulaDaMaquina aria-label={item.acao_rotulo} aoTocar={() => void fecha()}>
-                Fechar
-              </PilulaDaMaquina>
-              <button
-                type="button"
-                onClick={() => setFase('parado')}
-                className="ck-veil"
-                style={{
-                  minHeight: 'var(--ck-touch-min)',
-                  padding: '0 var(--ck-space-3)',
-                  marginRight: 'calc(var(--ck-space-3) * -1)',
-                  borderRadius: 'var(--ck-radius-pill)',
-                  fontSize: 'var(--ck-text-sm)',
-                  color: 'var(--ck-text-secondary)',
-                }}
+              <span className="shrink-0 sm:hidden" style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-text-secondary)' }}>
+                {abas.split(':')[0]}
+              </span>
+              <span
+                className="hidden min-w-0 flex-1 truncate sm:inline"
+                title={abas}
+                style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-text-secondary)' }}
               >
-                Cancelar
-              </button>
+                {abas}
+              </span>
             </>
-          ) : (
-            <PilulaDaMaquina
-              aria-label={item.acao_rotulo}
-              disabled={ocupado}
-              aria-busy={ocupado}
-              aoTocar={() => (item.pede_confirmacao ? setFase('confirmando') : void fecha())}
-            >
-              {ocupado ? 'Fechando…' : 'Fechar'}
-            </PilulaDaMaquina>
-          )}
+          ) : null}
         </span>
+
+        {liberouMb !== null ? (
+          <FimDaLinha>
+            <span
+              className="ck-maquina-liberou ck-tabular flex items-center"
+              style={{ gap: 'var(--ck-space-1)', fontSize: 'var(--ck-text-sm)', fontWeight: 500, color: 'var(--ck-state-ok)' }}
+            >
+              <IconeVisto tamanho={16} className="shrink-0" />
+              Liberou {formataTamanho(liberouMb)}
+            </span>
+          </FimDaLinha>
+        ) : fase === 'confirmando' ? (
+          <FimDaLinha>
+            <span id={idDoAviso} className="min-w-0 truncate" style={{ fontSize: 'var(--ck-text-sm)', color: 'var(--ck-text-secondary)' }}>
+              {item.grupo === 'terminal' ? 'A sessão cai.' : 'Salvou tudo?'}
+            </span>
+            <PilulaDaMaquina aria-label={rotuloDaAcao} aria-describedby={idDoAviso} perigo aoTocar={() => void fecha()}>
+              Fechar
+            </PilulaDaMaquina>
+            <button
+              type="button"
+              autoFocus
+              aria-label={`Cancelar: ${rotuloDaAcao}`}
+              aria-describedby={idDoAviso}
+              onClick={() => {
+                voltaOFoco.current = true;
+                setFase('parado');
+              }}
+              className="ck-veil ck-abertos-cancelar shrink-0"
+              style={{
+                minHeight: 'var(--ck-touch-min)',
+                padding: '0 var(--ck-space-3)',
+                marginRight: 'calc(var(--ck-space-3) * -1)',
+                borderRadius: 'var(--ck-radius-pill)',
+                fontSize: 'var(--ck-text-sm)',
+                color: 'var(--ck-text-secondary)',
+              }}
+            >
+              Cancelar
+            </button>
+          </FimDaLinha>
+        ) : fase === 'fechando' ? (
+          <FimDaLinha>
+            <PilulaDaMaquina aria-label={rotuloDaAcao} disabled aria-busy aoTocar={() => undefined}>
+              Fechando…
+            </PilulaDaMaquina>
+          </FimDaLinha>
+        ) : (
+          <>
+            <Medida rotulo="Parado" classe="ck-abertos-parado" valor={paradoCurto(item.parado_s, observadoDesde, agora)} cor="var(--ck-text-secondary)" />
+            <Medida rotulo="CPU" valor={textoDaCpu(item.cpu_pct)} cor="var(--ck-text-primary)" />
+            <Medida rotulo="RAM" valor={formataTamanho(item.memoria_mb)} cor="var(--ck-text-primary)" />
+            {item.acao_rotulo ? (
+              <span className="flex justify-end">
+                <PilulaDaMaquina
+                  ref={botaoFechar}
+                  aria-label={item.acao_rotulo}
+                  aoTocar={() => (item.pede_confirmacao ? setFase('confirmando') : void fecha())}
+                >
+                  Fechar
+                </PilulaDaMaquina>
+              </span>
+            ) : null}
+          </>
+        )}
       </div>
+      {/* Falha é rara: só ela ganha uma segunda linha. */}
+      {falha ? (
+        <p style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-state-fail)', paddingBottom: 'var(--ck-space-2)' }}>
+          Não fechou: {falha}
+        </p>
+      ) : null}
     </li>
   );
 }

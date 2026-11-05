@@ -69,6 +69,7 @@ class Observacao:
     amostrado: float
     desde: float
     confirmado: bool = False
+    cpu_pct: float | None = None
 
 
 def opcao(args, nome):
@@ -180,8 +181,12 @@ class Maquinas:
                     if type(cpu) is not int or cpu < 0:
                         raise ValueError("CPU inválida")
                     cpus[pid, inicio] = cpu
+                cpu_pct = obs.get("cpu_pct")
+                if cpu_pct is not None and (type(cpu_pct) not in (int, float)
+                                           or not math.isfinite(cpu_pct) or cpu_pct < 0):
+                    raise ValueError("CPU inválida")
                 observacoes[item_id] = Observacao(
-                    cpus, tempo(obs["amostrado"]), tempo(obs["desde"]), obs["confirmado"])
+                    cpus, tempo(obs["amostrado"]), tempo(obs["desde"]), obs["confirmado"], cpu_pct)
         except (OSError, ValueError, TypeError, KeyError, OverflowError):
             return
         self._observacoes = observacoes
@@ -193,7 +198,8 @@ class Maquinas:
         dados = {"observado_desde": self.observado_desde, "observacoes": {
             item_id: {"cpus": {f"{pid}:{inicio}": cpu for (pid, inicio), cpu in obs.cpus.items()},
                       "amostrado": obs.amostrado + deslocamento,
-                      "desde": obs.desde + deslocamento, "confirmado": obs.confirmado}
+                      "desde": obs.desde + deslocamento, "confirmado": obs.confirmado,
+                      "cpu_pct": obs.cpu_pct}
             for item_id, obs in self._observacoes.items()}}
         temporario = None
         try:
@@ -315,6 +321,7 @@ class Maquinas:
                 if servidor(candidato) and any(
                         p.pid == scope.principal.ppid for p in candidato.processos):
                     return candidato
+            return scope  # Spawn órfão também é um terminal fechável.
         return None
 
     def classificar(self, scope, janelas, scopes=None):
@@ -322,7 +329,6 @@ class Maquinas:
             return "terminal"
         # Proteção prevalece sobre perfil de Chrome e janela, em toda a unidade.
         protegido = (any(p.startswith("cockpit-") for p in Path(scope.nome).parts)
-                     or re.fullmatch(r"tmux-spawn-.+\.scope", Path(scope.nome).name) is not None
                      or "session.slice" in Path(scope.nome).parts or scope.nome == "init.scope")
         for p in scope.processos:
             nomes = {Path(a).name.lower() for a in p.args[:2]}
@@ -343,7 +349,7 @@ class Maquinas:
             if agente:
                 ident = agente[1]
                 dono = self.agentes.get(ident, ident.replace("-", " ").replace("_", " ").title())
-                return "Terminal " + dono, dono
+                return dono, dono
         unidade = Path(scope.nome).stem
         religa = re.fullmatch(r"cockpit-reconnect-(.+)-[0-9a-f]+", unidade)
         if religa:
@@ -360,7 +366,7 @@ class Maquinas:
             "ze_claude": "Pasta da VPS (sshfs)",
         }
         if servico.startswith("tmux-spawn-"):
-            return "Sessões de terminal (agentes)", None
+            return "Terminal", None
         if servico in conhecidos:
             return conhecidos[servico], None
         if servico.startswith(("systemd-", "dbus-")):
@@ -432,7 +438,10 @@ class Maquinas:
                 intervalo = agora - anterior.amostrado
                 # 0,1 s / 10 s = 1% de um core, escalado ao intervalo real.
                 dormindo = intervalo > 0 and delta < intervalo * 10_000_000
-                novas[scope.id] = Observacao(cpus, agora, anterior.desde if dormindo else agora, dormindo)
+                cpu_pct = (round(delta / (intervalo * 1e9 * (os.cpu_count() or 1)) * 100, 1)
+                           if intervalo > 0 else None)
+                novas[scope.id] = Observacao(
+                    cpus, agora, anterior.desde if dormindo else agora, dormindo, cpu_pct)
             self._observacoes = novas
             self._ultima_amostra = agora
             self._salvar_observacoes()
@@ -444,6 +453,11 @@ class Maquinas:
                 return None
             # Não extrapola tempo que o painel ainda não amostrou.
             return max(0, int(obs.amostrado - obs.desde))
+
+    def cpu(self, item_id):
+        with self._trava:
+            obs = self._observacoes.get(item_id)
+            return obs.cpu_pct if obs is not None else None
 
     def abertos(self):
         janelas = self.janelas()
@@ -471,16 +485,27 @@ class Maquinas:
                 Path(a).name.lower() in {"code", "code-oss", "soffice", "soffice.bin", "libreoffice"}
                 for p in scope.processos for a in p.args[:2]))
             itens.append({"id": scope.id, "grupo": grupo, "rotulo": rotulo, "dono": dono,
-                          "memoria_mb": self.memoria(scope), "parado_s": self.parado(scope.id),
+                          "memoria_mb": self.memoria(scope), "cpu_pct": self.cpu(scope.id),
+                          "parado_s": self.parado(scope.id),
                           "abas": abas, "pede_confirmacao": confirmar,
                           "acao_rotulo": None if grupo == "protegido" else "Fechar " + rotulo})
         for terminal, membros in terminais.values():
             rotulo, dono = self.rotulo(terminal, janelas)
-            parados = [self.parado(s.id) for s in membros]
-            itens.append({"id": terminal.id, "grupo": "terminal", "rotulo": rotulo, "dono": dono,
-                          "memoria_mb": round(sum(self.memoria(s) for s in membros), 2),
-                          "parado_s": None if None in parados else min(parados),
-                          "abas": [], "pede_confirmacao": False, "acao_rotulo": None})
+            spawns = sorted((s for s in membros if s.id != terminal.id),
+                            key=lambda s: (s.principal.inicio, s.principal.pid))
+            # Só a sessão mais antiga fica junto do servidor; as demais são cadeiras.
+            grupos = [(terminal, [terminal] + spawns[:1], False)]
+            grupos.extend((s, [s], True) for s in spawns[1:])
+            for alvo, scopes_item, cadeira in grupos:
+                parados = [self.parado(s.id) for s in scopes_item]
+                cpus = [cpu for s in scopes_item if (cpu := self.cpu(s.id)) is not None]
+                itens.append({"id": alvo.id, "grupo": "terminal",
+                              "rotulo": rotulo + " · cadeira" if cadeira else rotulo, "dono": dono,
+                              "memoria_mb": round(sum(self.memoria(s) for s in scopes_item), 2),
+                              "cpu_pct": round(sum(cpus), 1) if cpus else None,
+                              "parado_s": None if None in parados else min(parados),
+                              "abas": [], "pede_confirmacao": True,
+                              "acao_rotulo": "Fechar cadeira" if cadeira else "Fechar " + rotulo})
         return {"observado_desde": self.observado_desde, "itens": itens}
 
     def tela(self):
@@ -525,7 +550,7 @@ class Maquinas:
         scope = next((s for s in scopes if s.id == item_id), None)
         if scope is None:
             raise Falha(404, "Item não encontrado.")
-        if self.classificar(scope, self.janelas(), scopes) not in {"agente", "seus"}:
+        if self.classificar(scope, self.janelas(), scopes) not in {"agente", "seus", "terminal"}:
             raise Falha(403, "Este item é protegido.")
         return scope
 

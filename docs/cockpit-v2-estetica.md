@@ -329,6 +329,11 @@ nome · RAM · temperatura (Swap onde não há sensor) · parados, num cartão `
 trecho acima do teto de `recursos-da-vps.ts` — a swap acende por troca ativa, > 256 páginas/s, nunca por
 ocupação. O toque abre `/abertos` na aba da máquina; a grade 2×2 e os processos moram lá.
 
+**Tela Abertos** (`maquinas/lista-de-abertos.tsx`, 05/11) — uma linha por item, em colunas fixas: nome · parado · CPU ·
+RAM · Fechar, com o título das colunas uma vez por grupo. Confirmar é em linha: o nome fica, aviso e botões entram no
+lugar das medidas. O Protegido nasce fechado e afunda um degrau abaixo da mesa (`.ck-vps-poco`: `canvas`, contorno, sem fio
+de luz), com texto `secondary` e cadeado no lugar do Fechar: o que não se alcança fica mais longe.
+
 **Medidores:** contexto neutro → âmbar ≥ 25% → `state-fail` > 30% (`corDoContexto`); cota âmbar ≥ 80% → `state-fail` ≥ 95% (`corDaCota`).
 
 **Carga sem pulo:** enquanto o dado não volta, reserva a altura que ele vai ocupar.

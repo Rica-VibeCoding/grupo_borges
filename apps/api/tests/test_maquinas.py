@@ -29,6 +29,7 @@ ABERTOS = {
         "rotulo": "Chrome do agente",
         "dono": "Fluyt Com",
         "memoria_mb": 31.5,
+        "cpu_pct": None,
         "parado_s": None,
         "abas": ["Página de teste"],
         "pede_confirmacao": False,
@@ -36,13 +37,25 @@ ABERTOS = {
     }, {
         "id": "Terminal_123-abc",
         "grupo": "terminal",
-        "rotulo": "Terminal Fluyt Com",
+        "rotulo": "Fluyt Com",
         "dono": "Fluyt Com",
         "memoria_mb": 452.0,
+        "cpu_pct": 12.3,
         "parado_s": 600,
         "abas": [],
-        "pede_confirmacao": False,
-        "acao_rotulo": None,
+        "pede_confirmacao": True,
+        "acao_rotulo": "Fechar Fluyt Com",
+    }, {
+        "id": "Cadeira_123-abc",
+        "grupo": "terminal",
+        "rotulo": "Fluyt Com · cadeira",
+        "dono": "Fluyt Com",
+        "memoria_mb": 45.0,
+        "cpu_pct": 2.1,
+        "parado_s": 60,
+        "abas": [],
+        "pede_confirmacao": True,
+        "acao_rotulo": "Fechar cadeira",
     }],
 }
 
@@ -189,6 +202,17 @@ async def test_authorization_timeout_e_repasse_sem_cache(cliente, painel, rota, 
         assert pedido.method == ("POST" if rota == "fechar" else "GET")
         if rota == "fechar":
             assert json.loads(pedido.content) == {"id": "Chrome_123-abc"}
+
+
+@pytest.mark.parametrize("cpu", [None, 0.0, 17.3, float("inf"), float("nan")])
+async def test_abertos_cpu_pct_aceita_nulo_e_numero_finito(cliente, painel, cpu):
+    corpo = {**ABERTOS, "itens": [{**ABERTOS["itens"][0], "cpu_pct": cpu}]}
+    painel[0](lambda _: httpx.Response(200, text=json.dumps(corpo)))
+    resposta = await cliente.get("/api/maquinas/arsenal/abertos")
+    if cpu is None or cpu in (0.0, 17.3):
+        assert resposta.status_code == 200 and resposta.json() == corpo
+    else:
+        assert resposta.status_code == 502
 
 
 @pytest.mark.parametrize("status", [403, 404, 409])
