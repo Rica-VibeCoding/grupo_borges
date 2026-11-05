@@ -3,9 +3,9 @@
  * Chrome de agente · Protegido, cada um do que mais come ao que menos (`agrupa`).
  * Cartões no material do cartão da VPS; dentro, uma linha por item, em colunas.
  *
- * Todo grupo tem a pílula Mostrar/Esconder ao lado do nome e nasce aberto, menos
- * o Protegido: é o que a tela NÃO deixa fechar (sshd, tailscale, som), então
- * nasce fechado e afunda um degrau abaixo da mesa (`.ck-vps-poco`).
+ * Todo grupo tem a pílula Mostrar/Esconder ao lado do nome e nasce fechado
+ * (Rica, 05/11). O Protegido é o que a tela NÃO deixa fechar (sshd, tailscale,
+ * som) e afunda um degrau abaixo da mesa (`.ck-vps-poco`).
  *
  * Antes da primeira leitura, a altura de uma lista curta fica reservada.
  *
@@ -17,7 +17,7 @@ import { useState, type ReactNode } from 'react';
 
 import { IconeCadeado } from '@/components/shell/icones';
 import { formataTamanho } from '@/components/shell/recursos-da-vps';
-import { agrupa, comecaAberto, type Abertos, type GrupoDeItens, type ItemAberto } from '@/lib/maquinas';
+import { agrupa, type Abertos, type GrupoDeItens, type ItemAberto } from '@/lib/maquinas';
 
 import { CabecalhoDasColunas, LinhaAberta, LinhaProtegida, PilulaDaMaquina } from './linha-aberta';
 import type { Liberados, LeituraDosAbertos } from './painel-da-maquina';
@@ -102,7 +102,7 @@ function Grupos({
 }
 
 function CartaoDoGrupo({ grupo, children }: { grupo: GrupoDeItens; children: ReactNode }) {
-  const [aberto, setAberto] = useState(comecaAberto(grupo.grupo));
+  const [aberto, setAberto] = useState(false);
   const protegido = grupo.grupo === 'protegido';
   const n = grupo.itens.length;
   const idDaLista = `maquina-grupo-${grupo.grupo}`;

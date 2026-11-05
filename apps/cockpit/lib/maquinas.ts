@@ -143,11 +143,6 @@ export function nomeNaLinha(item: Pick<ItemAberto, 'grupo' | 'rotulo'>): string 
   return item.rotulo;
 }
 
-/** Todo grupo nasce aberto, menos o Protegido: não há o que fazer nele (Rica, 05/11). */
-export function comecaAberto(grupo: Grupo): boolean {
-  return grupo !== 'protegido';
-}
-
 /** `12 min`, `2 h`, `3 d` — a unidade maior basta. Abaixo de um minuto, `1 min`. */
 export function duracao(segundos: number): string {
   const min = Math.max(1, Math.floor(segundos / 60));

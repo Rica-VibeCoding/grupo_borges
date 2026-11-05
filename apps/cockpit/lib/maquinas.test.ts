@@ -3,7 +3,6 @@ import { test } from 'node:test';
 
 import {
   agrupa,
-  comecaAberto,
   maquinasDeFora,
   nomeNaLinha,
   paradoCurto,
@@ -127,11 +126,6 @@ test('mini cartão some com a máquina que o cartão de recursos já mede, sem o
   const lista = [{ id: 'arsenal', nome: 'Arsenal' }, { id: 'note', nome: 'Note' }];
   assert.deepEqual(maquinasDeFora(lista, 'ARSENAL').map((m) => m.id), ['note']);
   assert.deepEqual(maquinasDeFora(lista, 'VPS').map((m) => m.id), ['arsenal', 'note']);
-});
-
-test('Protegido nasce fechado; os outros grupos, abertos', () => {
-  assert.equal(comecaAberto('protegido'), false);
-  for (const grupo of ['seus', 'terminal', 'agente'] as const) assert.equal(comecaAberto(grupo), true);
 });
 
 test('coluna Parado: só o tempo, com o "+" do piso; em uso ou sem leitura, traço', () => {

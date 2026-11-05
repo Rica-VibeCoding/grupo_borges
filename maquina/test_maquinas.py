@@ -222,7 +222,7 @@ def test_rotulo_scope_agente_usa_config_antes_do_processo_e_perfil(linux, agente
     assert linux.m.abertos()["itens"] == [{
         "id": scope.id, "grupo": "terminal", "rotulo": esperado,
         "dono": esperado, "memoria_mb": 3.0, "cpu_pct": None, "parado_s": None, "abas": [],
-        "pede_confirmacao": True, "acao_rotulo": "Fechar " + esperado,
+        "pede_confirmacao": False, "acao_rotulo": "Fechar " + esperado,
     }]
     assert linux.m._achar(scope.id) == scope
 
@@ -246,11 +246,11 @@ def test_terminal_junta_so_spawn_mais_antigo_e_separa_cadeira(linux, monkeypatch
     assert linux.m.abertos()["itens"] == [{
         "id": scopes[0].id, "grupo": "terminal", "rotulo": "Fluyt", "dono": "Fluyt",
         "memoria_mb": 52.0, "cpu_pct": None, "parado_s": esperado, "abas": [],
-        "pede_confirmacao": True, "acao_rotulo": "Fechar Fluyt",
+        "pede_confirmacao": False, "acao_rotulo": "Fechar Fluyt",
     }, {
         "id": scopes[1].id, "grupo": "terminal", "rotulo": "Fluyt · cadeira", "dono": "Fluyt",
         "memoria_mb": 400.0, "cpu_pct": None, "parado_s": parados[1], "abas": [],
-        "pede_confirmacao": True, "acao_rotulo": "Fechar cadeira",
+        "pede_confirmacao": False, "acao_rotulo": "Fechar cadeira",
     }]
     for scope in scopes:
         assert linux.m._achar(scope.id) == scope
@@ -283,7 +283,7 @@ def test_tmux_spawn_orfao_fechavel_sem_casar_parentesco_de_filho(linux, args):
     item = next(i for i in linux.m.abertos()["itens"] if i["id"] == scope.id)
     assert item["grupo"] == "terminal" and item["dono"] is None
     assert item["rotulo"] == "Terminal" and item["memoria_mb"] == 3.0
-    assert item["acao_rotulo"] == "Fechar Terminal" and item["pede_confirmacao"]
+    assert item["acao_rotulo"] == "Fechar Terminal" and not item["pede_confirmacao"]
     assert linux.m._achar(scope.id) == scope
 
 
@@ -388,11 +388,12 @@ def test_chrome_em_scope_cockpit_ou_com_bun_e_protegido(linux, monkeypatch):
 
 
 @pytest.mark.parametrize("exe,classe", [("code", "code"), ("soffice.bin", "libreoffice-writer")])
-def test_confirmacao_editor(linux, exe, classe):
+def test_editor_fecha_sem_confirmacao(linux, exe, classe):
+    # Rica, 05/11: nada pede confirmação, igual ao PC.
     linux.processo(10, args=(exe,))
     linux.scope("app.slice/editor.scope", 10)
     linux.janelas.append({"pid": 10, "class": classe})
-    assert linux.m.abertos()["itens"][0]["pede_confirmacao"] is True
+    assert linux.m.abertos()["itens"][0]["pede_confirmacao"] is False
 
 
 def test_id_muda_com_starttime_e_nao_com_pid_ou_ordem(linux):
@@ -662,7 +663,7 @@ def test_fechar_terminal_agente_cadeira_e_orfao_sinaliza_principal(linux, sinal_
         pastas[pid] = linux.scope(f"app.slice/tmux-spawn-{pid}.scope", pid)
     item_id = next(s.id for s in linux.m.scopes() if s.principal.pid == alvo_pid)
     item = next(i for i in linux.m.abertos()["itens"] if i["id"] == item_id)
-    assert item["pede_confirmacao"]
+    assert not item["pede_confirmacao"]
     assert item["acao_rotulo"] == {10: "Fechar Fluyt", 200: "Fechar cadeira",
                                    300: "Fechar Terminal"}[alvo_pid]
     abrir = os.pidfd_open

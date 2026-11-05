@@ -3,8 +3,8 @@
  * está parado, CPU, RAM e a pílula curta "Fechar" — o rótulo exato do painel
  * ("Fechar Chrome do Fluyt Com") vai no nome acessível.
  *
- * O que pede confirmação (VS Code, agente, cadeira) confirma EM LINHA, sem
- * modal: o nome fica, e aviso e botões entram no lugar das medidas. Fechou:
+ * Fechar não confirma (Rica, 05/11: igual ao PC). Se o painel um dia mandar
+ * `pede_confirmacao`, a confirmação é EM LINHA, sem modal: o nome fica, e aviso e botões entram no lugar das medidas. Fechou:
  * "Liberou 410 MB" no mesmo lugar, o único movimento da tela; a linha sai no
  * próximo ciclo, quando o painel relista.
  * Falhou: o motivo do painel em `state-fail` e o botão volta.

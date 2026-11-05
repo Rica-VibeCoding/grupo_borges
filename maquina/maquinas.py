@@ -481,13 +481,10 @@ class Maquinas:
                                 if isinstance(t, dict) and t.get("type") == "page"]
                 except (OSError, ValueError, http.client.HTTPException):
                     pass
-            confirmar = (rotulo in {"VS Code", "LibreOffice"} or any(
-                Path(a).name.lower() in {"code", "code-oss", "soffice", "soffice.bin", "libreoffice"}
-                for p in scope.processos for a in p.args[:2]))
             itens.append({"id": scope.id, "grupo": grupo, "rotulo": rotulo, "dono": dono,
                           "memoria_mb": self.memoria(scope), "cpu_pct": self.cpu(scope.id),
                           "parado_s": self.parado(scope.id),
-                          "abas": abas, "pede_confirmacao": confirmar,
+                          "abas": abas, "pede_confirmacao": False,
                           "acao_rotulo": None if grupo == "protegido" else "Fechar " + rotulo})
         for terminal, membros in terminais.values():
             rotulo, dono = self.rotulo(terminal, janelas)
@@ -504,7 +501,7 @@ class Maquinas:
                               "memoria_mb": round(sum(self.memoria(s) for s in scopes_item), 2),
                               "cpu_pct": round(sum(cpus), 1) if cpus else None,
                               "parado_s": None if None in parados else min(parados),
-                              "abas": [], "pede_confirmacao": True,
+                              "abas": [], "pede_confirmacao": False,
                               "acao_rotulo": "Fechar cadeira" if cadeira else "Fechar " + rotulo})
         return {"observado_desde": self.observado_desde, "itens": itens}
 
