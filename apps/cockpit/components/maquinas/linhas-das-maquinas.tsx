@@ -5,7 +5,10 @@
  *
  * A local é a que o próprio cockpit mede (`/api/vps`); as remotas vêm de
  * `/api/maquinas`. Remota com o nome da local vence (`maquinasDaCasa`): é a
- * que tem Fechar. Cor só no trecho acima do teto, a de antes do cartão.
+ * que tem Fechar. As que só têm Ligar/Desligar (`/api/energia`, o PC e o
+ * note) entram com "ligado"/"desligado", sem número; remota desligada diz
+ * "desligado" no lugar de "fora do ar". Na home não há botão de energia.
+ * Cor só no trecho acima do teto, a de antes do cartão.
  *
  * Dono: Daniel (pele).
  */
@@ -14,18 +17,21 @@
 import Link from 'next/link';
 
 import { IconeMaquina } from '@/components/shell/icones';
+import { abasDaCasa, energiaDe, trechosDaEnergia, type EnergiaMaquina } from '@/lib/energia';
 import { maquinasDaCasa, trechosDaLocal, trechosDaRemota, type Trecho } from '@/lib/linhas-das-maquinas';
 
+import { usaEnergia } from './usa-energia';
 import { usaRecursosLocais } from './usa-recursos-locais';
 import { usaMaquinas, usaResumoDaMaquina } from './usa-resumo-da-maquina';
 
 export function LinhasDasMaquinas() {
   const local = usaRecursosLocais();
   const remotas = usaMaquinas();
-  // Só desenha quando as duas fontes responderam: a lista entra inteira, sem
+  const energia = usaEnergia();
+  // Só desenha quando as três fontes responderam: a lista entra inteira, sem
   // crescer de linha em linha. Sem máquina nenhuma, não há cartão vazio.
-  if (local === null || remotas === null) return null;
-  const casa = maquinasDaCasa(local.dados?.nome ?? null, remotas);
+  if (local === null || remotas === null || energia === null) return null;
+  const casa = abasDaCasa(maquinasDaCasa(local.dados?.nome ?? null, remotas), energia);
   if (casa.length === 0) return null;
 
   return (
@@ -38,21 +44,41 @@ export function LinhasDasMaquinas() {
       {casa.map((m, i) =>
         m.local && local.dados ? (
           <Linha key={m.id} id={m.id} nome={m.nome} primeira={i === 0} trechos={trechosDaLocal(local.dados, local.comSensor)} />
+        ) : remotas.some((r) => r.id === m.id) ? (
+          <LinhaRemota key={m.id} id={m.id} nome={m.nome} primeira={i === 0} energia={energiaDe(m, energia)} />
         ) : (
-          <LinhaRemota key={m.id} id={m.id} nome={m.nome} primeira={i === 0} />
+          <Linha key={m.id} id={m.id} nome={m.nome} primeira={i === 0} trechos={trechosDaEnergiaOuNada(energiaDe(m, energia))} />
         ),
       )}
     </ul>
   );
 }
 
-function LinhaRemota({ id, nome, primeira }: { id: string; nome: string; primeira: boolean }) {
+function trechosDaEnergiaOuNada(e: EnergiaMaquina | null): Trecho[] | null {
+  return e ? trechosDaEnergia(e) : null;
+}
+
+function LinhaRemota({
+  id,
+  nome,
+  primeira,
+  energia,
+}: {
+  id: string;
+  nome: string;
+  primeira: boolean;
+  energia: EnergiaMaquina | null;
+}) {
   const resumo = usaResumoDaMaquina(id);
-  const trechos: Trecho[] | null = !resumo
-    ? null
-    : resumo.online
-      ? trechosDaRemota(resumo)
-      : [{ texto: 'fora do ar', alerta: false }];
+  // Desligada (ou ligando/desligando), a energia diz o estado: "fora do ar" seria mentira.
+  const trechos: Trecho[] | null =
+    energia && (!energia.ligado || energia.em_andamento !== null)
+      ? trechosDaEnergia(energia)
+      : !resumo
+        ? null
+        : resumo.online
+          ? trechosDaRemota(resumo)
+          : [{ texto: 'fora do ar', alerta: false }];
   return <Linha id={id} nome={nome} primeira={primeira} trechos={trechos} />;
 }
 

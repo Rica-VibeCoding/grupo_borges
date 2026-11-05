@@ -1,30 +1,37 @@
 import type { Viewport } from 'next';
 import Link from 'next/link';
 
+import { AbaComEnergia } from '@/components/maquinas/faixa-de-energia';
 import { PainelDaMaquina } from '@/components/maquinas/painel-da-maquina';
 import { PainelLocal } from '@/components/maquinas/painel-local';
 import { AppShell } from '@/components/shell/app-shell';
 import { MIOLO_ACESO, MIOLO_DA_PASTILHA, TRILHO_DA_PASTILHA } from '@/components/shell/pastilha-do-chrome';
-import { maquinasDaCasa, type MaquinaDaCasa } from '@/lib/linhas-das-maquinas';
+import { abasDaCasa, fetchEnergia, type Aba } from '@/lib/energia';
+import { maquinasDaCasa } from '@/lib/linhas-das-maquinas';
 import { fetchMaquinas, fetchNomeLocal } from '@/lib/maquinas';
 
 // Abertos — o que está aberto em cada máquina da casa, quanto ela aguenta agora
 // e o botão de fechar o que sobra. A tela se chama pelo que faz (Rica, 05/11). Mesma casca da Faxina (`palco="mesa"`,
 // coluna de leitura). A aba mora na URL (`?m=`), pela regra 1 do `app-shell.tsx`;
 // a lista de abas vem da API, que é quem sabe quais máquinas existem — as
-// remotas (com Fechar) e a local, que o cockpit mede e que é só leitura.
+// remotas (com Fechar), as que só têm Ligar/Desligar (`/api/energia`) e a
+// local, que o cockpit mede e que é só leitura.
 export const dynamic = 'force-dynamic';
 
 export const viewport: Viewport = { themeColor: '#222222' };
 
 export default async function Abertos({ searchParams }: { searchParams: Promise<{ m?: string }> }) {
   const pedida = (await searchParams).m;
-  const [remotas, nomeLocal] = await Promise.all([
+  const [remotas, nomeLocal, energia] = await Promise.all([
     fetchMaquinas().catch(() => null),
     fetchNomeLocal().catch(() => null),
+    fetchEnergia().catch(() => []),
   ]);
-  const maquinas: MaquinaDaCasa[] | null =
-    remotas === null && nomeLocal === null ? null : maquinasDaCasa(nomeLocal, remotas ?? []);
+  const maquinas: Aba[] | null =
+    remotas === null && nomeLocal === null && energia.length === 0
+      ? null
+      : abasDaCasa(maquinasDaCasa(nomeLocal, remotas ?? []), energia);
+  const comPainel = (id: string) => remotas?.some((m) => m.id === id) ?? false;
   const atual = maquinas?.find((m) => m.id === pedida) ?? maquinas?.[0] ?? null;
 
   return (
@@ -84,7 +91,8 @@ export default async function Abertos({ searchParams }: { searchParams: Promise<
                   </Link>
                 ))}
               </nav>
-            ) : maquinas && remotas !== null ? null : (
+            ) : null}
+            {maquinas && remotas !== null ? null : (
               <p style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-text-secondary)' }}>
                 {maquinas
                   ? 'Não consegui ler as outras máquinas agora. Recarregue a página para tentar de novo.'
@@ -96,6 +104,13 @@ export default async function Abertos({ searchParams }: { searchParams: Promise<
           {/* `key`: trocar de aba começa a leitura do zero, sem número da outra máquina. */}
           {atual?.local ? (
             <PainelLocal key={atual.id} nome={atual.nome} nomeNoCartao={maquinas?.length === 1} />
+          ) : atual?.energia ? (
+            // Com energia, a faixa de Ligar/Desligar vem antes; desligada, a aba é só ela.
+            <AbaComEnergia key={atual.id} id={atual.id} nome={atual.nome}>
+              {comPainel(atual.id) ? (
+                <PainelDaMaquina id={atual.id} nome={atual.nome} nomeNoCartao={maquinas?.length === 1} />
+              ) : null}
+            </AbaComEnergia>
           ) : atual ? (
             <PainelDaMaquina key={atual.id} id={atual.id} nome={atual.nome} nomeNoCartao={maquinas?.length === 1} />
           ) : maquinas && maquinas.length === 0 ? (

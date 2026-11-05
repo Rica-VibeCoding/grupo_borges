@@ -1893,8 +1893,8 @@ html[data-troca-agente] .ck-palco {
 .ck-vps-medida[data-alerta='true'] :is(.ck-vps-rotulo, .ck-vps-valor) { color: var(--ck-state-attention); }
 .ck-vps-medida[data-alerta='true'] .ck-vps-preenche { background: var(--ck-state-attention); }
 .ck-vps-pilula { background-color: var(--ck-surface-canvas); }
-.ck-vps-botao:hover .ck-vps-pilula { background-image: linear-gradient(var(--ck-overlay-hover), var(--ck-overlay-hover)); }
-.ck-vps-botao:active .ck-vps-pilula { background-image: linear-gradient(var(--ck-overlay-pressed), var(--ck-overlay-pressed)); }
+.ck-vps-botao:not(:disabled):hover .ck-vps-pilula { background-image: linear-gradient(var(--ck-overlay-hover), var(--ck-overlay-hover)); }
+.ck-vps-botao:not(:disabled):active .ck-vps-pilula { background-image: linear-gradient(var(--ck-overlay-pressed), var(--ck-overlay-pressed)); }
 @media (prefers-reduced-motion: reduce) {
   .ck-vps-preenche { transition: none; }
 }
