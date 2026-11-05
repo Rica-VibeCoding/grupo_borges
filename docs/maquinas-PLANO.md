@@ -81,3 +81,11 @@ Antes de tudo: `cp painel.py painel.py.bak-maquinas` (e `agentes.py` se tocar). 
 ## Pendências pós-entrega
 
 - Endpoints antigos do painel (`/api/acao`: ligar/desligar agente) seguem abertos pra Tailscale inteira, sem a chave nova — o Pavan leva ao Rica no fechamento.
+
+## Estado em 05/11 ~14:30 (para retomar depois de compactar)
+
+- **No ar:** tela Abertos (`fb5f1f3`), painel do Arsenal novo (8787), `cockpit-api` com a chave em `~/.config/cockpit/maquinas.env` (drop-in `cockpit-api.service.d/maquinas.conf`; também `COCKPIT_MAQUINA_NOME=VPS`). Prova de duas metades OK (`/tmp/e2e-abertos.md`; o print 5 do Canário é da bancada, não vale). Linger ligado no Arsenal pelo Pavan.
+- **Pronto, sem commit, esperando o Rica (prints `/tmp/maquinas-prints/cartao-*.png`):** cartão da lateral com nome da máquina + Temperatura no lugar de Swap quando há sensor. Arquivos: `apps/api/{routers/vps.py,services/vps_recursos.py,tests/test_vps_recursos.py}` e no cockpit `app/abertos/page.tsx`, `lib/maquinas{,.test}.ts`, `components/shell/{recursos-da-vps{,.test}.ts,bloco-da-vps.tsx,barra-de-medida.tsx,tropa.tsx}`, `components/maquinas/{mini-cartao-da-maquina,painel-da-maquina}.tsx`. Publicar = commit desses paths + restart `cockpit-api` + `scripts/publicar-cockpit.sh`.
+- **Em curso:** Codex trocando rótulos técnicos dos Protegidos em `maquina/maquinas.py` (saída `/tmp/codex-rotulos-out.txt`); depois: scp pro Arsenal + restart `cockpit-maquina`.
+- **Pendente de decisão:** Abertos dentro do cockpit do Arsenal precisa de `MAQUINA_ARSENAL_CHAVE` na `cockpit-api` de lá.
+- **Depois:** Fase 5 (skill enxuta `maquinas`/`abertos`, este plano sai do repo); `/tmp/painel-8788` e `teste-abertos-chrome` já limpos no Arsenal.
