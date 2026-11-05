@@ -1,0 +1,977 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#222222">
+  <title>Cockpit · máquina</title>
+  <style>
+    /* Tokens copiados de grupo_borges/apps/cockpit/app/globals.css (§A, §B, §T, §G).
+       Nenhuma cor nasce aqui: mudou lá, copia de novo. */
+    :root {
+      color-scheme: dark;
+      --ck-surface-canvas: oklch(0.215 0 0);
+      --ck-surface-nav: oklch(0.250 0 0);
+      --ck-surface-composer: oklch(0.285 0 0);
+      --ck-surface-raised: oklch(0.315 0 0);
+      --ck-text-primary: oklch(0.96 0 0);
+      --ck-text-secondary: oklch(0.76 0 0);
+      --ck-text-tertiary: oklch(0.62 0 0);
+      --ck-state-thinking: oklch(0.73 0.14 285);
+      --ck-state-running: oklch(0.78 0.13 220);
+      --ck-state-attention: oklch(0.82 0.14 78);
+      --ck-state-ok: oklch(0.76 0.13 150);
+      --ck-state-fail: oklch(0.74 0.16 22);
+      --ck-edge-functional: oklch(0.60 0 0);
+      --ck-edge-hairline: oklch(0.38 0 0);
+      --ck-edge-light: rgb(255 255 255 / 0.07);
+      --ck-scrollbar-thumb: rgb(255 255 255 / 0.05);
+      --ck-scrollbar-thumb-hover: rgb(255 255 255 / 0.18);
+      --ck-text-xs: 0.75rem;
+      --ck-text-sm: 0.8125rem;
+      --ck-text-base: 0.9375rem;
+      --ck-text-md: 1rem;
+      --ck-text-lg: 1.25rem;
+      /* A Geist do cockpit é self-host do Next; aqui vale o resto da mesma pilha. */
+      --ck-font-sans: ui-sans-serif, system-ui, sans-serif;
+      --ck-font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+      --ck-leading-body: 1.55;
+      --ck-leading-hero: 1.2;
+      --ck-track-title: -0.012em;
+      --ck-track-overline: 0.055em;
+      --ck-overlay-hover: rgb(255 255 255 / 0.03);
+      --ck-overlay-pressed: rgb(255 255 255 / 0.05);
+      --ck-selection-bg: oklch(0.42 0.08 265);
+      --ck-selection-fg: var(--ck-text-primary);
+      --ck-veu-gaveta: rgb(0 0 0 / 0.38);
+      --ck-veu-gaveta-desfoque: 6px;
+      --ck-space-1: 0.25rem;
+      --ck-space-2: 0.5rem;
+      --ck-space-3: 0.75rem;
+      --ck-space-4: 1rem;
+      --ck-space-5: 1.5rem;
+      --ck-space-6: 2rem;
+      --ck-w-drawer: 380px;
+      --ck-read-narrow: 32rem;
+      --ck-touch-min: 44px;
+      --ck-radius-frame: 8px;
+      --ck-radius-chip: 6px;
+      --ck-radius-pill: 9999px;
+      --ck-radius-caixa: 16px;
+      --ck-dur-fast: 120ms;
+      --ck-dur-enter: 200ms;
+      --ck-dur-calm: 320ms;
+      --ck-ease: cubic-bezier(0.2, 0, 0.2, 1);
+      --ck-ease-exit: cubic-bezier(0.4, 0, 1, 1);
+      --ck-mola: linear(0, 0.03 3%, 0.104 6%, 0.238 10%, 0.386 14%, 0.527 18%, 0.68 23%, 0.799 28%, 0.899 34%, 0.961 40%, 0.998 47%, 1.013 55%, 1.014 65%, 1.006 80%, 1);
+      --ck-z-drawer: 20;
+      --ck-safe-top: env(safe-area-inset-top, 0px);
+      --ck-safe-bottom: env(safe-area-inset-bottom, 0px);
+      --ck-safe-left: env(safe-area-inset-left, 0px);
+      --ck-safe-right: env(safe-area-inset-right, 0px);
+      --ck-tl-hover: rgb(0 0 0 / 0.16);
+      --ck-tom-voce: var(--ck-state-attention);
+      --ck-tom-ze: var(--ck-state-running);
+      --ck-tom-pensa: color-mix(in srgb, var(--ck-tom-voce), var(--ck-tom-ze));
+      --ck-tom-erro: var(--ck-state-fail);
+      --ck-tom-prepara: var(--ck-text-secondary);
+      --ck-tom-desligado: var(--ck-text-tertiary);
+      --ck-conversa-voce: var(--ck-tom-voce);
+      --ck-conversa-pilula: rgb(0 0 0 / 0.45);
+      --ck-conversa-pilula-fio: rgb(255 255 255 / 0.07);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      background: var(--ck-surface-nav);
+      color: var(--ck-text-primary);
+      font-family: var(--ck-font-sans);
+      font-size: var(--ck-text-base);
+      line-height: var(--ck-leading-body);
+      -webkit-font-smoothing: antialiased;
+    }
+    h2, h3, p { margin: 0; font-weight: inherit; font-size: inherit; }
+    button { font: inherit; color: inherit; background: none; border: 0; padding: 0; margin: 0; cursor: pointer; text-align: inherit; -webkit-tap-highlight-color: transparent; }
+    ::selection { background: var(--ck-selection-bg); color: var(--ck-selection-fg); }
+    :focus-visible { outline: none; }
+    .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+    .ck-tabular { font-variant-numeric: tabular-nums; }
+    .trunca { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .ck-veil:hover, .ck-veil:focus-visible { background-image: linear-gradient(var(--ck-overlay-hover), var(--ck-overlay-hover)); }
+    .ck-veil:active { background-image: linear-gradient(var(--ck-overlay-pressed), var(--ck-overlay-pressed)); }
+
+    /* ── A mesa: a rota `/` do cockpit ─────────────────────────────────── */
+    .ck-janela { height: 100dvh; display: flex; overflow: hidden; background: var(--ck-surface-nav); }
+    .rola {
+      flex: 1; min-height: 0; overflow-y: auto;
+      scrollbar-width: thin; scrollbar-color: var(--ck-scrollbar-thumb-hover) transparent;
+    }
+    .coluna {
+      display: flex; flex-direction: column;
+      width: 100%; max-width: var(--ck-read-narrow); margin: 0 auto;
+      padding: calc(var(--ck-space-4) + var(--ck-safe-top)) calc(var(--ck-space-2) + var(--ck-safe-right))
+               calc(var(--ck-space-6) + var(--ck-safe-bottom)) calc(var(--ck-space-2) + var(--ck-safe-left));
+    }
+    .topo { padding: 0 var(--ck-space-3) var(--ck-space-3); }
+    .topo-titulo { font-size: var(--ck-text-lg); letter-spacing: var(--ck-track-title); color: var(--ck-text-primary); }
+    .topo-linha { font-size: var(--ck-text-xs); color: var(--ck-text-secondary); min-height: 1.55em; }
+    .topo-linha [data-aviso] { color: var(--ck-state-attention); }
+
+    /* ── §T A tropa ────────────────────────────────────────────────────── */
+    .tropa { display: flex; flex-direction: column; padding: 0 var(--ck-space-2) var(--ck-space-4); }
+    .tropa-lista { display: flex; flex-direction: column; gap: 2px; margin: 0 0 var(--ck-space-4); padding: 0; list-style: none; min-height: 112px; }
+    .tropa-lista li { display: flex; align-items: center; }
+    .vazio { padding: var(--ck-space-5) var(--ck-space-4); display: flex; flex-direction: column; gap: var(--ck-space-1); }
+    .vazio p:last-child { font-size: var(--ck-text-sm); color: var(--ck-text-secondary); }
+
+    .ck-tl-linha {
+      --ck-tl-cor: var(--ck-tom-prepara);
+      position: relative; display: flex; flex: 1; min-width: 0; align-items: center; gap: var(--ck-space-3);
+      min-height: var(--ck-touch-min);
+      padding: var(--ck-space-2) var(--ck-space-3) var(--ck-space-2) var(--ck-space-2);
+      border: 1px solid transparent;
+      border-radius: var(--ck-radius-pill);
+      transition: background-color var(--ck-dur-fast) var(--ck-ease), border-color var(--ck-dur-fast) var(--ck-ease);
+    }
+    .ck-tl-linha:hover, .ck-tl-linha:focus-visible { background-color: var(--ck-tl-hover); }
+    .ck-tl-linha[data-selecionado='true'] { background-color: var(--ck-conversa-pilula); border-color: var(--ck-conversa-pilula-fio); }
+    .ck-tl-linha[data-tom='ze'] { --ck-tl-cor: var(--ck-tom-ze); }
+    .ck-tl-linha[data-tom='erro'] { --ck-tl-cor: var(--ck-tom-erro); }
+    .ck-tl-linha[data-tom='desligado'] { --ck-tl-cor: var(--ck-tom-desligado); }
+    .ck-tl-foto { position: relative; display: flex; flex: none; }
+    .ck-tl-foto::after {
+      content: ''; position: absolute; inset: -3px;
+      border: 1.5px solid var(--ck-tl-cor); border-radius: var(--ck-radius-pill);
+      opacity: 0.9; pointer-events: none;
+      transition: border-color var(--ck-dur-calm) var(--ck-ease), opacity var(--ck-dur-calm) var(--ck-ease);
+    }
+    .ck-tl-linha[data-tom='prepara'] .ck-tl-foto::after { opacity: 0.5; }
+    .ck-tl-linha[data-tom='desligado'] .ck-tl-foto::after { opacity: 0.45; }
+    .retrato {
+      display: flex; align-items: center; justify-content: center; flex: 0 0 38px; width: 38px; height: 38px;
+      border-radius: var(--ck-radius-pill); background: var(--ck-surface-raised);
+      font-family: var(--ck-font-mono); font-size: var(--ck-text-xs); color: var(--ck-text-secondary);
+      transition: opacity var(--ck-dur-calm) var(--ck-ease);
+    }
+    .ck-tl-linha[data-tom='desligado'] .retrato { opacity: 0.5; }
+    .tl-meio { display: flex; flex: 1; min-width: 0; flex-direction: column; justify-content: center; gap: 2px; line-height: var(--ck-leading-hero); }
+    .tl-fim { display: flex; flex: none; flex-direction: column; align-items: flex-end; gap: 2px; line-height: var(--ck-leading-hero); }
+    .ck-tl-nome {
+      font-size: var(--ck-text-base); font-weight: 500; color: var(--ck-text-primary); letter-spacing: var(--ck-track-title);
+      transition: color var(--ck-dur-calm) var(--ck-ease);
+    }
+    .ck-tl-linha[data-tom='desligado'] .ck-tl-nome { color: var(--ck-text-secondary); font-weight: 400; }
+    .ck-tl-segunda { min-height: 16px; font-size: var(--ck-text-xs); color: var(--ck-text-secondary); }
+    .tl-numero { display: flex; font-size: var(--ck-text-sm); color: var(--ck-text-secondary); }
+    .valor-ctx { flex: none; width: 4ch; text-align: right; }
+    .valor-ctx[data-vazio] { color: var(--ck-text-tertiary); }
+
+    /* ── O cartão da máquina: o `.ck-vps` do pé da tropa ───────────────── */
+    .ck-vps {
+      display: flex; flex-direction: column; flex: none; gap: var(--ck-space-3);
+      padding: var(--ck-space-3) var(--ck-space-4) var(--ck-space-3);
+      border-radius: var(--ck-radius-caixa);
+      background: var(--ck-surface-composer);
+      box-shadow: inset 0 1px 0 0 var(--ck-edge-light);
+    }
+    .vps-topo { display: flex; align-items: baseline; gap: var(--ck-space-2); min-height: 24px; }
+    .vps-topo h2 { font-size: var(--ck-text-base); font-weight: 600; color: var(--ck-text-primary); }
+    .vps-topo span { margin-left: auto; font-size: var(--ck-text-xs); color: var(--ck-text-secondary); }
+    .vps-grade { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--ck-space-3) var(--ck-space-4); min-height: 80px; }
+    .ck-vps-medida { display: flex; min-width: 0; flex-direction: column; gap: var(--ck-space-1); }
+    .vps-cabeca { display: flex; align-items: baseline; justify-content: space-between; gap: var(--ck-space-2); }
+    .ck-vps-rotulo { font-size: var(--ck-text-xs); color: var(--ck-text-secondary); }
+    .ck-vps-valor { font-size: var(--ck-text-sm); font-weight: 500; color: var(--ck-text-primary); }
+    .ck-vps-valor[data-vazio] { color: var(--ck-text-tertiary); }
+    .ck-vps-trilho { display: block; overflow: hidden; height: 4px; border-radius: var(--ck-radius-pill); background: var(--ck-surface-canvas); }
+    .ck-vps-preenche {
+      display: block; height: 100%; border-radius: var(--ck-radius-pill);
+      background: var(--ck-text-secondary);
+      transition: transform var(--ck-dur-calm) var(--ck-ease); transform-origin: left;
+    }
+    .ck-vps-medida[data-alerta='true'] :is(.ck-vps-rotulo, .ck-vps-valor) { color: var(--ck-state-attention); }
+    .ck-vps-medida[data-alerta='true'] .ck-vps-preenche { background: var(--ck-state-attention); }
+    .vps-detalhe { font-size: var(--ck-text-xs); color: var(--ck-text-secondary); min-height: 1.55em; }
+    .vps-pe { font-size: var(--ck-text-xs); color: var(--ck-text-secondary); }
+    .vps-erro { font-size: var(--ck-text-xs); color: var(--ck-state-attention); }
+    .vps-erro:empty { display: none; }
+
+    /* ── O movimento: `.ck-surge`, o véu e o painel flutuante ──────────── */
+    .ck-surge {
+      visibility: visible; opacity: 1; transform: none;
+      transition: opacity var(--ck-dur-enter) var(--ck-ease), transform var(--ck-dur-enter) var(--ck-ease), visibility 0s;
+    }
+    .ck-surge[data-aberto='false'] {
+      visibility: hidden; opacity: 0; transform: translateY(6px) scale(0.98); pointer-events: none;
+      transition: opacity var(--ck-dur-enter) var(--ck-ease-exit), transform var(--ck-dur-enter) var(--ck-ease-exit), visibility 0s linear var(--ck-dur-enter);
+    }
+    .ck-surge-veu {
+      position: fixed; inset: 0; z-index: var(--ck-z-drawer); width: 100%; height: 100%; cursor: default;
+      visibility: visible; opacity: 1;
+      background: var(--ck-veu-gaveta);
+      -webkit-backdrop-filter: blur(var(--ck-veu-gaveta-desfoque));
+      backdrop-filter: blur(var(--ck-veu-gaveta-desfoque));
+      transition: opacity var(--ck-dur-enter) var(--ck-ease), visibility 0s;
+    }
+    .ck-surge-veu[data-aberto='false'] {
+      visibility: hidden; opacity: 0; pointer-events: none;
+      transition: opacity var(--ck-dur-enter) var(--ck-ease-exit), visibility 0s linear var(--ck-dur-enter);
+    }
+    .ck-flutua {
+      position: fixed; z-index: var(--ck-z-drawer);
+      top: calc(var(--ck-space-2) + var(--ck-safe-top));
+      right: calc(var(--ck-space-2) + var(--ck-safe-right));
+      display: flex; flex-direction: column; min-height: 0; overflow: hidden;
+      height: auto;
+      max-height: calc(100dvh - 2 * var(--ck-space-2) - var(--ck-safe-top) - var(--ck-safe-bottom));
+      width: calc(100% - 2 * var(--ck-space-2));
+      max-width: var(--ck-w-drawer);
+      border-radius: var(--ck-radius-caixa);
+      background: var(--ck-surface-nav);
+      box-shadow: inset 0 1px 0 0 var(--ck-edge-light);
+    }
+    @media (max-width: 640px) {
+      .ck-flutua { top: auto; bottom: calc(var(--ck-space-2) + var(--ck-safe-bottom)); }
+      .ck-surge.ck-flutua[data-aberto='false'] { transform: translateY(24px); }
+    }
+
+    /* ── §G A gaveta ───────────────────────────────────────────────────── */
+    .ck-gv {
+      --ck-gv-fundo: oklch(0.145 0 0);
+      --ck-gv-camada: oklch(0.235 0.006 265);
+      --ck-gv-bloco: oklch(0.165 0.004 265);
+      --ck-gv-pilula: oklch(0.33 0.006 265);
+      --ck-gv-pilula-hover: oklch(0.38 0.006 265);
+      --ck-gv-trilho: oklch(0.36 0.006 265);
+      --ck-gv-ativo: oklch(0.63 0.17 255);
+      --ck-gv-ativo-texto: oklch(0.75 0.13 250);
+      --ck-gv-alerta: oklch(0.6 0.23 27);
+      --ck-gv-alerta-texto: oklch(0.98 0 0);
+      --ck-gv-raio-cartao: 16px;
+      --ck-gv-raio-bloco: 12px;
+      --ck-radius-frame: var(--ck-radius-pill);
+      --ck-edge-functional: transparent;
+      --ck-edge-light: transparent;
+      --ck-surface-composer: var(--ck-gv-pilula);
+      display: flex; flex: 1 1 auto; min-height: 0; flex-direction: column; overflow-y: auto;
+      gap: var(--ck-space-2); padding: var(--ck-space-3);
+      background: var(--ck-gv-fundo);
+      scrollbar-width: thin; scrollbar-color: var(--ck-scrollbar-thumb-hover) transparent;
+    }
+    [hidden] { display: none !important; }
+
+    .heroi { display: flex; flex: none; flex-direction: column; gap: var(--ck-space-2); padding: 0 var(--ck-space-1); }
+    .heroi-linha { display: flex; align-items: center; gap: var(--ck-space-3); }
+    .heroi-quem { display: flex; flex: 1; min-width: 0; align-items: center; }
+    .fecha {
+      display: flex; flex: none; align-items: center; justify-content: center;
+      width: var(--ck-touch-min); height: var(--ck-touch-min); margin-right: calc(var(--ck-space-2) * -1);
+      border-radius: var(--ck-radius-pill); font-size: var(--ck-text-lg); color: var(--ck-text-secondary);
+    }
+
+    /* A pílula do agente (`shell/pilula-do-agente.module.css`, lugar="gaveta"). */
+    .pilula {
+      --cor: var(--ck-tom-prepara);
+      position: relative; isolation: isolate; display: inline-flex; align-items: center; min-width: 0;
+      gap: var(--ck-space-3); padding: 6px 18px 6px 6px;
+    }
+    .pilula[data-tom='ze'] { --cor: var(--ck-tom-ze); }
+    .pilula[data-tom='erro'] { --cor: var(--ck-tom-erro); }
+    .pilula[data-tom='desligado'] { --cor: var(--ck-tom-desligado); }
+    .pilula-fundo {
+      position: absolute; inset: 0; z-index: -1;
+      border: 1px solid var(--ck-conversa-pilula-fio); border-radius: 40px;
+      background: var(--ck-conversa-pilula);
+      -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px);
+    }
+    .pilula-molda { position: relative; display: grid; width: 52px; height: 52px; flex: none; }
+    .pilula-foto {
+      display: flex; align-items: center; justify-content: center; width: 52px; height: 52px;
+      border-radius: 50%; background: var(--ck-surface-raised);
+      color: var(--ck-text-secondary); font-family: var(--ck-font-mono); font-size: var(--ck-text-md);
+      transition: filter 1.8s var(--ck-ease);
+    }
+    .pilula[data-tom='desligado'] .pilula-foto { filter: grayscale(1) brightness(0.55); }
+    .pilula-aro {
+      position: absolute; inset: -3px; border: 1.5px solid var(--cor); border-radius: 50%; opacity: 0.4;
+      transition: opacity var(--ck-dur-enter) var(--ck-ease), border-color var(--ck-dur-enter) var(--ck-ease);
+    }
+    .pilula:not([data-tom='prepara']) .pilula-aro { opacity: 0.85; }
+    .bolinha-alerta {
+      position: absolute; top: -6px; right: -6px; display: flex; align-items: center; justify-content: center;
+      width: 16px; height: 16px; border-radius: var(--ck-radius-pill);
+      font-size: 10px; font-weight: 700; line-height: 1;
+      background: var(--ck-gv-alerta); color: var(--ck-gv-alerta-texto);
+      box-shadow: 0 0 0 3px var(--ck-gv-fundo);
+    }
+    .pilula-quem { display: grid; gap: 1px; min-width: 0; }
+    .pilula-quem b { font-size: var(--ck-text-lg); font-weight: 500; letter-spacing: var(--ck-track-title); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pilula-quem small { display: flex; align-items: center; gap: 6px; color: var(--ck-text-secondary); font-size: var(--ck-text-sm); }
+    .pilula-estado {
+      display: inline-block;
+      transition: color var(--ck-dur-enter) var(--ck-ease), opacity var(--ck-dur-enter) var(--ck-ease), translate var(--ck-dur-calm) var(--ck-mola);
+    }
+    @starting-style { .pilula-estado { opacity: 0; translate: 0 0.4em; } }
+    .pilula:not([data-tom='prepara']) .pilula-estado { color: var(--cor); }
+    .pilula[data-tom='desligado'] .pilula-estado { color: var(--ck-text-secondary); }
+
+    /* O interruptor (`gaveta/pecas.tsx`). */
+    .interruptor {
+      display: flex; flex: none; align-items: center; gap: var(--ck-space-2);
+      min-height: var(--ck-touch-min); margin-right: calc(var(--ck-space-1) * -1); padding: 0 var(--ck-space-1);
+    }
+    .interruptor:disabled { opacity: 0.5; cursor: default; }
+    .interruptor-rotulo { font-size: var(--ck-text-sm); font-weight: 500; white-space: nowrap; color: var(--ck-text-secondary); }
+    .interruptor[aria-checked='true'] .interruptor-rotulo { color: var(--ck-gv-ativo-texto); }
+    .interruptor[data-armado='true'] .interruptor-rotulo { color: var(--ck-state-attention); }
+    .ck-gv-trilho {
+      position: relative; display: inline-flex; flex: none; align-items: center;
+      width: 42px; height: 24px; padding: 3px; border-radius: var(--ck-radius-pill);
+      background: var(--ck-gv-trilho);
+      transition: background-color var(--ck-dur-fast) var(--ck-ease);
+    }
+    .ck-gv-trilho[data-ligado='true'] { background: var(--ck-gv-ativo); }
+    .ck-gv-trilho[data-armado='true'] { background: var(--ck-state-attention); }
+    .ck-gv-botao-trilho {
+      display: block; width: 18px; height: 18px; border-radius: var(--ck-radius-pill);
+      background: var(--ck-gv-fundo);
+      transition: transform var(--ck-dur-enter) var(--ck-mola);
+    }
+    .ck-gv-trilho[data-ligado='true'] .ck-gv-botao-trilho { transform: translateX(18px); }
+
+    /* A statusline, com a barra de contexto na largura toda. */
+    .statusline {
+      display: flex; min-width: 0; align-items: center; gap: var(--ck-space-2); min-height: 20px;
+      font-family: var(--ck-font-mono); font-size: var(--ck-text-xs); color: var(--ck-text-secondary);
+    }
+    .sl-modelo { font-family: var(--ck-font-sans); font-size: var(--ck-text-sm); color: var(--ck-text-primary); }
+    .sl-ponto { color: var(--ck-text-tertiary); }
+    .sl-tempo { flex: none; }
+    .sl-contexto { display: flex; flex: 1; min-width: 0; align-items: center; gap: var(--ck-space-1); }
+    .barra-ctx { display: block; flex: 1; min-width: 56px; height: 4px; overflow: hidden; border-radius: var(--ck-radius-pill); background: var(--ck-surface-composer); }
+    .barra-ctx span { display: block; height: 100%; border-radius: var(--ck-radius-pill); background: var(--ck-text-secondary); }
+    .etiqueta-off {
+      flex: none; font-family: var(--ck-font-mono); font-size: var(--ck-text-xs); line-height: 1.5; color: var(--ck-text-secondary);
+      padding: 0 var(--ck-space-1); border-radius: var(--ck-radius-chip); border: 1px solid var(--ck-edge-hairline);
+    }
+
+    /* Cartão grafite, bloco preto, pílula cinza. */
+    .cartao {
+      display: flex; flex: none; flex-direction: column; gap: var(--ck-space-2); padding: var(--ck-space-3);
+      border-radius: var(--ck-gv-raio-cartao); background: var(--ck-gv-camada);
+    }
+    .bloco {
+      display: flex; flex-direction: column; gap: var(--ck-space-2); padding: var(--ck-space-3);
+      border-radius: var(--ck-gv-raio-bloco); background: var(--ck-gv-bloco);
+    }
+    .bloco[data-cru] { padding: 0; }
+    .bloco-titulo { font-size: var(--ck-text-sm); color: var(--ck-text-primary); }
+    .bloco-texto { font-size: var(--ck-text-xs); color: var(--ck-text-secondary); }
+    .fileira { display: flex; gap: var(--ck-space-2); }
+    .ck-gv-pilula {
+      display: flex; flex: 1; align-items: center; justify-content: center; overflow: hidden;
+      gap: var(--ck-space-2); min-height: var(--ck-touch-min); padding: 0 var(--ck-space-4);
+      border-radius: var(--ck-radius-pill);
+      background-color: var(--ck-gv-pilula);
+      font-size: var(--ck-text-sm); font-weight: 500; white-space: nowrap; color: var(--ck-text-primary);
+      transition: color var(--ck-dur-fast) var(--ck-ease), transform var(--ck-dur-fast) var(--ck-ease);
+    }
+    .ck-gv-pilula:hover, .ck-gv-pilula:focus-visible { background-color: var(--ck-gv-pilula-hover); }
+    .ck-gv-pilula[aria-disabled='true'] { color: var(--ck-text-secondary); cursor: default; }
+    .ck-gv-pilula[data-fase='confirmando'] { color: var(--ck-state-attention); }
+    .ck-gv-pilula[data-fase='entregue'] { color: var(--ck-state-ok); }
+    .pilula-da-nova { min-height: 52px; padding: 0 var(--ck-space-3); }
+    .pilula-da-nova:active { transform: scale(0.97); }
+    .comandos { display: flex; flex: none; flex-direction: column; gap: var(--ck-space-2); padding: var(--ck-space-4); }
+    .overline { font-size: var(--ck-text-xs); text-transform: uppercase; letter-spacing: var(--ck-track-overline); color: var(--ck-text-secondary); }
+    .comando { padding: 0 var(--ck-space-2); border: 1px solid var(--ck-edge-functional); border-radius: var(--ck-radius-frame); font-family: var(--ck-font-mono); }
+
+    .aviso { font-size: var(--ck-text-xs); color: var(--ck-state-attention); }
+    .aviso[data-tom='ok'] { color: var(--ck-text-secondary); }
+    .falha { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ck-space-3); }
+    .falha span { font-size: var(--ck-text-xs); color: var(--ck-state-attention); overflow-wrap: anywhere; }
+    .dispensa {
+      display: flex; flex: none; align-items: center; justify-content: center;
+      min-height: var(--ck-touch-min); min-width: var(--ck-touch-min);
+      border-radius: var(--ck-radius-pill); color: var(--ck-text-secondary);
+    }
+
+    /* O Ligar do agente desligado (`conversa/botao-ligar.module.css`). */
+    .ligar-lugar { display: flex; flex-direction: column; align-items: center; gap: var(--ck-space-2); padding-top: var(--ck-space-1); }
+    .ligar-botao {
+      min-height: var(--ck-touch-min); padding: 0 var(--ck-space-5);
+      border: 1px solid color-mix(in oklch, var(--ck-text-secondary) 45%, transparent);
+      border-radius: 999px; background: transparent; color: var(--ck-text-secondary);
+      font-family: var(--ck-font-mono); font-size: var(--ck-text-xs); letter-spacing: 0.22em; text-transform: uppercase;
+      transition: color var(--ck-dur-calm) var(--ck-ease), border-color var(--ck-dur-calm) var(--ck-ease);
+    }
+    .ligar-botao:hover, .ligar-botao:focus-visible { border-color: var(--ck-conversa-voce); color: var(--ck-text-primary); }
+    .ligar-botao[data-ligando] { border-color: var(--ck-conversa-voce); cursor: default; animation: respiraLigando 1.6s ease-in-out infinite; }
+    @keyframes respiraLigando { 50% { border-color: color-mix(in oklch, var(--ck-conversa-voce) 30%, transparent); } }
+
+    @media (prefers-reduced-motion: reduce) {
+      .ck-surge, .ck-surge-veu, .ck-gv-botao-trilho, .ck-vps-preenche, .ck-tl-linha, .ck-tl-foto::after,
+      .retrato, .ck-tl-nome, .pilula-estado, .pilula-foto, .ck-gv-pilula { transition: none !important; }
+      .ligar-botao[data-ligando] { animation: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="ck-janela">
+    <main class="rola">
+      <div class="coluna">
+        <header class="topo">
+          <p class="topo-titulo">Cockpit</p>
+          <p class="topo-linha ck-tabular" id="resumo" role="status">Lendo a máquina…</p>
+        </header>
+
+        <nav class="tropa" aria-label="Tropa">
+          <ul class="tropa-lista" id="tropa"></ul>
+
+          <section class="ck-vps" aria-label="Recursos da máquina">
+            <div class="vps-topo">
+              <h2>Máquina</h2>
+              <span class="ck-tabular trunca" id="vps-topo">&nbsp;</span>
+            </div>
+            <div class="vps-grade" id="vps-grade"></div>
+            <p class="vps-pe ck-tabular trunca" id="vps-pe">&nbsp;</p>
+            <p class="vps-erro" id="vps-erro" role="status"></p>
+          </section>
+        </nav>
+        <noscript><p class="vazio">Ative o JavaScript para ler o estado e usar os controles.</p></noscript>
+      </div>
+    </main>
+  </div>
+
+  <button type="button" class="ck-surge-veu" id="veu" data-aberto="false" aria-label="Fechar detalhes" tabindex="-1"></button>
+
+  <aside class="ck-surge ck-flutua" id="gaveta" data-aberto="false" aria-label="detalhes" inert tabindex="-1">
+    <div class="ck-gv">
+      <header class="heroi">
+        <div class="heroi-linha">
+          <div class="heroi-quem">
+            <div class="pilula" id="gv-pilula" data-tom="prepara">
+              <span class="pilula-fundo" aria-hidden="true"></span>
+              <span class="pilula-molda">
+                <span class="pilula-foto" id="gv-foto" aria-hidden="true"></span>
+                <span class="pilula-aro" aria-hidden="true"></span>
+                <span class="bolinha-alerta" id="gv-selo" aria-hidden="true" hidden>!</span>
+              </span>
+              <span class="pilula-quem">
+                <b id="gv-nome"></b>
+                <small id="gv-estado-lugar"></small>
+              </span>
+            </div>
+          </div>
+
+          <button type="button" class="interruptor" id="gv-interruptor" role="switch" aria-checked="false">
+            <span class="interruptor-rotulo" id="gv-interruptor-rotulo">…</span>
+            <span class="ck-gv-trilho" id="gv-trilho" aria-hidden="true" data-ligado="false" data-armado="false">
+              <span class="ck-gv-botao-trilho"></span>
+            </span>
+          </button>
+
+          <button type="button" class="fecha ck-veil" id="gv-fecha" aria-label="Fechar detalhes">×</button>
+        </div>
+
+        <div class="statusline ck-tabular" id="gv-statusline"></div>
+      </header>
+
+      <section class="cartao" aria-label="Sessão">
+        <div class="bloco" id="gv-indisponivel" hidden>
+          <span class="bloco-texto">não consegui ler os controles deste agente</span>
+          <div class="fileira"><button type="button" class="ck-gv-pilula" id="gv-tentar">Tentar de novo</button></div>
+        </div>
+
+        <div class="bloco" id="gv-fora" hidden>
+          <span class="bloco-titulo">Fora do ar</span>
+          <span class="bloco-texto">A conversa ficou guardada. Ligar retoma de onde parou.</span>
+          <div class="ligar-lugar">
+            <button type="button" class="ligar-botao" id="gv-ligar">Ligar</button>
+          </div>
+        </div>
+
+        <div class="fileira" id="gv-fileira" hidden>
+          <button type="button" class="ck-gv-pilula pilula-da-nova" id="gv-nova">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+            <span id="gv-nova-rotulo">Nova conversa</span>
+          </button>
+        </div>
+
+        <p class="aviso" id="gv-aviso" role="status" hidden></p>
+        <div class="falha" id="gv-falha" role="alert" hidden>
+          <span id="gv-falha-texto"></span>
+          <button type="button" class="dispensa ck-veil" id="gv-dispensa" aria-label="Dispensar aviso">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </button>
+        </div>
+
+        <div class="bloco" data-cru id="gv-comandos" hidden>
+          <section class="comandos" aria-label="comandos">
+            <span class="overline">Comandos</span>
+            <div class="fileira">
+              <button type="button" class="ck-gv-pilula comando" id="gv-compact" title="resume a conversa para liberar contexto — o agente continua de onde parou">/compact</button>
+            </div>
+          </section>
+        </div>
+      </section>
+    </div>
+  </aside>
+
+  <script>
+    'use strict';
+
+    /* ── As réguas, as mesmas do cockpit ───────────────────────────────── */
+    const TETO_PCT = 25, AVISO_PCT = 20, FATIA_ATE_O_TETO = 0.7, PISO_VISIVEL = 0.04; // shell/medidor.ts
+    const TETO_DA_MAQUINA = { cpu: 90, ram: 85, disco: 85 };                          // shell/recursos-da-vps.ts
+    const BATERIA_BAIXA = 20;
+    const INTERVALO_MS = 3000, ATRASO_S = 15, ARMADO_MS = 6000;
+
+    const $ = (id) => document.getElementById(id);
+    const el = (tag, classe, texto) => {
+      const e = document.createElement(tag);
+      if (classe) e.className = classe;
+      if (texto !== undefined) e.textContent = texto;
+      return e;
+    };
+    const escreve = (no, texto) => { if (no.textContent !== texto) no.textContent = texto; };
+    const marca = (no, nome, valor) => { if (no.getAttribute(nome) !== valor) no.setAttribute(nome, valor); };
+
+    function corDoContexto(pct) {
+      if (pct > TETO_PCT) return 'var(--ck-state-fail)';
+      if (pct >= AVISO_PCT) return 'var(--ck-state-attention)';
+      return 'var(--ck-text-secondary)';
+    }
+    function fracaoDoMedidor(pct) {
+      if (!Number.isFinite(pct) || pct <= 0) return 0;
+      const bruta = pct <= TETO_PCT
+        ? (pct / TETO_PCT) * FATIA_ATE_O_TETO
+        : FATIA_ATE_O_TETO + ((pct - TETO_PCT) / (100 - TETO_PCT)) * (1 - FATIA_ATE_O_TETO);
+      return Math.min(1, Math.max(PISO_VISIVEL, bruta));
+    }
+    function pctDoContexto(a) {
+      if (a.tokens === null || a.tokens === undefined || !a.janela) return null;
+      return 100 * a.tokens / a.janela;
+    }
+    function iniciais(nome) {
+      const partes = String(nome).trim().split(/\s+/).filter(Boolean);
+      if (partes.length === 0) return '??';
+      if (partes.length === 1) return partes[0].slice(0, 2).toUpperCase();
+      return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase();
+    }
+    /** `claude-opus-5-5` → `Opus 5.5`; o que não for da família Claude sai como veio. */
+    function nomeDoModelo(modelo) {
+      if (!modelo) return null;
+      const m = /^claude-([a-z]+)-(\d+)(?:-(\d{1,2}))?(?:-\d{6,})?(?:\[.*\])?$/.exec(modelo);
+      if (!m) return modelo;
+      return m[1][0].toUpperCase() + m[1].slice(1) + ' ' + m[2] + (m[3] ? '.' + m[3] : '');
+    }
+    function tempoCurto(segundos) {
+      if (segundos === null || segundos === undefined || !Number.isFinite(segundos)) return '—';
+      if (segundos < 60) return 'agora';
+      const min = Math.floor(segundos / 60);
+      if (min < 60) return min + ' min';
+      const horas = Math.floor(min / 60);
+      if (horas < 24) return horas + ' h';
+      return Math.floor(horas / 24) + ' d';
+    }
+    function relogio(segundos) {
+      const h = Math.floor(segundos / 3600), m = Math.floor((segundos % 3600) / 60);
+      return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+    }
+    /** A palavra e o tom do estado, no vocabulário da pílula do cockpit. */
+    function estadoDaPilula(a) {
+      if (a.ligado === false) return { tom: 'desligado', rotulo: 'desligado' };
+      if (a.ligado !== true) return { tom: 'erro', rotulo: 'sem leitura' };
+      if (a.status === 'busy') return { tom: 'ze', rotulo: 'trabalhando' };
+      if (a.status === 'idle') return { tom: 'prepara', rotulo: 'na linha' };
+      return { tom: 'prepara', rotulo: 'sem leitura' };
+    }
+
+    /* ── Estado da tela ────────────────────────────────────────────────── */
+    const tela = { dados: null, semRede: false, aberto: null, lendo: false };
+    const linhas = new Map();   // id → nós da linha da tropa
+    const medidas = new Map();  // nome → nós do medidor
+    const vidas = new Map();    // id → o que a gaveta sabe das ações em voo
+    let ultimoFoco = null;
+
+    function vida(id) {
+      let v = vidas.get(id);
+      if (!v) {
+        v = { pendente: null, armado: null, recusa: null, falha: null, nota: null, entregue: null, relogios: {} };
+        vidas.set(id, v);
+      }
+      return v;
+    }
+    function depois(v, chave, ms, faz) {
+      clearTimeout(v.relogios[chave]);
+      v.relogios[chave] = setTimeout(() => { faz(); desenhaGaveta(); }, ms);
+    }
+    const agenteAberto = () => (tela.dados && tela.aberto
+      ? tela.dados.agentes.find((a) => a.id === tela.aberto) || null : null);
+
+    /* ── A tropa ───────────────────────────────────────────────────────── */
+    function criaLinha(a) {
+      const li = el('li');
+      const botao = el('button', 'ck-tl-linha'); botao.type = 'button';
+      const foto = el('span', 'ck-tl-foto'); foto.setAttribute('aria-hidden', 'true');
+      const retrato = el('span', 'retrato'); foto.append(retrato);
+      const meio = el('span', 'tl-meio');
+      const nome = el('span', 'ck-tl-nome trunca'), nomeTexto = el('span'), falado = el('span', 'sr-only');
+      nome.append(nomeTexto, falado);
+      const modelo = el('span', 'ck-tl-segunda trunca');
+      meio.append(nome, modelo);
+      const fim = el('span', 'tl-fim ck-tabular');
+      const numero = el('span', 'tl-numero'), valor = el('span', 'valor-ctx'); numero.append(valor);
+      const tempo = el('span', 'ck-tl-segunda'); tempo.title = 'tempo no ar';
+      fim.append(numero, tempo);
+      botao.append(foto, meio, fim); li.append(botao);
+      botao.addEventListener('click', () => abre(a.id, botao));
+      const nos = { li, botao, retrato, nomeTexto, falado, modelo, valor, tempo };
+      linhas.set(a.id, nos);
+      return nos;
+    }
+    function desenhaValorDoContexto(no, pct) {
+      if (pct === null) {
+        escreve(no, '—'); no.setAttribute('data-vazio', ''); no.style.color = '';
+        no.title = 'sem leitura de contexto'; return;
+      }
+      const inteiro = Math.round(pct);
+      escreve(no, inteiro + '%'); no.removeAttribute('data-vazio');
+      no.style.color = inteiro >= AVISO_PCT ? corDoContexto(inteiro) : '';
+    }
+    function desenhaTropa() {
+      const lista = $('tropa'), agentes = tela.dados.agentes;
+      if (agentes.length === 0) {
+        if (!lista.querySelector('.vazio')) {
+          const vazio = el('li', 'vazio');
+          vazio.append(el('p', '', 'Nenhum agente na frota'), el('p', '', 'O painel respondeu, mas não há agente configurado.'));
+          lista.replaceChildren(vazio); linhas.clear();
+        }
+        return;
+      }
+      const vivos = new Set(agentes.map((a) => a.id));
+      for (const [id, nos] of linhas) if (!vivos.has(id)) { nos.li.remove(); linhas.delete(id); }
+      lista.querySelector('.vazio')?.remove();
+      agentes.forEach((a, i) => {
+        const nos = linhas.get(a.id) || criaLinha(a);
+        if (lista.children[i] !== nos.li) lista.insertBefore(nos.li, lista.children[i] || null);
+        const { tom, rotulo } = estadoDaPilula(a);
+        marca(nos.botao, 'data-tom', tom);
+        marca(nos.botao, 'data-selecionado', String(tela.aberto === a.id));
+        escreve(nos.retrato, iniciais(a.nome));
+        escreve(nos.nomeTexto, a.nome);
+        escreve(nos.falado, ', ' + rotulo);
+        const modelo = nomeDoModelo(a.modelo);
+        escreve(nos.modelo, modelo || ''); nos.modelo.hidden = !modelo;
+        const pct = pctDoContexto(a);
+        desenhaValorDoContexto(nos.valor, pct);
+        if (pct !== null) nos.valor.title = 'contexto ' + Math.round(pct) + '% — teto da frota ' + TETO_PCT + '%';
+        escreve(nos.tempo, a.ligado === true ? tempoCurto(a.segundos) : '—');
+      });
+    }
+
+    /* ── A máquina ─────────────────────────────────────────────────────── */
+    function chaveDaMedida(m) {
+      const n = m.nome.toLowerCase();
+      return m.bateria ? 'bateria' : n.startsWith('cpu') ? 'cpu' : n.startsWith('ram') ? 'ram' : n.startsWith('disco') ? 'disco' : null;
+    }
+    function criaMedida(nome) {
+      const caixa = el('div', 'ck-vps-medida'); caixa.setAttribute('role', 'meter');
+      caixa.setAttribute('aria-valuemin', '0'); caixa.setAttribute('aria-valuemax', '100');
+      const cabeca = el('span', 'vps-cabeca'); cabeca.setAttribute('aria-hidden', 'true');
+      const rotulo = el('span', 'ck-vps-rotulo'), valor = el('span', 'ck-vps-valor ck-tabular');
+      cabeca.append(rotulo, valor);
+      const trilho = el('span', 'ck-vps-trilho'); trilho.setAttribute('aria-hidden', 'true');
+      const preenche = el('span', 'ck-vps-preenche'); trilho.append(preenche);
+      const detalhe = el('span', 'vps-detalhe ck-tabular trunca');
+      caixa.append(cabeca, trilho, detalhe);
+      const nos = { caixa, rotulo, valor, preenche, detalhe };
+      medidas.set(nome, nos);
+      return nos;
+    }
+    function desenhaMaquina() {
+      const grade = $('vps-grade'), campos = tela.dados.maquina || [];
+      const comBarra = campos.filter((m) => m.pct !== null && m.pct !== undefined);
+      const vivos = new Set(comBarra.map((m) => m.nome));
+      for (const [nome, nos] of medidas) if (!vivos.has(nome)) { nos.caixa.remove(); medidas.delete(nome); }
+      comBarra.forEach((m, i) => {
+        const nos = medidas.get(m.nome) || criaMedida(m.nome);
+        if (grade.children[i] !== nos.caixa) grade.insertBefore(nos.caixa, grade.children[i] || null);
+        const chave = chaveDaMedida(m), pct = Math.max(0, Math.min(100, m.pct));
+        const alerta = chave === 'bateria' ? pct < BATERIA_BAIXA : chave ? pct > TETO_DA_MAQUINA[chave] : false;
+        const rotulo = chave === 'bateria' ? 'Bateria' : m.nome;
+        // O absoluto (`5.1 / 15.5 GiB`, `carregando`) vai embaixo; repetir o próprio % não entra.
+        const semPct = String(m.valor).replace(/^\s*\d+(?:[.,]\d+)?%\s*(?:·\s*)?/, '');
+        escreve(nos.rotulo, rotulo);
+        escreve(nos.valor, Math.round(pct) + '%');
+        escreve(nos.detalhe, semPct || ' ');
+        nos.preenche.style.transform = 'scaleX(' + (pct / 100) + ')';
+        if (alerta) nos.caixa.setAttribute('data-alerta', 'true'); else nos.caixa.removeAttribute('data-alerta');
+        marca(nos.caixa, 'aria-label', rotulo);
+        marca(nos.caixa, 'aria-valuenow', String(Math.round(pct)));
+        marca(nos.caixa, 'aria-valuetext', String(m.valor));
+      });
+      const semBarra = campos.filter((m) => m.pct === null || m.pct === undefined);
+      const noAr = semBarra.find((m) => /^ligada/i.test(m.nome));
+      const resto = semBarra.filter((m) => m !== noAr)
+        .map((m) => (/^temperatura/i.test(m.nome) ? m.valor : m.nome + ' ' + m.valor));
+      escreve($('vps-topo'), resto.join(' · ') || ' ');
+      escreve($('vps-pe'), noAr ? 'no ar há ' + noAr.valor : ' ');
+      escreve($('vps-erro'), tela.dados.erro || '');
+    }
+
+    /* ── O cabeçalho ───────────────────────────────────────────────────── */
+    function desenhaResumo() {
+      const no = $('resumo');
+      if (!tela.dados) {
+        no.replaceChildren(tela.semRede ? avisoDoResumo('sem conexão com o painel — tentando de novo') : 'Lendo a máquina…');
+        return;
+      }
+      const agentes = tela.dados.agentes;
+      const trabalhando = agentes.filter((a) => a.ligado === true && a.status === 'busy').length;
+      const partes = [agentes.length + ' na frota · ' + trabalhando + ' trabalhando'];
+      const atrasado = tela.dados.atualizado && Date.now() / 1000 - tela.dados.atualizado > ATRASO_S;
+      if (tela.semRede) partes.push(' · ', avisoDoResumo('sem conexão — tentando de novo'));
+      else if (atrasado) partes.push(' · ', avisoDoResumo('leitura atrasada'));
+      no.replaceChildren(...partes);
+    }
+    function avisoDoResumo(texto) {
+      const s = el('span', '', texto); s.setAttribute('data-aviso', ''); return s;
+    }
+
+    /* ── A gaveta ──────────────────────────────────────────────────────── */
+    function abre(id, origem) {
+      ultimoFoco = origem || null;
+      tela.aberto = id;
+      const v = vida(id); v.armado = null;
+      desenhaGaveta();
+      $('veu').setAttribute('data-aberto', 'true');
+      const g = $('gaveta'); g.setAttribute('data-aberto', 'true'); g.inert = false;
+      g.focus({ preventScroll: true });
+      if (tela.dados) desenhaTropa();
+    }
+    function fecha() {
+      if (!tela.aberto) return;
+      const v = vida(tela.aberto); v.armado = null;
+      tela.aberto = null;
+      $('veu').setAttribute('data-aberto', 'false');
+      const g = $('gaveta'); g.setAttribute('data-aberto', 'false'); g.inert = true;
+      if (tela.dados) desenhaTropa();
+      if (ultimoFoco && ultimoFoco.isConnected) ultimoFoco.focus({ preventScroll: true });
+    }
+
+    function desenhaStatusline(a) {
+      const linha = $('gv-statusline'), partes = [];
+      const modelo = nomeDoModelo(a.modelo);
+      const ponto = () => { const p = el('span', 'sl-ponto', '·'); p.setAttribute('aria-hidden', 'true'); return p; };
+      if (modelo) partes.push(el('span', 'sl-modelo trunca', modelo));
+      const noAr = a.ligado === true && a.segundos !== null && a.segundos !== undefined;
+      if (noAr) {
+        if (modelo) partes.push(ponto());
+        const t = el('span', 'sl-tempo', relogio(a.segundos)); t.title = 'tempo no ar'; partes.push(t);
+      }
+      if (modelo || noAr) partes.push(ponto());
+      const pct = pctDoContexto(a);
+      const contexto = el('span', 'sl-contexto');
+      if (pct !== null) {
+        const barra = el('span', 'barra-ctx'), cheio = el('span'); barra.setAttribute('aria-hidden', 'true');
+        cheio.style.width = (fracaoDoMedidor(pct) * 100) + '%'; cheio.style.background = corDoContexto(pct);
+        barra.append(cheio);
+        const valor = el('span', 'valor-ctx'); desenhaValorDoContexto(valor, pct);
+        contexto.title = 'contexto ' + Math.round(pct) + '% — ' + a.tokens.toLocaleString('pt-BR') + ' tokens · teto da frota ' + TETO_PCT + '%';
+        contexto.append(barra, valor);
+      } else {
+        const vazio = el('span', 'valor-ctx'); desenhaValorDoContexto(vazio, null);
+        vazio.style.marginLeft = 'auto';
+        contexto.append(vazio, el('span', 'sr-only', 'sem contexto'));
+      }
+      if (a.ligado === false) { const off = el('span', 'etiqueta-off', 'off'); off.title = 'agente desligado'; contexto.append(off); }
+      partes.push(contexto);
+      linha.replaceChildren(...partes);
+    }
+
+    function desenhaGaveta() {
+      const a = agenteAberto();
+      if (!a) { if (tela.aberto && tela.dados) fecha(); return; }
+      const v = vida(a.id);
+      const { tom, rotulo } = estadoDaPilula(a);
+      const dePe = a.ligado === true, fora = a.ligado === false, semLeitura = !dePe && !fora;
+      const primeiroNome = a.nome.split(' ')[0] || a.nome;
+
+      // Cabeçalho: pílula, interruptor, ×.
+      marca($('gv-pilula'), 'data-tom', tom);
+      escreve($('gv-foto'), iniciais(a.nome));
+      escreve($('gv-nome'), primeiroNome);
+      const lugar = $('gv-estado-lugar');
+      if (!lugar.firstChild || lugar.firstChild.textContent !== rotulo) {
+        lugar.replaceChildren(el('span', 'pilula-estado', rotulo)); // nó novo: a palavra sobe no lugar
+      }
+      $('gv-selo').hidden = !(semLeitura || a.erro || v.falha || v.recusa);
+      marca($('gaveta'), 'aria-label', 'detalhes de ' + a.nome);
+
+      const chave = $('gv-interruptor'), trilho = $('gv-trilho');
+      const armado = v.armado === 'desligar';
+      let palavra, ligadoVisual = dePe, descricao;
+      if (semLeitura) { palavra = '…'; descricao = 'Lendo o estado do agente'; ligadoVisual = false; }
+      else if (v.pendente === 'ligar') { palavra = 'Ligando…'; descricao = 'Ligando ' + a.nome; }
+      else if (v.pendente === 'desligar') { palavra = 'Desligando…'; descricao = 'Desligando ' + a.nome; }
+      else if (armado) { palavra = 'Desligar?'; descricao = 'Toque de novo para desligar ' + a.nome; }
+      else if (dePe) { palavra = 'Ativo'; descricao = a.nome + ' ligado — toque para desligar'; }
+      else { palavra = 'Desligado'; descricao = 'Ligar ' + a.nome; }
+      escreve($('gv-interruptor-rotulo'), palavra);
+      marca(chave, 'aria-checked', String(ligadoVisual));
+      marca(chave, 'aria-label', descricao);
+      marca(chave, 'aria-busy', String(v.pendente === 'ligar' || v.pendente === 'desligar'));
+      marca(chave, 'data-armado', String(armado));
+      marca(trilho, 'data-ligado', String(ligadoVisual));
+      marca(trilho, 'data-armado', String(armado));
+      chave.disabled = semLeitura;
+
+      desenhaStatusline(a);
+
+      // Cartão Sessão.
+      $('gv-indisponivel').hidden = !semLeitura;
+      $('gv-fora').hidden = !fora;
+      $('gv-fileira').hidden = !dePe;
+      $('gv-comandos').hidden = !dePe;
+
+      const ligar = $('gv-ligar'), ligando = v.pendente === 'ligar';
+      escreve(ligar, ligando ? 'Ligando…' : 'Ligar');
+      if (ligando) ligar.setAttribute('data-ligando', ''); else ligar.removeAttribute('data-ligando');
+      marca(ligar, 'aria-busy', String(ligando));
+
+      const ocupadoPorOutra = (acao) => v.pendente !== null && v.pendente !== acao;
+      const nova = $('gv-nova');
+      const recusouNova = v.recusa && v.recusa.acao === 'nova';
+      const faseNova = v.pendente === 'nova' ? 'enviando' : recusouNova ? 'recusa' : v.armado === 'nova' ? 'confirmando'
+        : v.entregue === 'nova' ? 'entregue' : 'ocioso';
+      escreve($('gv-nova-rotulo'), { enviando: 'Abrindo…', recusa: 'Interromper e abrir', confirmando: 'Confirmar?',
+        entregue: 'Aberta', ocioso: 'Nova conversa' }[faseNova]);
+      marca(nova, 'data-fase', faseNova);
+      marca(nova, 'aria-busy', String(faseNova === 'enviando'));
+      marca(nova, 'aria-disabled', String(faseNova === 'enviando' || ocupadoPorOutra('nova')));
+      marca(nova, 'aria-label', recusouNova ? 'Interromper e abrir uma conversa nova' : 'Nova conversa');
+
+      const compact = $('gv-compact');
+      const recusouCompact = v.recusa && v.recusa.acao === 'compactar';
+      const faseCompact = v.pendente === 'compactar' ? 'enviando' : recusouCompact ? 'confirmando'
+        : v.entregue === 'compactar' ? 'entregue' : 'ocioso';
+      escreve(compact, v.pendente === 'compactar' ? 'Enviando…' : recusouCompact ? 'Forçar /compact'
+        : v.entregue === 'compactar' ? 'Enviado' : '/compact');
+      marca(compact, 'data-fase', faseCompact);
+      marca(compact, 'aria-busy', String(faseCompact === 'enviando'));
+      marca(compact, 'aria-disabled', String(faseCompact === 'enviando' || ocupadoPorOutra('compactar')));
+
+      // Avisos: a confirmação armada, a recusa ou falha, e a resposta do servidor.
+      const aviso = $('gv-aviso');
+      const frase = v.armado === 'desligar' ? 'Toque de novo no interruptor para desligar ' + primeiroNome + '. A conversa fica guardada.'
+        : v.armado === 'nova' ? 'Abre uma conversa nova (/clear): o contexto desta sai da tela.'
+        : v.nota || '';
+      escreve(aviso, frase); aviso.hidden = !frase;
+      marca(aviso, 'data-tom', v.armado ? 'atencao' : 'ok');
+      const queixa = v.recusa ? v.recusa.texto : v.falha || a.erro || '';
+      escreve($('gv-falha-texto'), queixa);
+      $('gv-falha').hidden = !queixa;
+      $('gv-dispensa').hidden = !(v.recusa || v.falha);
+    }
+
+    /* ── As ações ──────────────────────────────────────────────────────── */
+    function arma(id, qual) {
+      const v = vida(id);
+      v.armado = qual; v.nota = null;
+      depois(v, 'armado', ARMADO_MS, () => { v.armado = null; });
+      desenhaGaveta();
+    }
+    async function age(id, acao, forcar) {
+      const v = vida(id);
+      if (v.pendente) return;
+      clearTimeout(v.relogios.armado);
+      v.pendente = acao; v.armado = null; v.falha = null; v.nota = null; v.entregue = null;
+      if (!forcar) v.recusa = null;
+      desenhaGaveta();
+      try {
+        const r = await fetch('/api/acao', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ agente: id, acao, forcar: forcar ? '1' : '0' }),
+          signal: AbortSignal.timeout(40000),
+        });
+        let mensagem = '';
+        try { mensagem = (await r.json()).mensagem || ''; } catch (_) { /* corpo sem JSON */ }
+        if (r.ok) {
+          v.recusa = null; v.entregue = acao; v.nota = mensagem || null;
+          depois(v, 'entregue', 4000, () => { v.entregue = null; });
+          depois(v, 'nota', 8000, () => { v.nota = null; });
+        } else if (r.status === 409 && (acao === 'compactar' || acao === 'nova') && /forcar=1/.test(mensagem)) {
+          // A recusa do servidor, na palavra dele; o botão da ação passa a oferecer o forçar.
+          v.recusa = { acao, texto: mensagem.replace(/ou envie forcar=1/, 'ou force pelo botão') };
+        } else {
+          v.recusa = null;
+          v.falha = mensagem || 'O painel recusou a ação (' + r.status + ').';
+        }
+      } catch (_) {
+        v.falha = 'Sem resposta do painel. Confira o estado antes de tentar de novo.';
+      } finally {
+        v.pendente = null;
+        desenhaGaveta();
+        le();
+      }
+    }
+
+    $('gv-interruptor').addEventListener('click', () => {
+      const a = agenteAberto(); if (!a) return;
+      const v = vida(a.id); if (v.pendente) return;
+      if (a.ligado === true) { if (v.armado === 'desligar') age(a.id, 'desligar', false); else arma(a.id, 'desligar'); }
+      else if (a.ligado === false) age(a.id, 'ligar', false);
+    });
+    $('gv-ligar').addEventListener('click', () => {
+      const a = agenteAberto(); if (a && a.ligado === false) age(a.id, 'ligar', false);
+    });
+    $('gv-nova').addEventListener('click', () => {
+      const a = agenteAberto(); if (!a) return;
+      const v = vida(a.id); if (v.pendente) return;
+      if (v.recusa && v.recusa.acao === 'nova') age(a.id, 'nova', true);
+      else if (v.armado === 'nova') age(a.id, 'nova', false);
+      else arma(a.id, 'nova');
+    });
+    $('gv-compact').addEventListener('click', () => {
+      const a = agenteAberto(); if (!a) return;
+      const v = vida(a.id); if (v.pendente) return;
+      age(a.id, 'compactar', Boolean(v.recusa && v.recusa.acao === 'compactar'));
+    });
+    $('gv-dispensa').addEventListener('click', () => {
+      const a = agenteAberto(); if (!a) return;
+      const v = vida(a.id); v.recusa = null; v.falha = null; desenhaGaveta();
+    });
+    $('gv-tentar').addEventListener('click', () => le());
+    $('gv-fecha').addEventListener('click', fecha);
+    $('veu').addEventListener('click', fecha);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') fecha(); });
+
+    /* ── A ronda ───────────────────────────────────────────────────────── */
+    async function le() {
+      if (tela.lendo) return;
+      tela.lendo = true;
+      try {
+        const r = await fetch('/api/estado', { cache: 'no-store', signal: AbortSignal.timeout(10000) });
+        if (!r.ok) throw new Error('estado ' + r.status);
+        tela.dados = await r.json();
+        tela.semRede = false;
+        desenhaTropa(); desenhaMaquina(); desenhaGaveta();
+      } catch (_) {
+        tela.semRede = true; // a última leitura fica na tela; quem avisa é o cabeçalho
+      } finally {
+        tela.lendo = false;
+        desenhaResumo();
+      }
+    }
+    le();
+    setInterval(() => { if (!document.hidden) le(); }, INTERVALO_MS);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) le(); });
+  </script>
+</body>
+</html>

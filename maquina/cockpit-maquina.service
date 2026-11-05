@@ -1,0 +1,16 @@
+[Unit]
+Description=Painel da máquina na rede Tailscale
+
+[Service]
+Type=simple
+WorkingDirectory=%h/.local/share/cockpit-maquina
+ExecStart=/usr/bin/python3 %h/.local/share/cockpit-maquina/painel.py
+Environment=PYTHONUNBUFFERED=1
+Restart=always
+RestartSec=5
+# Mata só o processo do painel; os servidores tmux têm scopes próprios.
+KillMode=process
+UMask=0077
+
+[Install]
+WantedBy=default.target
