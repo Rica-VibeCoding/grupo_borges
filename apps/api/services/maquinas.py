@@ -57,6 +57,7 @@ class ItemAberto(RespostaPainel):
     rotulo: str
     dono: str | None
     memoria_mb: float
+    cpu_pct: float | None
     parado_s: int | None
     abas: list[str]
     pede_confirmacao: bool
