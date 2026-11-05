@@ -3,9 +3,8 @@
  * De agente · Protegido, cada um do que mais come ao que menos (`agrupa`).
  * Cartões no material do cartão da VPS; dentro, linhas na anatomia da tropa.
  *
- * O Protegido nasce recolhido atrás de uma pílula: é o que a tela NÃO deixa
- * fechar (agentes, sshd, tailscale), e só interessa quando a soma dele explica
- * a RAM.
+ * O Protegido aparece aberto, com cadeado e sem botão: é o que a tela NÃO
+ * deixa fechar (agentes, sshd, tailscale).
  *
  * Antes da primeira leitura, a altura de uma lista curta fica reservada.
  *
@@ -13,13 +12,13 @@
  */
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 
 import { IconeCadeado } from '@/components/shell/icones';
 import { formataTamanho } from '@/components/shell/recursos-da-vps';
 import { agrupa, type Abertos, type GrupoDeItens, type ItemAberto } from '@/lib/maquinas';
 
-import { LinhaAberta, PilulaDaMaquina } from './linha-aberta';
+import { LinhaAberta } from './linha-aberta';
 import type { Liberados, LeituraDosAbertos } from './painel-da-maquina';
 
 const SECUNDARIO_XS = { fontSize: 'var(--ck-text-xs)', color: 'var(--ck-text-secondary)' } as const;
@@ -93,11 +92,9 @@ function Grupos({
 
 function CartaoDoGrupo({
   grupo,
-  direita,
   children,
 }: {
   grupo: GrupoDeItens;
-  direita?: ReactNode;
   children?: ReactNode;
 }) {
   const n = grupo.itens.length;
@@ -114,49 +111,31 @@ function CartaoDoGrupo({
         </span>
       </div>
       {children}
-      {direita}
     </section>
   );
 }
 
 function GrupoProtegido({ grupo }: { grupo: GrupoDeItens }) {
-  const [aberto, setAberto] = useState(false);
-  const n = grupo.itens.length;
   return (
-    <CartaoDoGrupo
-      grupo={grupo}
-      direita={
-        <div className="flex" style={{ paddingBottom: 'var(--ck-space-1)' }}>
-          <PilulaDaMaquina
-            aria-expanded={aberto}
-            aria-controls="maquina-protegidos"
-            aoTocar={() => setAberto((a) => !a)}
+    <CartaoDoGrupo grupo={grupo}>
+      <ul id="maquina-protegidos" className="flex flex-col" style={{ padding: 'var(--ck-space-1) 0' }}>
+        {grupo.itens.map((item) => (
+          <li
+            key={item.id}
+            className="flex items-center"
+            style={{ gap: 'var(--ck-space-2)', minHeight: '32px', fontSize: 'var(--ck-text-sm)' }}
           >
-            {aberto ? 'Esconder protegidos' : `Mostrar ${n} ${n === 1 ? 'protegido' : 'protegidos'}`}
-          </PilulaDaMaquina>
-        </div>
-      }
-    >
-      {aberto ? (
-        <ul id="maquina-protegidos" className="flex flex-col" style={{ padding: 'var(--ck-space-1) 0' }}>
-          {grupo.itens.map((item) => (
-            <li
-              key={item.id}
-              className="flex items-center"
-              style={{ gap: 'var(--ck-space-2)', minHeight: '32px', fontSize: 'var(--ck-text-sm)' }}
-            >
-              <IconeCadeado tamanho={14} className="shrink-0" style={{ color: 'var(--ck-text-secondary)' }} />
-              <span className="sr-only">Protegido:</span>
-              <span className="min-w-0 truncate" style={{ color: 'var(--ck-text-primary)' }}>
-                {item.rotulo}
-              </span>
-              <span className="ck-tabular ml-auto shrink-0" style={{ color: 'var(--ck-text-secondary)' }}>
-                {formataTamanho(item.memoria_mb)}
-              </span>
-            </li>
-          ))}
-        </ul>
-      ) : null}
+            <IconeCadeado tamanho={14} className="shrink-0" style={{ color: 'var(--ck-text-secondary)' }} />
+            <span className="sr-only">Protegido:</span>
+            <span className="min-w-0 truncate" style={{ color: 'var(--ck-text-primary)' }}>
+              {item.rotulo}
+            </span>
+            <span className="ck-tabular ml-auto shrink-0" style={{ color: 'var(--ck-text-secondary)' }}>
+              {formataTamanho(item.memoria_mb)}
+            </span>
+          </li>
+        ))}
+      </ul>
     </CartaoDoGrupo>
   );
 }

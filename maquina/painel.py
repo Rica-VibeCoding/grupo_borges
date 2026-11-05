@@ -236,6 +236,10 @@ class H(BaseHTTPRequestHandler):
             return self.responder(403, {"mensagem": "Origem recusada. Abra o painel pelo IP Tailscale."})
         if self.path != "/api/acao":
             return self.responder(404, {"mensagem": "Ação não encontrada."})
+        try:
+            MAQUINAS.autorizar(self.headers.get_all("Authorization", []))
+        except Falha as exc:
+            return self.responder(exc.status, {"mensagem": exc.mensagem})
         if self.headers.get_content_type() != "application/x-www-form-urlencoded":
             return self.responder(415, {"mensagem": "Formato de pedido inválido."})
         try:

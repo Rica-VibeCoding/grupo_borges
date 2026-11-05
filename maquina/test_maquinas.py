@@ -364,6 +364,66 @@ def test_amostras_60s_limiar_parados_30min_sem_pss_cdp(linux, monkeypatch):
     assert linux.m.resumo(0, None)["parados_30min"] == 0
 
 
+@pytest.mark.parametrize("intervalo,mono", [(10, 2410), (300, 2700), (10, 5), (300, 5)])
+def test_observacoes_preservam_40min_e_observado_desde_apos_reinicio(linux, intervalo, mono):
+    linux.processo(10, cpu=30_000_000_000)
+    linux.scope("app.slice/a.scope", 10)
+    item_id = linux.m.scopes()[0].id
+    linux.m.amostrar()
+    for segundo in range(60, 2401, 60):
+        linux.agora[:] = [10000 + segundo, segundo]
+        (linux.m.proc / "10/schedstat").write_text(f"{30_000_000_000 + segundo * 1000} 0 0")
+        linux.m.amostrar()
+    assert linux.m.parado(item_id) == 2400
+    arquivo = linux.m.home / ".cache/cockpit-maquina/observacoes.json"
+    dados = json.loads(arquivo.read_text())
+    assert arquivo.stat().st_mode & 0o777 == 0o600
+    assert dados["observado_desde"] == 10000
+    assert dados["observacoes"][item_id] == {
+        "cpus": {"10:100": 30_002_400_000}, "amostrado": 12400,
+        "desde": 10000, "confirmado": True}
+    assert list(arquivo.parent.iterdir()) == [arquivo]
+
+    # Inclui reinício do serviço (<60s) e monotônico reiniciado após reboot.
+    linux.agora[:] = [12400 + intervalo, mono]
+    novo = Maquinas(home=linux.m.home, proc=linux.m.proc, cgroup=linux.m.cgroup,
+                    runtime=linux.m.runtime,
+                    relogio=lambda: linux.agora[0], monotono=lambda: linux.agora[1])
+    assert novo.observado_desde == 10000
+    assert novo.parado(item_id) == 2400
+    assert novo._ultima_amostra is None
+    cpu = 30_002_400_000 + intervalo * 5_000_000
+    (linux.m.proc / "10/schedstat").write_text(f"{cpu} 0 0")
+    novo.amostrar()
+    assert novo.parado(item_id) == 2400 + intervalo
+    assert novo.abertos()["observado_desde"] == 10000
+    assert json.loads(arquivo.read_text())["observacoes"][item_id]["amostrado"] == 12400 + intervalo
+
+
+@pytest.mark.parametrize("conteudo", [
+    b"{corrompido", b"\xff", b"[]", b"{}",
+    b'{"observado_desde": 9000, "observacoes": {"scope": {"cpus": []}}}',
+    b'{"observado_desde": 9000, "observacoes": {"scope": {"cpus": {}, '
+    b'"amostrado": 10000, "desde": NaN, "confirmado": true}}}',
+])
+def test_observacoes_corrompidas_comecam_do_zero(linux, conteudo):
+    linux.processo(10)
+    linux.scope("app.slice/a.scope", 10)
+    item_id = linux.m.scopes()[0].id
+    arquivo = linux.m.home / ".cache/cockpit-maquina/observacoes.json"
+    arquivo.parent.mkdir(parents=True)
+    arquivo.write_bytes(conteudo)
+    linux.agora[:] = [12000, 2000]
+    novo = Maquinas(home=linux.m.home, proc=linux.m.proc, cgroup=linux.m.cgroup,
+                    relogio=lambda: linux.agora[0], monotono=lambda: linux.agora[1])
+    assert novo.observado_desde == 12000
+    assert novo._observacoes == {} and novo._ultima_amostra is None
+    assert novo.parado(item_id) is None
+    novo.amostrar()
+    assert novo.parado(item_id) is None
+    assert json.loads(arquivo.read_text())["observado_desde"] == 12000
+
+
 @pytest.mark.parametrize("delta,dormindo", [(599999999, True), (600000000, False), (600000001, False)])
 def test_limiar_exato_e_soma_cpu_do_scope(linux, delta, dormindo):
     linux.processo(10, cpu=0)
@@ -397,7 +457,7 @@ def test_amostra_some_reinicio_e_novo_pid_nao_produzem_idle_falso(linux):
     assert linux.m.parado(item_id) is None and not linux.m._observacoes
     novo = Maquinas(home=linux.m.home, proc=linux.m.proc, cgroup=linux.m.cgroup,
                     relogio=lambda: 20000)
-    assert novo.observado_desde == 20000 and novo.parado(item_id) is None
+    assert novo.observado_desde == 10000 and novo.parado(item_id) is None
 
 
 def test_tela_arquivo_e_servico(linux):
@@ -599,6 +659,8 @@ def http_painel(linux, tmp_path, monkeypatch):
         finally:
             conexao.close()
 
+    pedir.painel = painel
+    pedir.autoridade = servidor.autoridade
     yield pedir
     servidor.shutdown()
     servidor.server_close()
@@ -629,6 +691,60 @@ def test_http_protegido_403_e_rotas_antigas(http_painel, linux):
     assert http_painel("GET", "/api/estado", chave=False)[0] == 200
     assert http_painel("POST", "/api/acao", "agente=x&acao=desligar", chave=False)[0] == 403
     assert http_painel("GET", "/nao-existe", chave=False)[0] == 404
+
+
+@pytest.mark.parametrize("acao", ["ligar", "desligar", "compactar", "nova"])
+@pytest.mark.parametrize("autenticacao,status", [
+    ("ausente", 401), ("errada", 401), ("sem_arquivo", 503), ("certa", 200),
+])
+def test_http_acao_exige_chave_sem_executar_recusadas(http_painel, linux, monkeypatch,
+                                                     acao, autenticacao, status):
+    painel = http_painel.painel
+    agente = {"id": "falso", "nome": "Agente falso"}
+    monkeypatch.setattr(painel, "AGENTES", {"falso": agente})
+    chamadas = []
+
+    def rodar(cmd, **kwargs):
+        chamadas.append((cmd, kwargs))
+        return subprocess.CompletedProcess(cmd, 0, "Ação simulada.", "")
+
+    def enviar(*args):
+        chamadas.append(args)
+        return "Ação simulada."
+
+    monkeypatch.setattr(painel, "rodar", rodar)
+    monkeypatch.setattr(painel, "enviar", enviar)
+    headers = {"Origin": "http://" + http_painel.autoridade,
+               "Content-Type": "application/x-www-form-urlencoded"}
+    if autenticacao == "errada":
+        headers["Authorization"] = "Bearer errada"
+    elif autenticacao == "sem_arquivo":
+        linux.m.chave.unlink()
+    resposta = http_painel("POST", "/api/acao", f"agente=falso&acao={acao}",
+                           headers=headers, chave=autenticacao != "ausente")
+    assert resposta == (status, {"mensagem": {
+        200: "Ação simulada.", 401: "Chave inválida ou ausente.",
+        503: "Chave do painel indisponível (exige arquivo 0600).",
+    }[status]})
+    if status != 200:
+        assert chamadas == []
+    elif acao in {"ligar", "desligar"}:
+        assert chamadas == [([str(painel.PASTA / "agente.sh"), acao, "falso"], {"timeout": 35})]
+    else:
+        assert chamadas == [(agente, acao, False)]
+
+
+@pytest.mark.parametrize("autenticacao,status", [("ausente", 401), ("errada", 401), ("sem_arquivo", 503)])
+def test_http_acao_autentica_antes_de_ler_corpo(http_painel, linux, autenticacao, status):
+    headers = {"Origin": "http://" + http_painel.autoridade,
+               "Content-Type": "application/x-www-form-urlencoded", "Content-Length": "1024"}
+    if autenticacao == "errada":
+        headers["Authorization"] = "Bearer errada"
+    elif autenticacao == "sem_arquivo":
+        linux.m.chave.unlink()
+    # Corpo não enviado: ler antes de autenticar causaria timeout, em vez da recusa imediata.
+    assert http_painel("POST", "/api/acao", headers=headers,
+                       chave=autenticacao != "ausente")[0] == status
 
 
 @pytest.mark.parametrize("corpo", ['{}', '[]', '{"id":1}', '{"id":"../x"}',

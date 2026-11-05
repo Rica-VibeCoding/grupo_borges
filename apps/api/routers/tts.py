@@ -72,7 +72,7 @@ _WAVENET_BY_GENDER = {"female": "pt-BR-Wavenet-A", "male": "pt-BR-Wavenet-B"}
 # lista vai pro edge, e ir pro edge é trocar a voz do agente: quando o Daniel
 # desceu pro WaveNet, o portão antigo (só `pt-BR-Chirp3-HD`) mandava a fala dele
 # inteira pro edge-tts, calado. Mexer numa voz da frota é mexer aqui junto.
-_GOOGLE_VOICE_PREFIXES = ("pt-BR-Chirp3-HD", "pt-BR-Wavenet")
+_GOOGLE_VOICE_PREFIXES = ("pt-BR-Chirp3-HD", "pt-BR-Wavenet", "pt-BR-Standard")
 
 
 def _is_google_voice(voice: str) -> bool:
