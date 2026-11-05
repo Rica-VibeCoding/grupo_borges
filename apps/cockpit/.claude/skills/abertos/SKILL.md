@@ -23,7 +23,7 @@ Nenhum nome de máquina fixo em tela: vem da API (`COCKPIT_MAQUINA_NOME` ou o ho
 5. **O `agentes.json` do painel chama `fluytcom` de "Fluyt" e `note` de "Omarchy"** — esses são os nomes que aparecem no "Cai junto" e nos rótulos "Agente X", diferentes do card da tropa.
 6. **Teste: nunca desligar nem ligar máquina de verdade sem o Pavan.** Desligar se testa com o executor falso (`services/energia.py`); em produção, só abrir a confirmação e Cancelar. Fechar, só no "Chrome do Teste" (perfil `ze-chrome-teste`), nunca no do Rica. Os agentes do Arsenal estão vivos: nada de `claude`, `bun` ou tmux.
 7. **Fechar recebe o id listado, nunca PID**, e recusa Protegido. A classificação é allowlist: protegido por padrão; só `ze-chrome*` (agente) ou app.slice com janela (seus) fecham.
-8. **No painel do Arsenal, tudo que muda estado exige a chave** (`/api/acao` ligar/desligar/compactar/nova e o Fechar): sem chave 401, sem arquivo 503; leitura (`/`, `/api/estado`, resumo, abertos) segue aberta na Tailscale. O `painel.html` pede a chave uma vez e guarda no `localStorage` do navegador. Prova sem efeito: `ligar` num agente já ligado só faz `tmux has-session` e responde "já no ar".
+8. **No painel do Arsenal, tudo que muda estado exige a chave** (`/api/acao` ligar/desligar/compactar/nova e o Fechar): sem chave 401, sem arquivo 503; só `/` e `/api/estado` seguem abertos na Tailscale (os `/api/maquina/*`, inclusive resumo e abertos, sempre exigiram a chave). O `painel.html` pede a chave uma vez e guarda no `localStorage` do navegador. Prova sem efeito: `ligar` num agente já ligado só faz `tmux has-session` e responde "já no ar".
 
 ## Publicar
 
