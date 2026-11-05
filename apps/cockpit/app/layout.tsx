@@ -25,7 +25,7 @@ export const metadata: Metadata = {
   // com página mínima, PNG de outro site e ícone em host público; só o
   // embutido apareceu.
   icons: {
-    icon: [{ url: '/icon-192.png', sizes: '192x192', type: 'image/png' }],
+    icon: [{ url: '/icon-192.png?v=2', sizes: '192x192', type: 'image/png' }],
     apple: [{ url: APPLE_TOUCH_ICON, sizes: '180x180', type: 'image/png' }],
   },
   appleWebApp: {
