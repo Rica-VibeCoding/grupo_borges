@@ -1,5 +1,7 @@
 # Tela "Máquinas" — plano v2 (05/11/2026)
 
+> **Nome (Rica, 05/11 11:58):** a máquina é a **Oficina**, servidor caseiro ligado 24 h (vai ganhar +16 GB). Na API, id `oficina`, env `MAQUINA_OFICINA_*`; "PC2" abaixo é o nome antigo.
+>
 > **v2 (revisão do Pavan, aprovada com 4 ajustes):** limiar do "parado" fixado · uma só leitura do `resumo` no cliente · Protegido ampliado · R1 vira pendência pós-entrega.
 
 Dono: Daniel 2 (líder) · revisão: Pavan (two-eyes) · ordem do Rica, 05/11 11:15.

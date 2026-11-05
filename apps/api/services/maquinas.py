@@ -13,11 +13,11 @@ import httpx
 from pydantic import BaseModel, ConfigDict
 
 MAQUINAS = {
-    "pc2": {
-        "nome": "PC2",
-        "url_env": "MAQUINA_PC2_URL",
+    "oficina": {
+        "nome": "Oficina",
+        "url_env": "MAQUINA_OFICINA_URL",
         "url_padrao": "http://100.91.105.22:8787",
-        "chave_env": "MAQUINA_PC2_CHAVE",
+        "chave_env": "MAQUINA_OFICINA_CHAVE",
     },
 }
 CACHE_SEGUNDOS = 30
