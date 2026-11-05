@@ -364,6 +364,66 @@ def test_amostras_60s_limiar_parados_30min_sem_pss_cdp(linux, monkeypatch):
     assert linux.m.resumo(0, None)["parados_30min"] == 0
 
 
+@pytest.mark.parametrize("intervalo,mono", [(10, 2410), (300, 2700), (10, 5), (300, 5)])
+def test_observacoes_preservam_40min_e_observado_desde_apos_reinicio(linux, intervalo, mono):
+    linux.processo(10, cpu=30_000_000_000)
+    linux.scope("app.slice/a.scope", 10)
+    item_id = linux.m.scopes()[0].id
+    linux.m.amostrar()
+    for segundo in range(60, 2401, 60):
+        linux.agora[:] = [10000 + segundo, segundo]
+        (linux.m.proc / "10/schedstat").write_text(f"{30_000_000_000 + segundo * 1000} 0 0")
+        linux.m.amostrar()
+    assert linux.m.parado(item_id) == 2400
+    arquivo = linux.m.home / ".cache/cockpit-maquina/observacoes.json"
+    dados = json.loads(arquivo.read_text())
+    assert arquivo.stat().st_mode & 0o777 == 0o600
+    assert dados["observado_desde"] == 10000
+    assert dados["observacoes"][item_id] == {
+        "cpus": {"10:100": 30_002_400_000}, "amostrado": 12400,
+        "desde": 10000, "confirmado": True}
+    assert list(arquivo.parent.iterdir()) == [arquivo]
+
+    # Inclui reinício do serviço (<60s) e monotônico reiniciado após reboot.
+    linux.agora[:] = [12400 + intervalo, mono]
+    novo = Maquinas(home=linux.m.home, proc=linux.m.proc, cgroup=linux.m.cgroup,
+                    runtime=linux.m.runtime,
+                    relogio=lambda: linux.agora[0], monotono=lambda: linux.agora[1])
+    assert novo.observado_desde == 10000
+    assert novo.parado(item_id) == 2400
+    assert novo._ultima_amostra is None
+    cpu = 30_002_400_000 + intervalo * 5_000_000
+    (linux.m.proc / "10/schedstat").write_text(f"{cpu} 0 0")
+    novo.amostrar()
+    assert novo.parado(item_id) == 2400 + intervalo
+    assert novo.abertos()["observado_desde"] == 10000
+    assert json.loads(arquivo.read_text())["observacoes"][item_id]["amostrado"] == 12400 + intervalo
+
+
+@pytest.mark.parametrize("conteudo", [
+    b"{corrompido", b"\xff", b"[]", b"{}",
+    b'{"observado_desde": 9000, "observacoes": {"scope": {"cpus": []}}}',
+    b'{"observado_desde": 9000, "observacoes": {"scope": {"cpus": {}, '
+    b'"amostrado": 10000, "desde": NaN, "confirmado": true}}}',
+])
+def test_observacoes_corrompidas_comecam_do_zero(linux, conteudo):
+    linux.processo(10)
+    linux.scope("app.slice/a.scope", 10)
+    item_id = linux.m.scopes()[0].id
+    arquivo = linux.m.home / ".cache/cockpit-maquina/observacoes.json"
+    arquivo.parent.mkdir(parents=True)
+    arquivo.write_bytes(conteudo)
+    linux.agora[:] = [12000, 2000]
+    novo = Maquinas(home=linux.m.home, proc=linux.m.proc, cgroup=linux.m.cgroup,
+                    relogio=lambda: linux.agora[0], monotono=lambda: linux.agora[1])
+    assert novo.observado_desde == 12000
+    assert novo._observacoes == {} and novo._ultima_amostra is None
+    assert novo.parado(item_id) is None
+    novo.amostrar()
+    assert novo.parado(item_id) is None
+    assert json.loads(arquivo.read_text())["observado_desde"] == 12000
+
+
 @pytest.mark.parametrize("delta,dormindo", [(599999999, True), (600000000, False), (600000001, False)])
 def test_limiar_exato_e_soma_cpu_do_scope(linux, delta, dormindo):
     linux.processo(10, cpu=0)
@@ -397,7 +457,7 @@ def test_amostra_some_reinicio_e_novo_pid_nao_produzem_idle_falso(linux):
     assert linux.m.parado(item_id) is None and not linux.m._observacoes
     novo = Maquinas(home=linux.m.home, proc=linux.m.proc, cgroup=linux.m.cgroup,
                     relogio=lambda: 20000)
-    assert novo.observado_desde == 20000 and novo.parado(item_id) is None
+    assert novo.observado_desde == 10000 and novo.parado(item_id) is None
 
 
 def test_tela_arquivo_e_servico(linux):

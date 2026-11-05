@@ -16,6 +16,7 @@ import signal
 import socket
 import stat
 import subprocess
+import tempfile
 import threading
 import time
 from urllib.parse import urlsplit
@@ -151,6 +152,66 @@ class Maquinas:
         self._observacoes = {}
         self._trava = threading.Lock()
         self._fechamento = threading.Lock()
+        self._arquivo_observacoes = self.home / ".cache/cockpit-maquina/observacoes.json"
+        self._restaurar_observacoes()
+
+    def _restaurar_observacoes(self):
+        try:
+            dados = json.loads(self._arquivo_observacoes.read_text(encoding="utf-8"))
+            if not isinstance(dados, dict) or type(dados["observado_desde"]) is not int:
+                raise ValueError("observações inválidas")
+            if not isinstance(dados["observacoes"], dict):
+                raise ValueError("observações inválidas")
+            parede, mono = self.relogio(), self.monotono()
+
+            def tempo(valor):
+                if type(valor) not in (int, float) or not math.isfinite(valor):
+                    raise ValueError("timestamp inválido")
+                return mono - (parede - valor)
+
+            observacoes = {}
+            for item_id, obs in dados["observacoes"].items():
+                if (not isinstance(obs, dict) or not isinstance(obs["cpus"], dict)
+                        or type(obs["confirmado"]) is not bool):
+                    raise ValueError("observação inválida")
+                cpus = {}
+                for chave, cpu in obs["cpus"].items():
+                    pid, inicio = map(int, chave.split(":"))
+                    if type(cpu) is not int or cpu < 0:
+                        raise ValueError("CPU inválida")
+                    cpus[pid, inicio] = cpu
+                observacoes[item_id] = Observacao(
+                    cpus, tempo(obs["amostrado"]), tempo(obs["desde"]), obs["confirmado"])
+        except (OSError, ValueError, TypeError, KeyError, OverflowError):
+            return
+        self._observacoes = observacoes
+        self.observado_desde = dados["observado_desde"]
+
+    def _salvar_observacoes(self):
+        # Só o relógio de parede é transportável entre reinícios da máquina.
+        deslocamento = self.relogio() - self.monotono()
+        dados = {"observado_desde": self.observado_desde, "observacoes": {
+            item_id: {"cpus": {f"{pid}:{inicio}": cpu for (pid, inicio), cpu in obs.cpus.items()},
+                      "amostrado": obs.amostrado + deslocamento,
+                      "desde": obs.desde + deslocamento, "confirmado": obs.confirmado}
+            for item_id, obs in self._observacoes.items()}}
+        temporario = None
+        try:
+            self._arquivo_observacoes.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", delete=False,
+                                             dir=self._arquivo_observacoes.parent) as arquivo:
+                temporario = Path(arquivo.name)
+                os.fchmod(arquivo.fileno(), 0o600)
+                json.dump(dados, arquivo)
+            os.replace(temporario, self._arquivo_observacoes)
+        except OSError:
+            pass  # Cache indisponível não interrompe a amostragem em memória.
+        finally:
+            if temporario is not None:
+                try:
+                    temporario.unlink(missing_ok=True)
+                except OSError:
+                    pass
 
     def autorizar(self, autorizacoes):
         try:
@@ -358,6 +419,7 @@ class Maquinas:
                 novas[scope.id] = Observacao(cpus, agora, anterior.desde if dormindo else agora, dormindo)
             self._observacoes = novas
             self._ultima_amostra = agora
+            self._salvar_observacoes()
 
     def parado(self, item_id):
         with self._trava:
