@@ -1,10 +1,10 @@
 /**
- * O que a máquina tem aberto, em três grupos na ordem Seus ·
- * De agente · Protegido, cada um do que mais come ao que menos (`agrupa`).
+ * O que a máquina tem aberto, em grupos na ordem Seus · Agentes ·
+ * Chrome de agente · Protegido, cada um do que mais come ao que menos (`agrupa`).
  * Cartões no material do cartão da VPS; dentro, linhas na anatomia da tropa.
  *
- * O Protegido nasce aberto, com pílula para recolher: é o que a tela NÃO deixa
- * fechar (agentes, sshd, tailscale).
+ * Todo grupo nasce aberto, com a pílula de recolher ao lado do nome. O
+ * Protegido é o que a tela NÃO deixa fechar (sshd, tailscale, som).
  *
  * Antes da primeira leitura, a altura de uma lista curta fica reservada.
  *
@@ -90,72 +90,51 @@ function Grupos({
   );
 }
 
-function CartaoDoGrupo({
-  grupo,
-  direita,
-  children,
-}: {
-  grupo: GrupoDeItens;
-  direita?: ReactNode;
-  children?: ReactNode;
-}) {
+function CartaoDoGrupo({ grupo, children }: { grupo: GrupoDeItens; children: ReactNode }) {
+  const [aberto, setAberto] = useState(true);
   const n = grupo.itens.length;
+  const idDaLista = `maquina-grupo-${grupo.grupo}`;
   return (
     <section
       aria-label={grupo.nome}
       className="ck-vps flex flex-col"
       style={{ padding: 'var(--ck-space-3) var(--ck-space-4) var(--ck-space-1)' }}
     >
-      <div className="flex items-baseline" style={{ gap: 'var(--ck-space-2)', minHeight: '24px' }}>
+      <div className="flex items-center" style={{ gap: 'var(--ck-space-3)', minHeight: '24px' }}>
         <h3 style={{ fontSize: 'var(--ck-text-sm)', fontWeight: 600, color: 'var(--ck-text-primary)' }}>{grupo.nome}</h3>
+        <PilulaDaMaquina aria-expanded={aberto} aria-controls={idDaLista} aoTocar={() => setAberto((a) => !a)}>
+          {aberto ? 'Esconder' : 'Mostrar'}
+        </PilulaDaMaquina>
         <span className="ck-tabular ml-auto" style={SECUNDARIO_XS}>
           {n} {n === 1 ? 'aberto' : 'abertos'} · {formataTamanho(grupo.memoria_mb)}
         </span>
       </div>
-      {children}
-      {direita}
+      {aberto ? <div id={idDaLista}>{children}</div> : null}
     </section>
   );
 }
 
 function GrupoProtegido({ grupo }: { grupo: GrupoDeItens }) {
-  const [aberto, setAberto] = useState(true);
-  const n = grupo.itens.length;
   return (
-    <CartaoDoGrupo
-      grupo={grupo}
-      direita={
-        <div className="flex" style={{ paddingBottom: 'var(--ck-space-1)' }}>
-          <PilulaDaMaquina
-            aria-expanded={aberto}
-            aria-controls="maquina-protegidos"
-            aoTocar={() => setAberto((a) => !a)}
+    <CartaoDoGrupo grupo={grupo}>
+      <ul className="flex flex-col" style={{ padding: 'var(--ck-space-1) 0' }}>
+        {grupo.itens.map((item) => (
+          <li
+            key={item.id}
+            className="flex items-center"
+            style={{ gap: 'var(--ck-space-2)', minHeight: '32px', fontSize: 'var(--ck-text-sm)' }}
           >
-            {aberto ? 'Esconder protegidos' : `Mostrar ${n} ${n === 1 ? 'protegido' : 'protegidos'}`}
-          </PilulaDaMaquina>
-        </div>
-      }
-    >
-      {aberto ? (
-        <ul id="maquina-protegidos" className="flex flex-col" style={{ padding: 'var(--ck-space-1) 0' }}>
-          {grupo.itens.map((item) => (
-            <li
-              key={item.id}
-              className="flex items-center"
-              style={{ gap: 'var(--ck-space-2)', minHeight: '32px', fontSize: 'var(--ck-text-sm)' }}
-            >
-              <IconeCadeado tamanho={14} className="shrink-0" style={{ color: 'var(--ck-text-secondary)' }} />
-              <span className="sr-only">Protegido:</span>
-              <span className="min-w-0 truncate" style={{ color: 'var(--ck-text-primary)' }}>
-                {item.rotulo}
-              </span>
-              <span className="ck-tabular ml-auto shrink-0" style={{ color: 'var(--ck-text-secondary)' }}>
-                {formataTamanho(item.memoria_mb)}
-              </span>
-            </li>
-          ))}
-        </ul>
-      ) : null}
+            <IconeCadeado tamanho={14} className="shrink-0" style={{ color: 'var(--ck-text-secondary)' }} />
+            <span className="sr-only">Protegido:</span>
+            <span className="min-w-0 truncate" style={{ color: 'var(--ck-text-primary)' }}>
+              {item.rotulo}
+            </span>
+            <span className="ck-tabular ml-auto shrink-0" style={{ color: 'var(--ck-text-secondary)' }}>
+              {formataTamanho(item.memoria_mb)}
+            </span>
+          </li>
+        ))}
+      </ul>
     </CartaoDoGrupo>
   );
 }

@@ -304,9 +304,25 @@ class Maquinas:
             return None
         return pasta.name.removeprefix("ze-chrome").lstrip("-") or "agente"
 
-    def classificar(self, scope, janelas):
+    def _terminal(self, scope, scopes=None):
+        def servidor(s):
+            return re.fullmatch(r"cockpit-tmux-(.+)-[^-]+\.scope", Path(s.nome).name)
+
+        if servidor(scope):
+            return scope
+        if re.fullmatch(r"tmux-spawn-.+\.scope", Path(scope.nome).name):
+            for candidato in self.scopes() if scopes is None else scopes:
+                if servidor(candidato) and any(
+                        p.pid == scope.principal.ppid for p in candidato.processos):
+                    return candidato
+        return None
+
+    def classificar(self, scope, janelas, scopes=None):
+        if self._terminal(scope, scopes) is not None:
+            return "terminal"
         # Proteção prevalece sobre perfil de Chrome e janela, em toda a unidade.
         protegido = (any(p.startswith("cockpit-") for p in Path(scope.nome).parts)
+                     or re.fullmatch(r"tmux-spawn-.+\.scope", Path(scope.nome).name) is not None
                      or "session.slice" in Path(scope.nome).parts or scope.nome == "init.scope")
         for p in scope.processos:
             nomes = {Path(a).name.lower() for a in p.args[:2]}
@@ -327,7 +343,7 @@ class Maquinas:
             if agente:
                 ident = agente[1]
                 dono = self.agentes.get(ident, ident.replace("-", " ").replace("_", " ").title())
-                return "Agente " + dono, dono
+                return "Terminal " + dono, dono
         unidade = Path(scope.nome).stem
         religa = re.fullmatch(r"cockpit-reconnect-(.+)-[0-9a-f]+", unidade)
         if religa:
@@ -432,8 +448,14 @@ class Maquinas:
     def abertos(self):
         janelas = self.janelas()
         itens = []
-        for scope in self.scopes():
-            grupo = self.classificar(scope, janelas)
+        scopes = self.scopes()
+        terminais = {}
+        for scope in scopes:
+            terminal = self._terminal(scope, scopes)
+            if terminal is not None:
+                terminais.setdefault(terminal.id, (terminal, []))[1].append(scope)
+                continue
+            grupo = self.classificar(scope, janelas, scopes)
             rotulo, dono = self.rotulo(scope, janelas)
             abas = []
             porta = self.porta(scope)
@@ -452,6 +474,13 @@ class Maquinas:
                           "memoria_mb": self.memoria(scope), "parado_s": self.parado(scope.id),
                           "abas": abas, "pede_confirmacao": confirmar,
                           "acao_rotulo": None if grupo == "protegido" else "Fechar " + rotulo})
+        for terminal, membros in terminais.values():
+            rotulo, dono = self.rotulo(terminal, janelas)
+            parados = [self.parado(s.id) for s in membros]
+            itens.append({"id": terminal.id, "grupo": "terminal", "rotulo": rotulo, "dono": dono,
+                          "memoria_mb": round(sum(self.memoria(s) for s in membros), 2),
+                          "parado_s": None if None in parados else min(parados),
+                          "abas": [], "pede_confirmacao": False, "acao_rotulo": None})
         return {"observado_desde": self.observado_desde, "itens": itens}
 
     def tela(self):
@@ -483,18 +512,20 @@ class Maquinas:
                     "total_mb": round(total, 2), "pct": round(100 * (total - livre) / total, 2)}
 
         janelas = self.janelas()
-        parados = sum(self.classificar(s, janelas) in {"agente", "seus"}
-                      and (self.parado(s.id) or 0) >= 1800 for s in self.scopes())
+        scopes = self.scopes()
+        parados = sum(self.classificar(s, janelas, scopes) in {"agente", "seus"}
+                      and (self.parado(s.id) or 0) >= 1800 for s in scopes)
         return {"cpu_pct": cpu_pct, "ram": recurso(mem["MemTotal"] / 1024, mem["MemAvailable"] / 1024),
                 "disco": recurso(disco.total / 2**20, disco.free / 2**20),
                 "temperatura_c": temperatura_c, "parados_30min": parados,
                 "tela": self.tela(), "medido_em": int(self.relogio())}
 
     def _achar(self, item_id):
-        scope = next((s for s in self.scopes() if s.id == item_id), None)
+        scopes = self.scopes()
+        scope = next((s for s in scopes if s.id == item_id), None)
         if scope is None:
             raise Falha(404, "Item não encontrado.")
-        if self.classificar(scope, self.janelas()) not in {"agente", "seus"}:
+        if self.classificar(scope, self.janelas(), scopes) not in {"agente", "seus"}:
             raise Falha(403, "Este item é protegido.")
         return scope
 

@@ -43,19 +43,21 @@ function resumo(parcial: Partial<ResumoOnline> = {}): ResumoOnline {
   };
 }
 
-test('agrupa na ordem Seus, De agente, Protegido, do que mais come ao que menos, e some com grupo vazio', () => {
+test('agrupa na ordem Seus, Agentes, Chrome de agente, Protegido, do que mais come ao que menos, e some com grupo vazio', () => {
   const grupos = agrupa([
     item({ id: 'sshd', grupo: 'protegido', memoria_mb: 8 }),
     item({ id: 'pavan', grupo: 'agente', memoria_mb: 520 }),
     item({ id: 'foot', grupo: 'seus', memoria_mb: 38 }),
     item({ id: 'fluyt', grupo: 'agente', memoria_mb: 410 }),
     item({ id: 'chrome', grupo: 'seus', memoria_mb: 1840 }),
+    item({ id: 'terminal-fluyt', grupo: 'terminal', memoria_mb: 480 }),
   ]);
   assert.deepEqual(
     grupos.map((g) => [g.nome, g.itens.map((i) => i.id), g.memoria_mb]),
     [
       ['Seus', ['chrome', 'foot'], 1878],
-      ['De agente', ['pavan', 'fluyt'], 930],
+      ['Agentes', ['terminal-fluyt'], 480],
+      ['Chrome de agente', ['pavan', 'fluyt'], 930],
       ['Protegido', ['sshd'], 8],
     ],
   );
