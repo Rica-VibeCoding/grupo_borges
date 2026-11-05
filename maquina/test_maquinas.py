@@ -635,3 +635,12 @@ def test_http_protegido_403_e_rotas_antigas(http_painel, linux):
                                   '{"id":"ok","pid":1}', 'null', '{'])
 def test_http_fechar_json_invalido(http_painel, corpo):
     assert http_painel("POST", "/api/maquina/fechar", corpo)[0] == 400
+
+
+def test_rotulo_religando_agente(linux):
+    linux.m.agentes["fluytpos"] = "Fluyt Pós"
+    linux.processo(100)
+    linux.scope("app.slice/cockpit-reconnect-fluytpos-ce2dd4c0.service", 100)
+    sc = linux.m.scopes()[0]
+    assert linux.m.rotulo(sc, {}) == ("Religando Fluyt Pós", "Fluyt Pós")
+    assert linux.m.classificar(sc, {}) == "protegido"

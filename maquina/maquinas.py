@@ -268,6 +268,10 @@ class Maquinas:
                 dono = self.agentes.get(ident, ident.replace("-", " ").replace("_", " ").title())
                 return "Agente " + dono, dono
         unidade = Path(scope.nome).stem
+        religa = re.fullmatch(r"cockpit-reconnect-(.+)-[0-9a-f]+", unidade)
+        if religa:
+            dono = self.agentes.get(religa[1], religa[1].replace("-", " ").title())
+            return "Religando " + dono, dono
         servico = unidade.split("@", 1)[0]
         conhecidos = {
             "cockpit-maquina": "Painel desta máquina", "cockpit-api": "API do cockpit local",
