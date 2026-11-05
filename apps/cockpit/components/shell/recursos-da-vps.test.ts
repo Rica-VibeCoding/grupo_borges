@@ -9,6 +9,8 @@ import {
   formataTamanho,
   fracaoDaBarra,
   linhasDeVilao,
+  linhasDoCartao,
+  temSensor,
   nomeLegivel,
   type RecursosDaVps,
 } from './recursos-da-vps.ts';
@@ -27,6 +29,8 @@ const ORACLE: RecursosDaVps = {
   },
   no_ar_segundos: 3024031,
   medido_em: 1_788_000_000,
+  nome: 'VPS',
+  temperatura_c: null,
 };
 
 test('cor só acima do teto de cada medida', () => {
@@ -125,4 +129,21 @@ test('nome legível: agente pelo nome do painel, sistema na palavra curta', () =
   assert.equal(nomeLegivel('claude', frota), 'Claude avulso');
   assert.equal(nomeLegivel('Sofia', frota), 'Sofia');
   assert.equal(nomeLegivel('cockpit-ideia-sidebar', frota), 'cockpit (prévia)');
+});
+
+test('cartão sem sensor (a VPS) fica como sempre: CPU, RAM, Swap, Disco', () => {
+  assert.deepEqual(linhasDoCartao(false).map((l) => l.rotulo), ['CPU', 'RAM', 'Swap', 'Disco']);
+  assert.equal(temSensor(ORACLE, false), false);
+});
+
+test('cartão com sensor (o Arsenal) troca a Swap pela Temperatura, na ordem da tela Abertos', () => {
+  const arsenal = { ...ORACLE, nome: 'Arsenal', temperatura_c: 62 };
+  assert.equal(temSensor(arsenal, false), true);
+  assert.deepEqual(linhasDoCartao(true).map((l) => l.medida), ['cpu', 'ram', 'disco', 'temperatura']);
+  assert.equal(descreve('temperatura', arsenal), 'processador');
+});
+
+test('uma leitura com temperatura basta: a seguinte sem sensor não devolve a Swap', () => {
+  assert.equal(temSensor({ ...ORACLE, nome: 'Arsenal', temperatura_c: null }, true), true);
+  assert.equal(temSensor(null, true), true);
 });

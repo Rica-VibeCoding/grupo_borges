@@ -261,3 +261,31 @@ export function IconeMais(props: IconeProps) {
     </Tracado>
   );
 }
+
+/** Monitor no pé — o atalho Abertos da raiz e o mini cartão de cada máquina na tropa. */
+export function IconeMaquina(props: IconeProps) {
+  return (
+    <Tracado {...props}>
+      <rect x="3.5" y="4.5" width="17" height="11.5" rx="2" />
+      <path d="M12 16v3.5M8.5 19.5h7" />
+    </Tracado>
+  );
+}
+
+/** Seta do mouse — a linha "Tela" da tela Abertos (alguém mexendo ou não). */
+export function IconeCursor(props: IconeProps) {
+  return (
+    <Tracado {...props}>
+      <path d="M6 4l12 7-5.2 1.3L10.5 18z" />
+    </Tracado>
+  );
+}
+
+/** Visto — o "Liberou 410 MB" da tela Abertos, junto da palavra. */
+export function IconeVisto(props: IconeProps) {
+  return (
+    <Tracado {...props}>
+      <path d="M5 12.5l4.5 4.5L19 7.5" />
+    </Tracado>
+  );
+}

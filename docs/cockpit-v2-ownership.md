@@ -33,7 +33,7 @@ ownership nenhum.
 |---|---|---|
 | `components/shell/**` | **Daniel** | AppShell, tropa, composer, navegação |
 | `components/feed/**` | **Daniel** (desde 02/10) | o feed próprio, sem `assistant-ui` |
-| `components/{conversa,gaveta,faxina,telas}/**` | **Daniel** (desde 02/10) | criados depois de 30/07 |
+| `components/{conversa,gaveta,faxina,maquinas,telas}/**` | **Daniel** (desde 02/10) | criados depois de 30/07 |
 | `lib/envio.ts` + a exceção pontual em `apps/api/` | **Tara** | confirmação de envio por observação do eco |
 | `components/renderers/**` | **consumo de todos** | um arquivo por família de payload; mudar aqui passa pelo Pavan |
 | `components/ui/**` | shadcn | gerado; conferir se já existe antes de desenhar |

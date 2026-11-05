@@ -4,8 +4,8 @@ Lido direto do `/proc` e do `statvfs`, sem `psutil`: ele não está no venv e
 seria dependência nova pra quatro números que o kernel já entrega em texto.
 
 Cada função de parse recebe o TEXTO e devolve os números — é o que deixa os
-testes usarem amostras reais da Oracle em vez de mockar arquivo. Só `ler()`
-toca no sistema.
+testes usarem amostras reais da Oracle em vez de mockar arquivo. A leitura de
+temperatura recebe a raiz do `/sys` para usar sensores fictícios nos testes.
 
 A CPU é a única que precisa de DUAS leituras: o `/proc/stat` acumula ticks
 desde o boot, e a porcentagem é a diferença entre dois instantes. A última
@@ -18,8 +18,10 @@ from __future__ import annotations
 
 import asyncio
 import os
+import socket
 import time
 from dataclasses import dataclass
+from pathlib import Path
 
 CAMINHO_STAT = "/proc/stat"
 CAMINHO_MEMINFO = "/proc/meminfo"
@@ -27,6 +29,7 @@ CAMINHO_VMSTAT = "/proc/vmstat"
 CAMINHO_LOADAVG = "/proc/loadavg"
 CAMINHO_UPTIME = "/proc/uptime"
 RAIZ_DO_DISCO = "/"
+RAIZ_SYS = "/sys"
 
 #: Amostra de CPU mais velha que isto não serve de base: a porcentagem viraria a
 #: média de uma hora inteira com cara de leitura de agora.
@@ -139,6 +142,57 @@ def carga_1m(texto_loadavg: str) -> float:
 
 def no_ar_segundos(texto_uptime: str) -> int:
     return int(float(texto_uptime.split()[0]))
+
+
+def nome_da_maquina() -> str:
+    nome = os.environ.get("COCKPIT_MAQUINA_NOME")
+    if nome is not None:
+        return nome
+    nome = socket.gethostname().split(".", 1)[0]
+    return nome[:1].upper() + nome[1:]
+
+
+def _le_sensor(caminho: Path) -> str:
+    try:
+        return caminho.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+def _temperatura_sensor(caminho: Path) -> float | None:
+    try:
+        valor = float(_le_sensor(caminho)) / 1000
+    except ValueError:
+        return None
+    return valor if -20 <= valor <= 150 else None
+
+
+def temperatura_c(raiz_sys: str | Path) -> float | None:
+    """Temperatura do package em °C; ignora sensores de disco, placa e GPU."""
+    raiz = Path(raiz_sys)
+    tem_hwmon_cpu = False
+    temperaturas: list[float] = []
+    for hwmon in sorted((raiz / "class/hwmon").glob("hwmon*")):
+        nome = _le_sensor(hwmon / "name")
+        if nome not in ("coretemp", "k10temp"):
+            continue
+        tem_hwmon_cpu = True
+        label_package = "Package id 0" if nome == "coretemp" else "Tctl"
+        for entrada in sorted(hwmon.glob("temp*_input")):
+            valor = _temperatura_sensor(entrada)
+            if valor is None:
+                continue
+            if _le_sensor(entrada.with_name(entrada.name.replace("_input", "_label"))) == label_package:
+                return valor
+            temperaturas.append(valor)
+    if tem_hwmon_cpu:
+        return max(temperaturas, default=None)
+    for zona in sorted((raiz / "class/thermal").glob("thermal_zone*")):
+        if _le_sensor(zona / "type") == "x86_pkg_temp":
+            valor = _temperatura_sensor(zona / "temp")
+            if valor is not None:
+                return valor
+    return None
 
 
 def _le(caminho: str) -> str:
@@ -403,6 +457,8 @@ async def ler() -> dict:
     donos = por_dono(base[1], processos)
     ram, swap = memoria(_le(CAMINHO_MEMINFO))
     return {
+        "nome": nome_da_maquina(),
+        "temperatura_c": temperatura_c(RAIZ_SYS),
         "cpu_pct": cpu_pct(base[0], cpu),
         "carga_1m": carga_1m(_le(CAMINHO_LOADAVG)),
         "nucleos": os.cpu_count() or 1,

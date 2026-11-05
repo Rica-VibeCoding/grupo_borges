@@ -13,6 +13,8 @@ export type AtalhoDeTela = {
   icone: ReactNode;
   /** Quanto espera por ele. Zero ou ausente não mostra selo. */
   contagem?: number | null;
+  /** Selo vivo, de componente cliente — no lugar da contagem do servidor. */
+  selo?: ReactNode;
 };
 
 export function AtalhosDeTelas({ atalhos }: { atalhos: AtalhoDeTela[] }) {
@@ -36,6 +38,7 @@ export function AtalhosDeTelas({ atalhos }: { atalhos: AtalhoDeTela[] }) {
         >
           {atalho.icone}
           <span>{atalho.rotulo}</span>
+          {atalho.selo ?? null}
           {atalho.contagem ? (
             <Badge
               className="ck-tabular"

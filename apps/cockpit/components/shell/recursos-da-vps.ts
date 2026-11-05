@@ -44,22 +44,54 @@ export type RecursosDaVps = {
   consumidores?: Consumidor[];
   no_ar_segundos: number;
   medido_em: number;
+  /** Quem o cartão mede: "VPS" na VPS, "Arsenal" no Arsenal. */
+  nome: string;
+  /** Temperatura do processador; nula onde não há sensor (a VPS). */
+  temperatura_c: number | null;
 };
 
-export type Medida = 'cpu' | 'ram' | 'swap' | 'disco';
+export type Medida = 'cpu' | 'ram' | 'swap' | 'disco' | 'temperatura';
+
+/**
+ * As quatro barras do cartão, na ordem da grade. Máquina com sensor de
+ * temperatura (o Arsenal) troca a Swap pela Temperatura — a mesma ordem da tela
+ * Abertos; sem sensor (a VPS) o cartão fica como sempre foi. Quem decide se há
+ * sensor é o componente (`temSensor`): uma leitura com temperatura basta, para
+ * a grade não trocar de barra quando o sensor falha numa rodada.
+ */
+export function temSensor(dados: RecursosDaVps | null, jaTinha: boolean): boolean {
+  return jaTinha || dados?.temperatura_c != null;
+}
+
+export function linhasDoCartao(comSensor: boolean): Array<{ medida: Medida; rotulo: string }> {
+  if (!comSensor) {
+    return [
+      { medida: 'cpu', rotulo: 'CPU' },
+      { medida: 'ram', rotulo: 'RAM' },
+      { medida: 'swap', rotulo: 'Swap' },
+      { medida: 'disco', rotulo: 'Disco' },
+    ];
+  }
+  return [
+    { medida: 'cpu', rotulo: 'CPU' },
+    { medida: 'ram', rotulo: 'RAM' },
+    { medida: 'disco', rotulo: 'Disco' },
+    { medida: 'temperatura', rotulo: 'Temperatura' },
+  ];
+}
 
 /**
  * Acima disto a barra fica da cor de atenção — e só acima disto. Cor só onde há
  * julgamento (regra 6 da tropa): 60% de RAM numa máquina de 12 GB é o dia
  * normal da frota, não um aviso.
  */
-export const TETO_PCT: Record<Exclude<Medida, 'swap'>, number> = {
+export const TETO_PCT: Record<Exclude<Medida, 'swap' | 'temperatura'>, number> = {
   cpu: 90,
   ram: 85,
   disco: 85,
 };
 
-export function emAlerta(medida: Exclude<Medida, 'swap'>, pct: number | null): boolean {
+export function emAlerta(medida: Exclude<Medida, 'swap' | 'temperatura'>, pct: number | null): boolean {
   return pct !== null && pct > TETO_PCT[medida];
 }
 
@@ -161,6 +193,8 @@ export function descreve(medida: Medida, dados: RecursosDaVps): string {
         : 'sem swap';
     case 'disco':
       return `${formataTamanho(dados.disco.livre_mb)} livres de ${formataTamanho(dados.disco.total_mb)}`;
+    case 'temperatura':
+      return dados.temperatura_c == null ? 'sem sensor' : 'processador';
   }
 }
 
@@ -178,6 +212,8 @@ const DO_SISTEMA: Record<string, string> = {
   // O back só sabe dar nome de agente ao `claude` que roda na frota (unit ou
   // socket tmux `borges-*`). O que sobra é sessão aberta fora dela.
   claude: 'Claude avulso',
+  // O `comm` do `/proc` corta em 15 caracteres: "next-server (v16.2.6)" chega assim.
+  'next-server (v1': 'next-server',
 };
 
 /**

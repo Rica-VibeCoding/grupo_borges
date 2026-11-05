@@ -324,9 +324,10 @@ estado · nome · `%` de contexto; embaixo, o modelo · há quanto tempo agiu (`
 também esmaece foto e nome (a palavra fica no nome acessível). Nada aparece a mais ao selecionar.
 Selecionado = pílula, o vidro escuro da `PilulaDoAgente` sem desfoque; hover é meia pílula. Nada pulsa;
 só a cor troca, em `--ck-dur-calm`. O pulso de 24h mora na gaveta. O topo do chat é a própria pílula
-(`lugar="topo"`, foto 36). A VPS é cartão no pé da tropa (`composer` + fio de luz, grade 2×2 de barras
-finas, cor só acima do teto de `recursos-da-vps.ts` — a swap acende por troca ativa, > 256 páginas/s, nunca por
-ocupação —, processos atrás de pílula).
+(`lugar="topo"`, foto 36). No pé da tropa, uma linha por máquina (05/11, `maquinas/linhas-das-maquinas.tsx`):
+nome · RAM · temperatura (Swap onde não há sensor) · parados, num cartão `composer` + fio de luz; cor só no
+trecho acima do teto de `recursos-da-vps.ts` — a swap acende por troca ativa, > 256 páginas/s, nunca por
+ocupação. O toque abre `/abertos` na aba da máquina; a grade 2×2 e os processos moram lá.
 
 **Medidores:** contexto neutro → âmbar ≥ 25% → `state-fail` > 30% (`corDoContexto`); cota âmbar ≥ 80% → `state-fail` ≥ 95% (`corDaCota`).
 
@@ -391,8 +392,8 @@ fileira ([+] · campo · motor · voz); com conteúdo, texto em cima e controles
 
 - `:root { color-scheme: dark; }` — sem isso, scrollbar, input e select nativos saem claros.
 - `theme-color` bate com a cor que encosta na barra do Safari: `#191919` (canvas) no `layout.tsx` e no
-  `manifest.ts` (`background_color`, `theme_color`); `#222222` (mesa) em `app/page.tsx` e
-  `app/faxina/page.tsx`. Mudou o token, muda aqui.
+  `manifest.ts` (`background_color`, `theme_color`); `#222222` (mesa) em `app/page.tsx`,
+  `app/faxina/page.tsx` e `app/abertos/page.tsx`. Mudou o token, muda aqui.
 - O WebKit não roda na VPS. Prefixo `-webkit-` se confere no CSS servido; defeito que só aparece no
   iPhone do Rica pede instrumento que leia o layout no aparelho dele antes de qualquer hipótese.
 
