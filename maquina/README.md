@@ -7,3 +7,5 @@ Instalado em `~/.local/share/cockpit-maquina/` como serviço de usuário `cockpi
 Instalar uma mudança: `scp` dos arquivos para `~/.local/share/cockpit-maquina/` e
 `systemctl --user restart cockpit-maquina.service`. Os agentes moram em scopes próprios
 (`cockpit-tmux-*`) e não caem com o restart do painel.
+
+Operação, contratos e armadilhas: skill `abertos` (`apps/cockpit/.claude/skills/abertos/`).

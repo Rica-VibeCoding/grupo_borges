@@ -77,7 +77,7 @@ peça central está polindo 18% da tela.
 
 ## Skills daqui
 
-`subir-cockpit` · `novo-renderer` · `mexer-na-pele` · `checar-paridade`
+`subir-cockpit` · `novo-renderer` · `mexer-na-pele` · `checar-paridade` · `abertos` (tela Abertos, painel do Arsenal e Ligar/Desligar)
 
 ## Onde as coisas estão
 
