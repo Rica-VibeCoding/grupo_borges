@@ -89,3 +89,12 @@ Antes de tudo: `cp painel.py painel.py.bak-maquinas` (e `agentes.py` se tocar). 
 - **Em curso:** Codex trocando rótulos técnicos dos Protegidos em `maquina/maquinas.py` (saída `/tmp/codex-rotulos-out.txt`); depois: scp pro Arsenal + restart `cockpit-maquina`.
 - **Pendente de decisão:** Abertos dentro do cockpit do Arsenal precisa de `MAQUINA_ARSENAL_CHAVE` na `cockpit-api` de lá.
 - **Depois:** Fase 5 (skill enxuta `maquinas`/`abertos`, este plano sai do repo); `/tmp/painel-8788` e `teste-abertos-chrome` já limpos no Arsenal.
+
+## Mudança de 05/11 14:21 (Rica, via Pavan) — linha por máquina
+
+- O cartão grande (bloco-da-vps) sai da home e da tropa, nos dois cockpits. Entra uma linha por máquina no molde do mini cartão: nome · RAM · temperatura (Swap onde não há sensor) · parados. A cor de alerta é a de hoje. Tocar na linha abre `/abertos?m=<id>`.
+- Máquinas listadas: a local (`/api/vps`) mais as de `/api/maquinas`. Uma remota com o mesmo nome da local vence, porque é ela que tem Fechar. Nenhum nome fixo no código.
+- `/abertos` ganha a aba da máquina local (a VPS) com os 4 números e a lista de processos. É SÓ LEITURA, sem Fechar, porque ali morrem agente e serviço (decisão do Pavan).
+- O print do cartão-arsenal de 14:01 foi descartado e não sobe. Novos prints em `/tmp/maquinas-prints/linhas-*.png`. Nada se publica antes do ok do Rica.
+- Rótulos do grupo Protegido no ar no Arsenal: `09ca1d5`, `51c37a6`, `ca79b47` (104 testes).
+- A chave da `cockpit-api` do Arsenal está em `~/.config/cockpit/maquinas.env` (0600), com drop-in `maquinas.conf`. Ela só vale depois de reiniciar a `cockpit-api`, junto com a publicação.
