@@ -39,8 +39,8 @@ ABERTOS = {
 
 @pytest.fixture
 def painel(monkeypatch):
-    monkeypatch.setenv("MAQUINA_OFICINA_CHAVE", "chave-de-teste")
-    monkeypatch.delenv("MAQUINA_OFICINA_URL", raising=False)
+    monkeypatch.setenv("MAQUINA_ARSENAL_CHAVE", "chave-de-teste")
+    monkeypatch.delenv("MAQUINA_ARSENAL_URL", raising=False)
     agora = [100.0]
     pedidos = []
 
@@ -77,26 +77,26 @@ async def cliente(painel):
 async def test_lista_nao_consulta_o_painel(cliente, painel):
     resposta = await cliente.get("/api/maquinas")
     assert resposta.status_code == 200
-    assert resposta.json() == [{"id": "oficina", "nome": "Oficina"}]
+    assert resposta.json() == [{"id": "arsenal", "nome": "Arsenal"}]
     assert painel[2] == []
 
 
 async def test_cache_expira_em_30_segundos_com_relogio_injetado(cliente, painel):
     _, agora, pedidos = painel
-    primeira = await cliente.get("/api/maquinas/oficina/resumo")
+    primeira = await cliente.get("/api/maquinas/arsenal/resumo")
     agora[0] += 29.9
-    segunda = await cliente.get("/api/maquinas/oficina/resumo")
+    segunda = await cliente.get("/api/maquinas/arsenal/resumo")
     assert primeira.status_code == segunda.status_code == 200
     assert primeira.json() == segunda.json() == {**RESUMO, "online": True}
     assert len(pedidos) == 1
     agora[0] = 130.0
-    assert (await cliente.get("/api/maquinas/oficina/resumo")).status_code == 200
+    assert (await cliente.get("/api/maquinas/arsenal/resumo")).status_code == 200
     assert len(pedidos) == 2
 
 
 async def test_clientes_simultaneos_compartilham_uma_leitura(cliente, painel):
     respostas = await asyncio.gather(*[
-        cliente.get("/api/maquinas/oficina/resumo") for _ in range(8)
+        cliente.get("/api/maquinas/arsenal/resumo") for _ in range(8)
     ])
     assert all(r.status_code == 200 and r.json()["online"] for r in respostas)
     assert len(painel[2]) == 1
@@ -104,13 +104,13 @@ async def test_clientes_simultaneos_compartilham_uma_leitura(cliente, painel):
 
 async def test_cache_e_trava_sao_por_maquina(cliente, painel, monkeypatch):
     monkeypatch.setitem(maquinas.MAQUINAS, "outra", {
-        **maquinas.MAQUINAS["oficina"], "nome": "Outra", "url_env": "MAQUINA_TESTE_URL",
+        **maquinas.MAQUINAS["arsenal"], "nome": "Outra", "url_env": "MAQUINA_TESTE_URL",
         "url_padrao": "http://outra.test", "chave_env": "MAQUINA_TESTE_CHAVE",
     })
     monkeypatch.delenv("MAQUINA_TESTE_URL", raising=False)
     monkeypatch.setenv("MAQUINA_TESTE_CHAVE", "outra-chave")
     await asyncio.gather(*[
-        cliente.get(f"/api/maquinas/{id}/resumo") for id in ("oficina", "outra", "oficina", "outra")
+        cliente.get(f"/api/maquinas/{id}/resumo") for id in ("arsenal", "outra", "arsenal", "outra")
     ])
     assert len(painel[2]) == 2
     assert {r.url.host for r in painel[2]} == {"100.91.105.22", "outra.test"}
@@ -135,27 +135,27 @@ async def test_resumo_offline_tambem_tem_cache(cliente, painel, falha):
 
     instalar(responder)
     for _ in range(2):
-        resposta = await cliente.get("/api/maquinas/oficina/resumo")
+        resposta = await cliente.get("/api/maquinas/arsenal/resumo")
         assert resposta.status_code == 200
         assert resposta.json()["online"] is False
         assert resposta.json()["motivo"]
     assert len(pedidos) == 1
     agora[0] += 30
-    await cliente.get("/api/maquinas/oficina/resumo")
+    await cliente.get("/api/maquinas/arsenal/resumo")
     assert len(pedidos) == 2
 
 
 async def test_sem_chave_nao_faz_pedido_e_env_e_lido_na_chamada(cliente, painel, monkeypatch):
-    monkeypatch.delenv("MAQUINA_OFICINA_CHAVE")
+    monkeypatch.delenv("MAQUINA_ARSENAL_CHAVE")
     for _ in range(2):
-        resposta = await cliente.get("/api/maquinas/oficina/resumo")
+        resposta = await cliente.get("/api/maquinas/arsenal/resumo")
         assert resposta.status_code == 200
         assert resposta.json() == {"online": False, "motivo": "sem chave"}
     assert painel[2] == []
-    monkeypatch.setenv("MAQUINA_OFICINA_CHAVE", "nova-chave")
-    monkeypatch.setenv("MAQUINA_OFICINA_URL", "http://oficina.test:8787/")
-    assert (await cliente.get("/api/maquinas/oficina/resumo")).json()["online"] is True
-    assert painel[2][0].url.host == "oficina.test"
+    monkeypatch.setenv("MAQUINA_ARSENAL_CHAVE", "nova-chave")
+    monkeypatch.setenv("MAQUINA_ARSENAL_URL", "http://arsenal.test:8787/")
+    assert (await cliente.get("/api/maquinas/arsenal/resumo")).json()["online"] is True
+    assert painel[2][0].url.host == "arsenal.test"
     assert painel[2][0].headers["Authorization"] == "Bearer nova-chave"
 
 
@@ -166,9 +166,9 @@ async def test_authorization_timeout_e_repasse_sem_cache(cliente, painel, rota, 
     instalar(lambda _: httpx.Response(200, json=corpo))
     for _ in range(2):
         if rota == "fechar":
-            resposta = await cliente.post(f"/api/maquinas/oficina/{rota}", json={"id": "Chrome_123-abc"})
+            resposta = await cliente.post(f"/api/maquinas/arsenal/{rota}", json={"id": "Chrome_123-abc"})
         else:
-            resposta = await cliente.get(f"/api/maquinas/oficina/{rota}")
+            resposta = await cliente.get(f"/api/maquinas/arsenal/{rota}")
         assert resposta.status_code == 200
         assert resposta.json() == ({**corpo, "online": True} if rota == "resumo" else corpo)
     assert len(pedidos) == (1 if rota == "resumo" else 2)
@@ -187,9 +187,9 @@ async def test_repassa_status_e_mensagem_do_painel(cliente, painel, status, rota
     corpo = {"mensagem": "protegido ou já encerrou"}
     painel[0](lambda _: httpx.Response(status, json=corpo))
     if rota == "fechar":
-        resposta = await cliente.post("/api/maquinas/oficina/fechar", json={"id": "valido"})
+        resposta = await cliente.post("/api/maquinas/arsenal/fechar", json={"id": "valido"})
     else:
-        resposta = await cliente.get("/api/maquinas/oficina/abertos")
+        resposta = await cliente.get("/api/maquinas/arsenal/abertos")
     assert resposta.status_code == status
     assert resposta.json() == corpo
 
@@ -208,16 +208,16 @@ async def test_painel_fora_no_repasse_devolve_502(cliente, painel, rota, falha):
 
     painel[0](responder)
     if rota == "fechar":
-        resposta = await cliente.post("/api/maquinas/oficina/fechar", json={"id": "valido"})
+        resposta = await cliente.post("/api/maquinas/arsenal/fechar", json={"id": "valido"})
     else:
-        resposta = await cliente.get("/api/maquinas/oficina/abertos")
+        resposta = await cliente.get("/api/maquinas/arsenal/abertos")
     assert resposta.status_code == 502
     assert resposta.json()["mensagem"]
 
 
 @pytest.mark.parametrize("id", ["", "a" * 129, "a/b", "a b", "ç", "a\n", ";rm", 1, None])
 async def test_id_invalido_nao_chega_ao_painel(cliente, painel, id):
-    resposta = await cliente.post("/api/maquinas/oficina/fechar", json={"id": id})
+    resposta = await cliente.post("/api/maquinas/arsenal/fechar", json={"id": id})
     assert resposta.status_code == 422
     assert painel[2] == []
 

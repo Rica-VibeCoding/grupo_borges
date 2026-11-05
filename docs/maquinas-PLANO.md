@@ -1,6 +1,6 @@
 # Tela "Máquinas" — plano v2 (05/11/2026)
 
-> **Nome (Rica, 05/11 11:58):** a máquina é a **Oficina**, servidor caseiro ligado 24 h (vai ganhar +16 GB). Na API, id `oficina`, env `MAQUINA_OFICINA_*`; "PC2" abaixo é o nome antigo.
+> **Nome (Rica, 05/11 12:02):** a máquina é o **Arsenal** (hostname `arsenal`, `arsenal.tailfe77db.ts.net`, mesmo IP), servidor caseiro ligado 24 h (vai ganhar +16 GB). Na API, id `arsenal`, env `MAQUINA_ARSENAL_*`; "PC2" abaixo é o nome antigo. Painel entra no repo em `grupo_borges/maquina/` (D2).
 >
 > **v2 (revisão do Pavan, aprovada com 4 ajustes):** limiar do "parado" fixado · uma só leitura do `resumo` no cliente · Protegido ampliado · R1 vira pendência pós-entrega.
 
