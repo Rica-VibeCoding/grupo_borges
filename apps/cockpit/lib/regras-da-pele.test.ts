@@ -53,6 +53,7 @@ const COR_LITERAL_PERMITIDA = new Set([
   'app/manifest.ts',
   'app/page.tsx',
   'app/faxina/page.tsx',
+  'app/abertos/page.tsx',
   // A régua do `?diag=1`: instrumento de medida, fora do tema de propósito.
   'components/shell/regua.tsx',
 ]);

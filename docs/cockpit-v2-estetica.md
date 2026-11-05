@@ -391,8 +391,8 @@ fileira ([+] · campo · motor · voz); com conteúdo, texto em cima e controles
 
 - `:root { color-scheme: dark; }` — sem isso, scrollbar, input e select nativos saem claros.
 - `theme-color` bate com a cor que encosta na barra do Safari: `#191919` (canvas) no `layout.tsx` e no
-  `manifest.ts` (`background_color`, `theme_color`); `#222222` (mesa) em `app/page.tsx` e
-  `app/faxina/page.tsx`. Mudou o token, muda aqui.
+  `manifest.ts` (`background_color`, `theme_color`); `#222222` (mesa) em `app/page.tsx`,
+  `app/faxina/page.tsx` e `app/abertos/page.tsx`. Mudou o token, muda aqui.
 - O WebKit não roda na VPS. Prefixo `-webkit-` se confere no CSS servido; defeito que só aparece no
   iPhone do Rica pede instrumento que leia o layout no aparelho dele antes de qualquer hipótese.
 

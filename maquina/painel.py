@@ -11,10 +11,13 @@ import time
 from urllib.parse import parse_qs
 
 from agentes import AGENTES, CONFIG, PASTA, enviar, estado, rodar
+from maquinas import Falha, IDENT, Maquinas
 
 INTERVALO = 3
 TRAVA = threading.Lock()
 FOTO = {"maquina": [], "agentes": [], "atualizado": None}
+MAQUINAS = Maquinas(agentes=AGENTES.values())
+CPU_PCT = 0.0
 
 
 def ip_tailscale():
@@ -109,9 +112,14 @@ def maquina(cpu_pct):
 
 
 def coletar():
+    global CPU_PCT
     anterior = None
     while True:
         inicio = time.monotonic()
+        try:
+            MAQUINAS.amostrar()  # Internamente limitado a uma amostra por 60 s.
+        except (OSError, ValueError) as exc:
+            print(f"Coleta dos scopes: {exc}", flush=True)
         agentes, erro = [], None
         try:
             atual = cpu_ler()
@@ -120,6 +128,8 @@ def coletar():
                 pct = max(0, min(100, 100 * (1 - (atual[0] - anterior[0]) / (atual[1] - anterior[1]))))
             anterior = atual
             campos = maquina(pct)
+            with TRAVA:
+                CPU_PCT = pct if pct is not None else 0.0
         except (OSError, ValueError, KeyError) as exc:
             campos, erro = [], "Não foi possível ler o estado da máquina."
             print(f"Coleta da máquina: {exc}", flush=True)
@@ -171,9 +181,43 @@ class H(BaseHTTPRequestHandler):
         hosts = self.headers.get_all("Host", [])
         return hosts == [self.server.autoridade]
 
+    def maquina_api(self):
+        try:
+            MAQUINAS.autorizar(self.headers.get_all("Authorization", []))
+            if self.command == "GET":
+                if self.path.endswith("/resumo"):
+                    with TRAVA:
+                        cpu = CPU_PCT
+                    return self.responder(200, MAQUINAS.resumo(cpu, temperatura()))
+                return self.responder(200, MAQUINAS.abertos())
+            if self.headers.get_content_type() != "application/json":
+                return self.responder(415, {"mensagem": "Formato de pedido inválido."})
+            tamanhos = self.headers.get_all("Content-Length", [])
+            if len(tamanhos) != 1 or self.headers.get("Transfer-Encoding"):
+                raise ValueError("Tamanho de pedido inválido.")
+            tamanho = int(tamanhos[0])
+            if not 1 <= tamanho <= 1024:
+                raise ValueError("Pedido muito grande ou vazio.")
+            bruto = self.rfile.read(tamanho)
+            if len(bruto) != tamanho:
+                raise ValueError("Pedido incompleto.")
+            dados = json.loads(bruto)
+            if (not isinstance(dados, dict) or dados.keys() != {"id"}
+                    or not isinstance(dados["id"], str) or not IDENT.fullmatch(dados["id"])):
+                raise ValueError("Informe somente um id válido.")
+            return self.responder(200, MAQUINAS.fechar(dados["id"]))
+        except Falha as exc:
+            return self.responder(exc.status, {"mensagem": exc.mensagem})
+        except (ValueError, UnicodeError) as exc:
+            return self.responder(400, {"mensagem": str(exc)})
+        except (OSError, subprocess.SubprocessError):
+            return self.responder(503, {"mensagem": "Não foi possível consultar a máquina."})
+
     def do_GET(self):
         if not self.host_valido():
             return self.responder(403, {"mensagem": "Host recusado. Use o IP Tailscale e a porta do painel."})
+        if self.path in {"/api/maquina/resumo", "/api/maquina/abertos"}:
+            return self.maquina_api()
         if self.path == "/":
             return self.responder(200, (PASTA / "painel.html").read_text(), "text/html; charset=utf-8")
         if self.path == "/api/estado":
@@ -183,6 +227,10 @@ class H(BaseHTTPRequestHandler):
         self.responder(404, {"mensagem": "Página não encontrada."})
 
     def do_POST(self):
+        if self.path == "/api/maquina/fechar":
+            if not self.host_valido():
+                return self.responder(403, {"mensagem": "Host recusado. Use o IP Tailscale e a porta do painel."})
+            return self.maquina_api()
         # Origin é obrigatório no POST; comparar só Origin com Host permitiria DNS rebinding.
         if not self.host_valido() or self.headers.get_all("Origin", []) != ["http://" + self.server.autoridade]:
             return self.responder(403, {"mensagem": "Origem recusada. Abra o painel pelo IP Tailscale."})

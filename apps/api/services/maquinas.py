@@ -21,6 +21,8 @@ MAQUINAS = {
     },
 }
 CACHE_SEGUNDOS = 30
+# O motivo aparece na tela do Rica: frase, não código HTTP.
+ERRO_POR_STATUS = {401: "a chave não confere", 503: "falta a chave no painel"}
 
 
 class RespostaPainel(BaseModel):
@@ -126,7 +128,7 @@ class ServicoMaquinas:
         corpo: dict | None = None,
     ) -> Modelo:
         if not config.chave:
-            raise FalhaPainel("sem chave")
+            raise FalhaPainel("falta configurar a chave no cockpit")
         try:
             async with self._fabrica_cliente(timeout=limite_s) as cliente:
                 resposta = await cliente.request(
@@ -141,13 +143,13 @@ class ServicoMaquinas:
             resposta.raise_for_status()
             return modelo.model_validate(resposta.json())
         except httpx.TimeoutException as erro:
-            raise FalhaPainel("tempo esgotado") from erro
+            raise FalhaPainel("não respondeu a tempo") from erro
         except httpx.HTTPStatusError as erro:
-            raise FalhaPainel(f"erro do painel (HTTP {erro.response.status_code})") from erro
+            raise FalhaPainel(ERRO_POR_STATUS.get(erro.response.status_code, "o painel deu erro")) from erro
         except (httpx.RequestError, httpx.InvalidURL) as erro:
-            raise FalhaPainel("painel indisponível") from erro
+            raise FalhaPainel("não responde") from erro
         except ValueError as erro:
-            raise FalhaPainel("resposta inválida do painel") from erro
+            raise FalhaPainel("o painel respondeu algo fora do combinado") from erro
 
     async def resumo(self, maquina: str) -> dict:
         trava = self._travas.setdefault(maquina, asyncio.Lock())

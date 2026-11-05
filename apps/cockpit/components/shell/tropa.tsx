@@ -39,6 +39,7 @@ import {
   novaOrdem,
   ordemJaChegou,
 } from '@/lib/ordem-arrastada';
+import { MiniCartoesDasMaquinas } from '@/components/maquinas/mini-cartao-da-maquina';
 import { TIPO_ARRASTO } from './arrasto-da-tropa';
 import { BlocoDaVps } from './bloco-da-vps';
 import { deslizaAsLinhas, type FotoDoDeslize } from './deslize-da-tropa';
@@ -248,6 +249,8 @@ export function Tropa({
           não cabeçalho: a tropa é o que ele abre pra ver; a máquina é o que
           ele confere de relance. */}
       <BlocoDaVps />
+      {/* Cada máquina numa linha, embaixo da VPS: o detalhe mora em `/abertos`. */}
+      <MiniCartoesDasMaquinas />
     </nav>
   );
 }

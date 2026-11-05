@@ -1,7 +1,8 @@
 import type { Viewport } from 'next';
 import { fetchFleet } from '@grupo_borges/cockpit-core/api';
 import { AppShell } from '@/components/shell/app-shell';
-import { IconeVassoura } from '@/components/shell/icones';
+import { SeloDeMaquinas } from '@/components/maquinas/selo-de-maquinas';
+import { IconeMaquina, IconeVassoura } from '@/components/shell/icones';
 import { TropaAoVivo } from '@/components/shell/tropa-ao-vivo';
 import { AtalhosDeTelas } from '@/components/telas/atalhos-de-telas';
 import { fetchFaxina } from '@/lib/faxina';
@@ -90,6 +91,12 @@ export default async function Home() {
             <AtalhosDeTelas
               atalhos={[
                 { href: '/faxina', rotulo: 'Faxina', icone: <IconeVassoura tamanho={16} />, contagem: faxinaPendentes },
+                {
+                  href: '/abertos',
+                  rotulo: 'Abertos',
+                  icone: <IconeMaquina tamanho={16} />,
+                  selo: <SeloDeMaquinas />,
+                },
               ]}
             />
           </div>

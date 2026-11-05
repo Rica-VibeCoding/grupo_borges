@@ -150,7 +150,7 @@ async def test_sem_chave_nao_faz_pedido_e_env_e_lido_na_chamada(cliente, painel,
     for _ in range(2):
         resposta = await cliente.get("/api/maquinas/arsenal/resumo")
         assert resposta.status_code == 200
-        assert resposta.json() == {"online": False, "motivo": "sem chave"}
+        assert resposta.json() == {"online": False, "motivo": "falta configurar a chave no cockpit"}
     assert painel[2] == []
     monkeypatch.setenv("MAQUINA_ARSENAL_CHAVE", "nova-chave")
     monkeypatch.setenv("MAQUINA_ARSENAL_URL", "http://arsenal.test:8787/")

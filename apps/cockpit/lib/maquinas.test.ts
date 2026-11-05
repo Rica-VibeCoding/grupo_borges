@@ -1,0 +1,117 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+
+import {
+  agrupa,
+  seloDaMaquina,
+  temperaturaEmAlerta,
+  textoDaTela,
+  textoDasAbas,
+  textoDoParado,
+  type ItemAberto,
+  type ResumoOnline,
+} from './maquinas.ts';
+
+const AGORA = 1_793_880_000;
+
+function item(parcial: Partial<ItemAberto> & Pick<ItemAberto, 'id' | 'grupo'>): ItemAberto {
+  return {
+    rotulo: parcial.id,
+    dono: null,
+    memoria_mb: 100,
+    parado_s: null,
+    abas: [],
+    pede_confirmacao: false,
+    acao_rotulo: `Fechar ${parcial.id}`,
+    ...parcial,
+  };
+}
+
+function resumo(parcial: Partial<ResumoOnline> = {}): ResumoOnline {
+  const recurso = { usado_mb: 1, livre_mb: 1, total_mb: 2, pct: 50 };
+  return {
+    online: true,
+    cpu_pct: 10,
+    ram: recurso,
+    disco: recurso,
+    temperatura_c: 50,
+    parados_30min: 0,
+    tela: { em_uso: null, ultimo_uso_s: null },
+    medido_em: AGORA,
+    ...parcial,
+  };
+}
+
+test('agrupa na ordem Seus, De agente, Protegido, do que mais come ao que menos, e some com grupo vazio', () => {
+  const grupos = agrupa([
+    item({ id: 'sshd', grupo: 'protegido', memoria_mb: 8 }),
+    item({ id: 'pavan', grupo: 'agente', memoria_mb: 520 }),
+    item({ id: 'foot', grupo: 'seus', memoria_mb: 38 }),
+    item({ id: 'fluyt', grupo: 'agente', memoria_mb: 410 }),
+    item({ id: 'chrome', grupo: 'seus', memoria_mb: 1840 }),
+  ]);
+  assert.deepEqual(
+    grupos.map((g) => [g.nome, g.itens.map((i) => i.id), g.memoria_mb]),
+    [
+      ['Seus', ['chrome', 'foot'], 1878],
+      ['De agente', ['pavan', 'fluyt'], 930],
+      ['Protegido', ['sshd'], 8],
+    ],
+  );
+  assert.deepEqual(agrupa([item({ id: 'a', grupo: 'agente' })]).map((g) => g.grupo), ['agente']);
+});
+
+test('parado só diz o tempo que o painel viu', () => {
+  const desde = AGORA - 12 * 60;
+  assert.equal(textoDoParado(5 * 60, desde, AGORA), 'parado há 5 min');
+  // Parado o tempo todo da observação: o número é piso, a frase avisa.
+  assert.equal(textoDoParado(12 * 60, desde, AGORA), 'parado há 12+ min');
+  assert.equal(textoDoParado(40 * 60, AGORA - 3 * 3600, AGORA), 'parado há 40 min');
+  assert.equal(textoDoParado(3 * 3600, AGORA - 5 * 3600, AGORA), 'parado há 3 h');
+});
+
+test('em uso ou sem leitura não vira "parado"', () => {
+  assert.equal(textoDoParado(null, AGORA - 600, AGORA), null);
+  assert.equal(textoDoParado(30, AGORA - 600, AGORA), null);
+});
+
+test('abas: contagem e títulos; sem abas, nada', () => {
+  assert.equal(textoDasAbas(['Supabase', 'Vercel']), '2 abas: Supabase, Vercel');
+  assert.equal(textoDasAbas(['Gmail']), '1 aba: Gmail');
+  assert.equal(textoDasAbas([]), null);
+});
+
+test('linha Tela nos três estados', () => {
+  assert.equal(textoDaTela({ em_uso: true, ultimo_uso_s: 3 }), 'Alguém está usando agora');
+  assert.equal(textoDaTela({ em_uso: false, ultimo_uso_s: 2400 }), 'Ninguém mexe há 40 min');
+  assert.equal(textoDaTela({ em_uso: null, ultimo_uso_s: null }), 'Não sei se alguém está usando');
+});
+
+test('selo: contagem de parados; RAM alta pinta de vermelho mesmo sem parados, e diz por quê', () => {
+  assert.deepEqual(seloDaMaquina(resumo({ parados_30min: 3 }), 'Arsenal'), {
+    texto: '3',
+    vermelho: false,
+    descricao: 'Arsenal: 3 parados há mais de 30 min',
+  });
+  const ramAlta = resumo({ ram: { usado_mb: 14600, livre_mb: 1784, total_mb: 16384, pct: 89.1 } });
+  assert.deepEqual(seloDaMaquina(ramAlta, 'Arsenal'), {
+    texto: '!',
+    vermelho: true,
+    descricao: 'Arsenal: RAM em 89%',
+  });
+  assert.equal(seloDaMaquina({ ...ramAlta, parados_30min: 1 }, 'Arsenal').texto, '1');
+  assert.equal(seloDaMaquina({ ...ramAlta, parados_30min: 1 }, 'Arsenal').descricao, 'Arsenal: 1 parado há mais de 30 min, RAM em 89%');
+});
+
+test('selo some com tudo em dia, sem leitura ou com a máquina fora', () => {
+  assert.equal(seloDaMaquina(resumo(), 'Arsenal').texto, null);
+  assert.equal(seloDaMaquina(resumo({ ram: { usado_mb: 1, livre_mb: 1, total_mb: 2, pct: 85 } }), 'Arsenal').vermelho, false);
+  assert.equal(seloDaMaquina(null, 'Arsenal').texto, null);
+  assert.equal(seloDaMaquina({ online: false, motivo: 'tempo esgotado' }, 'Arsenal').texto, null);
+});
+
+test('temperatura acende só acima de 85 °C', () => {
+  assert.equal(temperaturaEmAlerta(85), false);
+  assert.equal(temperaturaEmAlerta(86), true);
+  assert.equal(temperaturaEmAlerta(null), false);
+});

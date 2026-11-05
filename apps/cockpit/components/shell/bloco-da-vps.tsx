@@ -43,6 +43,7 @@ import {
   type Medida,
   type RecursosDaVps,
 } from './recursos-da-vps';
+import { BarraDeMedida } from './barra-de-medida';
 import { usaFrota } from './frota-provider';
 
 const INTERVALO_MS = 10_000;
@@ -68,11 +69,8 @@ function pctDe(medida: Medida, dados: RecursosDaVps | null): number | null {
   }
 }
 
-/**
- * Uma medida do cartão: rótulo e número na mesma linha, barra fina embaixo.
- * A barra preenche por `scaleX` (§5: só `transform` anima). Cor só acima do
- * teto (`emAlerta`) — o CSS lê o `data-alerta`.
- */
+/** Uma medida do cartão; o desenho mora em `barra-de-medida.tsx`. A swap
+ *  acende pela troca, o resto pelo teto (`recursos-da-vps.ts`). */
 function Medidor({
   medida,
   rotulo,
@@ -84,51 +82,16 @@ function Medidor({
 }) {
   const pct = pctDe(medida, dados);
   const alerta = medida === 'swap' ? dados !== null && swapEmTroca(dados) : emAlerta(medida, pct);
-  const detalhe = dados ? descreve(medida, dados) : 'sem leitura ainda';
   return (
-    <div
-      role="meter"
-      aria-label={rotulo}
-      aria-valuemin={0}
-      aria-valuemax={100}
-      aria-valuenow={pct ?? undefined}
-      aria-valuetext={pct === null ? detalhe : `${Math.round(pct)}%, ${detalhe}`}
-      data-medida={medida}
-      data-alerta={alerta ? 'true' : undefined}
-      className="ck-vps-medida flex min-w-0 flex-col"
-      style={{ gap: 'var(--ck-space-1)' }}
-      title={detalhe}
-    >
-      <span aria-hidden className="flex items-baseline justify-between" style={{ gap: 'var(--ck-space-2)' }}>
-        <span className="ck-vps-rotulo" style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-text-secondary)' }}>
-          {rotulo}
-        </span>
-        <span
-          className="ck-vps-valor ck-tabular"
-          style={{
-            fontSize: 'var(--ck-text-sm)',
-            fontWeight: 500,
-            color: pct === null ? 'var(--ck-text-tertiary)' : 'var(--ck-text-primary)',
-          }}
-        >
-          {pct === null ? '—' : `${Math.round(pct)}%`}
-        </span>
-      </span>
-      <span
-        aria-hidden
-        className="ck-vps-trilho block overflow-hidden"
-        style={{ height: '4px', borderRadius: 'var(--ck-radius-pill)' }}
-      >
-        <span
-          className="ck-vps-preenche block"
-          style={{
-            height: '100%',
-            borderRadius: 'var(--ck-radius-pill)',
-            transform: `scaleX(${fracaoDaBarra(pct)})`,
-          }}
-        />
-      </span>
-    </div>
+    <BarraDeMedida
+      medida={medida}
+      rotulo={rotulo}
+      valor={pct === null ? null : `${Math.round(pct)}%`}
+      pct={pct}
+      fracao={fracaoDaBarra(pct)}
+      alerta={alerta}
+      detalhe={dados ? descreve(medida, dados) : 'sem leitura ainda'}
+    />
   );
 }
 
