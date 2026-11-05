@@ -98,3 +98,10 @@ Antes de tudo: `cp painel.py painel.py.bak-maquinas` (e `agentes.py` se tocar). 
 - O print do cartão-arsenal de 14:01 foi descartado e não sobe. Novos prints em `/tmp/maquinas-prints/linhas-*.png`. Nada se publica antes do ok do Rica.
 - Rótulos do grupo Protegido no ar no Arsenal: `09ca1d5`, `51c37a6`, `ca79b47` (104 testes).
 - A chave da `cockpit-api` do Arsenal está em `~/.config/cockpit/maquinas.env` (0600), com drop-in `maquinas.conf`. Ela só vale depois de reiniciar a `cockpit-api`, junto com a publicação.
+
+## 05/11 14:59 — Ligar e Desligar (Rica; desenho do Pavan)
+
+- Publicado antes disto: b412738 (linhas por máquina), deploy ea0d8a66b56b, merge 5b47ac9 no Arsenal. A prova de duas metades passou: "Liberou 166 MB", 11 → 0 processos, 0 botões na aba VPS.
+- Wake-on-LAN medido por ioctl `ETHTOOL_GWOL` (não há `ethtool` instalado): o Arsenal `enp1s0` suporta `g`, mas está desligado; o note `enp3s0` suporta, mas está sem cabo; o Wi-Fi não suporta. Conclusão: o Arsenal fica com "falta a tomada", o note com "liga só na mão", e o PC liga pela `pc.sh`.
+- Spec em `/tmp/energia-spec.md`. O back (`/api/energia`) está com o Codex (`/tmp/codex-energia-out.txt`). A tela está com a cadeira `ae08ad7e316612b18` (prints `/tmp/maquinas-prints/energia-*.png`).
+- Teste: o Desligar só com alvo falso (executor injetável), o Ligar só em máquina já ligada. Nada se publica antes do ok do Rica.
