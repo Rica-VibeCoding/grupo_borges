@@ -53,7 +53,7 @@ class ResumoPainel(RespostaPainel):
 
 class ItemAberto(RespostaPainel):
     id: str
-    grupo: Literal["seus", "agente", "protegido"]
+    grupo: Literal["seus", "agente", "terminal", "protegido"]
     rotulo: str
     dono: str | None
     memoria_mb: float

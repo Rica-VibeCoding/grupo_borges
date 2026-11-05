@@ -216,7 +216,90 @@ def test_rotulo_scope_agente_usa_config_antes_do_processo_e_perfil(linux, agente
     linux.chrome(nome=f"app.slice/cockpit-tmux-{agente}-a1b2.scope")
     linux.processo(101, ppid=100, args=("bun",))
     linux.scope(f"app.slice/cockpit-tmux-{agente}-a1b2.scope", 100, 101)
-    assert linux.m.rotulo(linux.m.scopes()[0], {}) == ("Agente " + esperado, esperado)
+    scope = linux.m.scopes()[0]
+    assert linux.m.rotulo(scope, {}) == ("Terminal " + esperado, esperado)
+    assert linux.m.classificar(scope, {}) == "terminal"
+    assert linux.m.abertos()["itens"] == [{
+        "id": scope.id, "grupo": "terminal", "rotulo": "Terminal " + esperado,
+        "dono": esperado, "memoria_mb": 3.0, "parado_s": None, "abas": [],
+        "pede_confirmacao": False, "acao_rotulo": None,
+    }]
+    falha(403, linux.m.fechar, scope.id)
+
+
+@pytest.mark.parametrize("parados,esperado", [
+    ((1800, 1200, 600), 600), ((60, 1200, 600), 60),
+    ((None, 1200, 600), None), ((1800, None, 600), None), ((1800, 1200, None), None),
+])
+def test_terminal_junta_servidor_e_spawns_por_ppid(linux, monkeypatch, parados, esperado):
+    linux.processo(10, args=("tmux", "-L", "fluytcom", "new-session"), pss=2048, swap=0)
+    linux.scope("app.slice/cockpit-tmux-fluytcom-a1b2.scope", 10)
+    linux.processo(100, ppid=10, args=("claude",), pss=300 * 1024, swap=0)
+    linux.processo(101, ppid=100, args=("bun", "mcp"), pss=100 * 1024, swap=0)
+    linux.scope("app.slice/tmux-spawn-aaaa.scope", 100, 101)
+    linux.processo(200, ppid=10, args=("claude",), pss=50 * 1024, swap=0)
+    linux.scope("app.slice/tmux-spawn-bbbb.scope", 200)
+    scopes = linux.m.scopes()
+    tempos = {s.id: tempo for s, tempo in zip(scopes, parados)}
+    monkeypatch.setattr(linux.m, "parado", tempos.get)
+    assert all(linux.m.classificar(s, {}) == "terminal" for s in scopes)
+    assert linux.m.abertos()["itens"] == [{
+        "id": scopes[0].id, "grupo": "terminal", "rotulo": "Terminal Fluyt", "dono": "Fluyt",
+        "memoria_mb": 452.0, "parado_s": esperado, "abas": [],
+        "pede_confirmacao": False, "acao_rotulo": None,
+    }]
+    for scope in scopes:
+        falha(403, linux.m._achar, scope.id)
+        falha(403, linux.m.fechar, scope.id)
+
+
+def test_terminais_separam_agentes_e_casam_pid_no_scope_do_servidor(linux):
+    for pid, ident in [(10, "fluytcom"), (20, "novo_agente")]:
+        linux.processo(pid, args=("tmux",))
+        linux.processo(pid + 1, ppid=pid, args=("tmux",))
+        linux.scope(f"app.slice/cockpit-tmux-{ident}-a1b2.scope", pid, pid + 1)
+        linux.processo(pid + 100, ppid=pid + 1, args=("claude",))
+        linux.scope(f"app.slice/tmux-spawn-{pid}.scope", pid + 100)
+    itens = linux.m.abertos()["itens"]
+    assert [(i["rotulo"], i["dono"], i["memoria_mb"]) for i in itens] == [
+        ("Terminal Fluyt", "Fluyt", 4.5), ("Terminal Novo Agente", "Novo Agente", 4.5)]
+
+
+@pytest.mark.parametrize("args", [("claude",), ("chrome", "--user-data-dir=~/.config/ze-chrome")])
+def test_tmux_spawn_orfao_protegido_sem_casar_parentesco_de_filho(linux, args):
+    linux.processo(10, args=("tmux",))
+    linux.scope("app.slice/cockpit-tmux-fluytcom-a1b2.scope", 10)
+    linux.processo(20, args=("tmux",))
+    linux.scope("app.slice/outro.scope", 20)
+    linux.processo(100, ppid=20, args=args)
+    linux.processo(101, ppid=10, args=("bun",))
+    linux.scope("app.slice/tmux-spawn-aaaa.scope", 100, 101)
+    linux.janelas.append({"pid": 100, "class": "foot"})
+    scope = next(s for s in linux.m.scopes() if s.principal.pid == 100)
+    assert linux.m.classificar(scope, linux.m.janelas()) == "protegido"
+    item = next(i for i in linux.m.abertos()["itens"] if i["id"] == scope.id)
+    assert item["grupo"] == "protegido" and item["dono"] is None
+    assert item["rotulo"] == "Sessões de terminal (agentes)" and item["memoria_mb"] == 3.0
+    assert item["acao_rotulo"] is None
+    falha(403, linux.m.fechar, scope.id)
+
+
+def test_parados_30min_exclui_terminais_e_spawns_orfaos(linux, monkeypatch):
+    linux.processo(10, args=("tmux",))
+    linux.scope("app.slice/cockpit-tmux-fluytcom-a1b2.scope", 10)
+    for pid, ppid in [(100, 10), (200, 1)]:
+        linux.processo(pid, ppid=ppid, args=("claude",))
+        linux.scope(f"app.slice/tmux-spawn-{pid}.scope", pid)
+    linux.chrome(300)
+    linux.processo(400)
+    linux.scope("app.slice/pessoal.scope", 400)
+    linux.janelas.append({"pid": 400, "class": "foot"})
+    linux.m.amostrar()
+    linux.agora[1] = 1800
+    linux.m.amostrar()
+    assert all(linux.m.parado(s.id) == 1800 for s in linux.m.scopes())
+    monkeypatch.setattr(maquinas.shutil, "disk_usage", lambda _: shutil._ntuple_diskusage(100, 25, 75))
+    assert linux.m.resumo(0, None)["parados_30min"] == 2
 
 
 @pytest.mark.parametrize("unidade,esperado", [
@@ -265,7 +348,6 @@ def test_rotulo_desconhecido_usa_unit_legivel(linux, unidade, exe, esperado):
 
 
 @pytest.mark.parametrize("nome,args", [
-    ("app.slice/cockpit-tmux-fluytcom-abc.scope", ("chrome",)),
     ("app.slice/cockpit-maquina.service", ("python3", "painel.py")),
     ("app.slice/cockpit-api.service", ("python3",)),
     ("app.slice/manual.scope", ("python3", "painel.py")),
@@ -292,7 +374,7 @@ def test_protegido_prevalece_sobre_janela(linux, nome, args):
 
 
 def test_chrome_em_scope_cockpit_ou_com_bun_e_protegido(linux, monkeypatch):
-    linux.chrome(nome="app.slice/cockpit-tmux-x-abc.scope")
+    linux.chrome(nome="app.slice/cockpit-outro.scope")
     monkeypatch.setattr(maquinas, "json_cdp", lambda *a: [])
     item = linux.m.abertos()["itens"][0]
     assert item["grupo"] == "protegido"

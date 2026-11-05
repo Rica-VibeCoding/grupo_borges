@@ -25,7 +25,7 @@ export type ResumoOffline = { online: false; motivo: string };
 
 export type Resumo = ResumoOnline | ResumoOffline;
 
-export type Grupo = 'seus' | 'agente' | 'protegido';
+export type Grupo = 'seus' | 'terminal' | 'agente' | 'protegido';
 
 export type ItemAberto = {
   id: string;
@@ -112,15 +112,16 @@ export const TETO_RAM_DO_SELO = 85;
 
 const NOME_DO_GRUPO: Record<Grupo, string> = {
   seus: 'Seus',
-  agente: 'De agente',
+  terminal: 'Agentes',
+  agente: 'Chrome de agente',
   protegido: 'Protegido',
 };
 
-const ORDEM_DOS_GRUPOS: Grupo[] = ['seus', 'agente', 'protegido'];
+const ORDEM_DOS_GRUPOS: Grupo[] = ['seus', 'terminal', 'agente', 'protegido'];
 
 export type GrupoDeItens = { grupo: Grupo; nome: string; itens: ItemAberto[]; memoria_mb: number };
 
-/** Os três grupos na ordem da tela, cada um do que mais come ao que menos. Grupo vazio não vem. */
+/** Os grupos na ordem da tela, cada um do que mais come ao que menos. Grupo vazio não vem. */
 export function agrupa(itens: ItemAberto[]): GrupoDeItens[] {
   return ORDEM_DOS_GRUPOS.flatMap((grupo) => {
     const doGrupo = itens.filter((i) => i.grupo === grupo).sort((a, b) => b.memoria_mb - a.memoria_mb);

@@ -33,6 +33,16 @@ ABERTOS = {
         "abas": ["Página de teste"],
         "pede_confirmacao": False,
         "acao_rotulo": "Fechar Chrome do agente",
+    }, {
+        "id": "Terminal_123-abc",
+        "grupo": "terminal",
+        "rotulo": "Terminal Fluyt Com",
+        "dono": "Fluyt Com",
+        "memoria_mb": 452.0,
+        "parado_s": 600,
+        "abas": [],
+        "pede_confirmacao": False,
+        "acao_rotulo": None,
     }],
 }
 
