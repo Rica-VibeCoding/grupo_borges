@@ -55,6 +55,86 @@ CGROUP_DO_DANIEL = "0::/borges.slice/borges-frota.slice/borges-clawd@daniel.serv
 CGROUP_DO_PAVAN = "0::/borges.slice/borges-frota.slice/borges-clawd@pavan.service\n"
 
 
+@pytest.fixture(autouse=True)
+def sys_falso(tmp_path, monkeypatch):
+    monkeypatch.setattr(vps_recursos, "RAIZ_SYS", tmp_path)
+    return tmp_path
+
+
+def _sensor(raiz: Path, caminho: str, texto: str) -> None:
+    arquivo = raiz / caminho
+    arquivo.parent.mkdir(parents=True, exist_ok=True)
+    arquivo.write_text(texto + "\n", encoding="utf-8")
+
+
+def test_nome_por_env_preserva_o_valor(monkeypatch) -> None:
+    monkeypatch.setenv("COCKPIT_MAQUINA_NOME", "Arsenal de Casa")
+    monkeypatch.setattr(vps_recursos.socket, "gethostname", lambda: "outro.tailnet")
+
+    assert vps_recursos.nome_da_maquina() == "Arsenal de Casa"
+
+
+def test_nome_por_hostname_corta_dominio_e_maiuscula_inicial(monkeypatch) -> None:
+    monkeypatch.delenv("COCKPIT_MAQUINA_NOME", raising=False)
+    monkeypatch.setattr(vps_recursos.socket, "gethostname", lambda: "arsenal.tailnet")
+
+    assert vps_recursos.nome_da_maquina() == "Arsenal"
+
+
+@pytest.mark.parametrize("driver,label", [("coretemp", "Package id 0"), ("k10temp", "Tctl")])
+def test_temperatura_prefere_package_ao_core_mais_quente(sys_falso, driver, label) -> None:
+    _sensor(sys_falso, "class/hwmon/hwmon2/name", driver)
+    _sensor(sys_falso, "class/hwmon/hwmon2/temp1_label", label)
+    _sensor(sys_falso, "class/hwmon/hwmon2/temp1_input", "61500")
+    _sensor(sys_falso, "class/hwmon/hwmon2/temp2_input", "78000")
+    _sensor(sys_falso, "class/thermal/thermal_zone0/type", "x86_pkg_temp")
+    _sensor(sys_falso, "class/thermal/thermal_zone0/temp", "90000")
+
+    assert vps_recursos.temperatura_c(sys_falso) == 61.5
+
+
+@pytest.mark.parametrize("driver", ["coretemp", "k10temp"])
+def test_temperatura_sem_label_usa_maior_valor_do_hwmon_cpu(sys_falso, driver) -> None:
+    _sensor(sys_falso, "class/hwmon/hwmon0/name", "nvme")
+    _sensor(sys_falso, "class/hwmon/hwmon0/temp1_input", "99000")
+    _sensor(sys_falso, "class/hwmon/hwmon2/name", driver)
+    _sensor(sys_falso, "class/hwmon/hwmon2/temp1_input", "52000")
+    _sensor(sys_falso, "class/hwmon/hwmon2/temp2_input", "64000")
+
+    assert vps_recursos.temperatura_c(sys_falso) == 64.0
+
+
+def test_temperatura_fallback_thermal_zone_so_aceita_cpu(sys_falso) -> None:
+    _sensor(sys_falso, "class/thermal/thermal_zone0/type", "acpitz")
+    _sensor(sys_falso, "class/thermal/thermal_zone0/temp", "95000")
+    _sensor(sys_falso, "class/thermal/thermal_zone1/type", "x86_pkg_temp")
+    _sensor(sys_falso, "class/thermal/thermal_zone1/temp", "47500")
+
+    assert vps_recursos.temperatura_c(sys_falso) == 47.5
+
+
+def test_temperatura_sem_sensor_cpu_e_none(sys_falso) -> None:
+    assert vps_recursos.temperatura_c(sys_falso) is None
+    _sensor(sys_falso, "class/hwmon/hwmon0/name", "nvme")
+    _sensor(sys_falso, "class/hwmon/hwmon0/temp1_input", "45000")
+
+    assert vps_recursos.temperatura_c(sys_falso) is None
+
+
+@pytest.mark.parametrize("valor", ["150001", "-20001", "nan", "inf", "invalido"])
+@pytest.mark.parametrize("origem", ["hwmon", "thermal"])
+def test_temperatura_invalida_e_descartada(sys_falso, valor, origem) -> None:
+    if origem == "hwmon":
+        _sensor(sys_falso, "class/hwmon/hwmon2/name", "coretemp")
+        _sensor(sys_falso, "class/hwmon/hwmon2/temp1_label", "Package id 0")
+        _sensor(sys_falso, "class/hwmon/hwmon2/temp1_input", valor)
+    else:
+        _sensor(sys_falso, "class/thermal/thermal_zone0/type", "x86_pkg_temp")
+        _sensor(sys_falso, "class/thermal/thermal_zone0/temp", valor)
+
+    assert vps_recursos.temperatura_c(sys_falso) is None
+
+
 def _proc(
     pid: int, comm: str, ticks: int, rss_paginas: int, cgroup: str = "0::/x\n"
 ) -> vps_recursos.Processo:
@@ -130,8 +210,14 @@ def test_taxa_de_troca_e_paginas_por_segundo_entre_duas_leituras() -> None:
     assert vps_recursos.taxa_de_troca(1000, 1000, 0.0) is None
 
 
-def test_endpoint_entrega_o_bloco_inteiro(monkeypatch) -> None:
+@pytest.mark.parametrize("temperatura", [None, 61.5])
+def test_endpoint_entrega_o_bloco_inteiro(monkeypatch, sys_falso, temperatura) -> None:
     """A resposta que o rodapé da tropa consome, com a máquina inteira falsa."""
+    monkeypatch.setenv("COCKPIT_MAQUINA_NOME", "Arsenal")
+    if temperatura is not None:
+        _sensor(sys_falso, "class/hwmon/hwmon2/name", "coretemp")
+        _sensor(sys_falso, "class/hwmon/hwmon2/temp1_label", "Package id 0")
+        _sensor(sys_falso, "class/hwmon/hwmon2/temp1_input", str(temperatura * 1000))
     leituras = iter([STAT_ANTES, STAT_DEPOIS])
     # Daniel gastou 700 dos 1000 ticks da janela e é o maior residente.
     varreduras = iter(
@@ -172,6 +258,8 @@ def test_endpoint_entrega_o_bloco_inteiro(monkeypatch) -> None:
 
     corpo = TestClient(app).get("/api/vps").json()
 
+    assert corpo["nome"] == "Arsenal"
+    assert corpo["temperatura_c"] == temperatura
     assert corpo["cpu_pct"] == 80.0
     assert corpo["carga_1m"] == 2.62
     assert corpo["ram"]["pct"] == 62.6

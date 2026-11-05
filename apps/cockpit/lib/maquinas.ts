@@ -67,6 +67,13 @@ export async function fetchMaquinas(): Promise<Maquina[]> {
   return res.json();
 }
 
+/** O nome da máquina que o próprio cockpit mede (`/api/vps`): a aba local da tela Abertos. */
+export async function fetchNomeLocal(): Promise<string> {
+  const res = await fetch(`${base()}/api/vps`, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`fetchNomeLocal failed: ${res.status}`);
+  return (await res.json()).nome;
+}
+
 export async function fetchResumo(id: string): Promise<Resumo> {
   const res = await fetch(`/api/maquinas/${id}/resumo`, { cache: 'no-store' });
   if (!res.ok) throw new FalhaDaMaquina(await mensagemDe(res));
@@ -163,6 +170,17 @@ export function textoDaTela(tela: Tela): string {
     return `Ninguém mexe há ${duracao(tela.ultimo_uso_s)}`;
   }
   return 'Não sei se alguém está usando';
+}
+
+/**
+ * As máquinas que o mini cartão da tropa mostra: todas, menos a que o cockpit
+ * já mede no cartão de recursos (o cockpit rodando no próprio Arsenal teria o
+ * Arsenal duas vezes). Casa pelo nome, sem diferenciar maiúscula. Selo e tela
+ * Abertos seguem com a lista inteira.
+ */
+export function maquinasDeFora(maquinas: Maquina[], nomeLocal: string): Maquina[] {
+  const local = nomeLocal.trim().toLocaleLowerCase('pt-BR');
+  return maquinas.filter((m) => m.nome.trim().toLocaleLowerCase('pt-BR') !== local);
 }
 
 export type Selo = {

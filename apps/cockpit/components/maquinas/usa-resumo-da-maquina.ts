@@ -5,7 +5,7 @@
  * raiz; cada um com o seu `setInterval` seriam duas requisições a cada 30 s
  * (plano v2, ajuste do Pavan). Aqui é um módulo com um ciclo por máquina,
  * dividido por todos os assinantes: liga no primeiro, para no último, e pausa
- * com a aba escondida — o mesmo `visibilitychange` do `BlocoDaVps`.
+ * com a aba escondida — o mesmo `visibilitychange` do `usa-recursos-locais`.
  *
  * Leitura que falha DEPOIS da primeira mantém a última na tela. A ponte já
  * devolve `online:false` com motivo quando a máquina some; a falha daqui é a
@@ -95,8 +95,10 @@ export function usaResumoDaMaquina(id: string): Resumo | null {
 }
 
 // A lista: uma leitura por carga de página, dividida por quem pedir. Falhou,
-// a próxima montagem tenta de novo.
+// vale como lista vazia (quem espera a resposta para desenhar não fica preso)
+// e a próxima montagem tenta de novo.
 let maquinas: Maquina[] | null = null;
+let falhouLista = false;
 let lendoMaquinas = false;
 const ouvintesDaLista = new Set<() => void>();
 
@@ -110,7 +112,8 @@ function assinaLista(ouvinte: () => void): () => void {
         ouvintesDaLista.forEach((avisa) => avisa());
       })
       .catch(() => {
-        /* sem lista, sem selo nem mini cartão */
+        falhouLista = true;
+        ouvintesDaLista.forEach((avisa) => avisa());
       })
       .finally(() => {
         lendoMaquinas = false;
@@ -120,10 +123,10 @@ function assinaLista(ouvinte: () => void): () => void {
 }
 
 const SEM_MAQUINAS: Maquina[] = [];
-const listaAtual = () => maquinas ?? SEM_MAQUINAS;
-const listaDoServidor = () => SEM_MAQUINAS;
+const listaAtual = () => maquinas ?? (falhouLista ? SEM_MAQUINAS : null);
+const listaDoServidor = () => null;
 
-/** As máquinas que a API conhece; vazia até a primeira leitura. */
-export function usaMaquinas(): Maquina[] {
+/** As máquinas que a API conhece; `null` até a API responder (falha conta como vazia). */
+export function usaMaquinas(): Maquina[] | null {
   return useSyncExternalStore(assinaLista, listaAtual, listaDoServidor);
 }

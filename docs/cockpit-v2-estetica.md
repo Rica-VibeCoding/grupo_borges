@@ -324,9 +324,10 @@ estado · nome · `%` de contexto; embaixo, o modelo · há quanto tempo agiu (`
 também esmaece foto e nome (a palavra fica no nome acessível). Nada aparece a mais ao selecionar.
 Selecionado = pílula, o vidro escuro da `PilulaDoAgente` sem desfoque; hover é meia pílula. Nada pulsa;
 só a cor troca, em `--ck-dur-calm`. O pulso de 24h mora na gaveta. O topo do chat é a própria pílula
-(`lugar="topo"`, foto 36). A VPS é cartão no pé da tropa (`composer` + fio de luz, grade 2×2 de barras
-finas, cor só acima do teto de `recursos-da-vps.ts` — a swap acende por troca ativa, > 256 páginas/s, nunca por
-ocupação —, processos atrás de pílula).
+(`lugar="topo"`, foto 36). No pé da tropa, uma linha por máquina (05/11, `maquinas/linhas-das-maquinas.tsx`):
+nome · RAM · temperatura (Swap onde não há sensor) · parados, num cartão `composer` + fio de luz; cor só no
+trecho acima do teto de `recursos-da-vps.ts` — a swap acende por troca ativa, > 256 páginas/s, nunca por
+ocupação. O toque abre `/abertos` na aba da máquina; a grade 2×2 e os processos moram lá.
 
 **Medidores:** contexto neutro → âmbar ≥ 25% → `state-fail` > 30% (`corDoContexto`); cota âmbar ≥ 80% → `state-fail` ≥ 95% (`corDaCota`).
 

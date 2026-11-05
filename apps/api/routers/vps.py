@@ -43,6 +43,8 @@ class Consumidor(BaseModel):
 
 
 class VpsRecursos(BaseModel):
+    nome: str
+    temperatura_c: float | None
     cpu_pct: float | None = Field(
         description="média entre as duas últimas leituras; null quando não houve intervalo",
     )

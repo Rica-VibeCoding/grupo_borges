@@ -18,6 +18,7 @@ export function BarraDeMedida({
   alerta,
   detalhe,
   medida,
+  textoAcessivel,
 }: {
   rotulo: string;
   /** O número já formatado (`42%`, `61 °C`); `null` sem leitura. */
@@ -29,6 +30,9 @@ export function BarraDeMedida({
   alerta: boolean;
   detalhe: string;
   medida: string;
+  /** O que o leitor de tela diz no lugar de "valor, detalhe" — a temperatura
+   *  diz "62 °C": a barra vai de 0 a 100 °C, e "62 de 100" leria como %. */
+  textoAcessivel?: string;
 }) {
   return (
     <div
@@ -37,7 +41,7 @@ export function BarraDeMedida({
       aria-valuemin={0}
       aria-valuemax={100}
       aria-valuenow={pct ?? undefined}
-      aria-valuetext={valor === null ? detalhe : `${valor}, ${detalhe}`}
+      aria-valuetext={textoAcessivel ?? (valor === null ? detalhe : `${valor}, ${detalhe}`)}
       data-medida={medida}
       data-alerta={alerta ? 'true' : undefined}
       className="ck-vps-medida flex min-w-0 flex-col"

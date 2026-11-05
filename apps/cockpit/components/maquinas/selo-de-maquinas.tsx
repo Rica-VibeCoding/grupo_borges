@@ -18,7 +18,7 @@ import { usaMaquinas, usaResumoDaMaquina } from './usa-resumo-da-maquina';
 
 /** Um selo por máquina da lista (hoje uma só); cada um diz de qual é. */
 export function SeloDeMaquinas() {
-  return usaMaquinas().map((m) => <SeloDaMaquina key={m.id} id={m.id} nome={m.nome} />);
+  return (usaMaquinas() ?? []).map((m) => <SeloDaMaquina key={m.id} id={m.id} nome={m.nome} />);
 }
 
 function SeloDaMaquina({ id, nome }: { id: string; nome: string }) {

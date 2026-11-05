@@ -17,7 +17,7 @@
  *   no tom da pílula, nome e contexto; modelo e última atividade. Quem dorme
  *   usa a mesma linha, com o aro no tom `desligado`. O selecionado é pílula.
  * - O pulso de 24h mora na gaveta.
- * - A VPS fica no rodapé da tropa, como cartão.
+ * - As máquinas ficam no rodapé da tropa, uma linha cada (05/11).
  *
  * O desenho de cada linha mora em `linha-da-tropa.tsx` e `miudezas-da-linha.tsx`;
  * o deslize depois do arrasto, em `deslize-da-tropa.ts`.
@@ -39,9 +39,8 @@ import {
   novaOrdem,
   ordemJaChegou,
 } from '@/lib/ordem-arrastada';
-import { MiniCartoesDasMaquinas } from '@/components/maquinas/mini-cartao-da-maquina';
+import { LinhasDasMaquinas } from '@/components/maquinas/linhas-das-maquinas';
 import { TIPO_ARRASTO } from './arrasto-da-tropa';
-import { BlocoDaVps } from './bloco-da-vps';
 import { deslizaAsLinhas, type FotoDoDeslize } from './deslize-da-tropa';
 import { LinhaDaTropa, type EscolheAgente } from './linha-da-tropa';
 
@@ -214,7 +213,7 @@ export function Tropa({
   return (
     <nav
       aria-label="Tropa"
-      // `flex-1`: a nav enche a faixa pra que o bloco da VPS, com `margin-top:
+      // `flex-1`: a nav enche a faixa pra que as linhas das máquinas, com `margin-top:
       // auto`, pouse no pé da coluna quando a lista é curta — e role junto com
       // ela quando não é. Na rota `/` o pai não tem altura fixa e o `flex-1`
       // não muda nada.
@@ -248,9 +247,9 @@ export function Tropa({
       {/* Ordem do Rica (07/09): o consumo da máquina na sidebar. Rodapé, e
           não cabeçalho: a tropa é o que ele abre pra ver; a máquina é o que
           ele confere de relance. */}
-      <BlocoDaVps />
-      {/* Cada máquina numa linha, embaixo da VPS: o detalhe mora em `/abertos`. */}
-      <MiniCartoesDasMaquinas />
+      {/* Desde 05/11, uma linha por máquina no lugar do cartão da VPS; o
+          detalhe mora em `/abertos`. */}
+      <LinhasDasMaquinas />
     </nav>
   );
 }

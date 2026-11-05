@@ -1895,29 +1895,19 @@ html[data-troca-agente] .ck-palco {
 .ck-vps-pilula { background-color: var(--ck-surface-canvas); }
 .ck-vps-botao:hover .ck-vps-pilula { background-image: linear-gradient(var(--ck-overlay-hover), var(--ck-overlay-hover)); }
 .ck-vps-botao:active .ck-vps-pilula { background-image: linear-gradient(var(--ck-overlay-pressed), var(--ck-overlay-pressed)); }
-.ck-vps-bloco { background: var(--ck-surface-canvas); border-radius: var(--ck-radius-frame); }
 @media (prefers-reduced-motion: reduce) {
   .ck-vps-preenche { transition: none; }
 }
-/* O mini cartão de cada máquina no pé da tropa e as pílulas da tela Máquinas: mesmo
+/* A linha de cada máquina no pé da tropa e as pílulas da tela Abertos: mesmo
  * material do cartão da VPS; o toque responde pelo véu, como a pílula dela. */
 .ck-maquina-mini:hover { background-image: linear-gradient(var(--ck-overlay-hover), var(--ck-overlay-hover)); }
 .ck-maquina-mini:active { background-image: linear-gradient(var(--ck-overlay-pressed), var(--ck-overlay-pressed)); }
 .ck-vps-botao:disabled { cursor: default; }
 .ck-vps-botao:disabled:hover .ck-vps-pilula { background-image: none; }
-/* "Liberou 410 MB": o único movimento da tela Máquinas — a resposta ao toque
+/* "Liberou 410 MB": o único movimento da tela Abertos — a resposta ao toque
  * de fechar, no gesto de chegada da casa. Com movimento reduzido, aparece. */
 @media (prefers-reduced-motion: no-preference) {
   .ck-maquina-liberou { animation: ck-chega var(--ck-dur-enter, 200ms) var(--ck-ease) both; }
-}
-
-/* O "ver processos" da VPS: o chevron gira quando a lista abre — movimento que
- * responde ao toque e diz o que mudou. */
-.ck-divulga-chevron {
-  transition: transform var(--ck-dur-fast) var(--ck-ease);
-}
-[aria-expanded='true'] .ck-divulga-chevron {
-  transform: rotate(180deg);
 }
 
 /* Cursor de streaming: o conteúdo fica vazio para continuar puramente

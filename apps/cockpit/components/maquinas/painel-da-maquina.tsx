@@ -4,7 +4,7 @@
  * que está aberto.
  *
  * Ciclo próprio de 10 s, só com a tela aberta e a aba visível — o mesmo
- * `setInterval` + `visibilitychange` do `BlocoDaVps`. Não usa o resumo
+ * `setInterval` + `visibilitychange` do `usa-recursos-locais`. Não usa o resumo
  * compartilhado de 30 s (`usa-resumo-da-maquina`): aqui o Rica está olhando e
  * acabou de fechar alguma coisa, 30 s seria velho.
  *
@@ -194,6 +194,7 @@ function Medidas({ dados }: { dados: ResumoOnline | null }) {
         medida="temperatura"
         rotulo="Temperatura"
         valor={temperatura === null ? null : `${Math.round(temperatura)} °C`}
+        textoAcessivel={temperatura === null ? undefined : `${Math.round(temperatura)} °C`}
         pct={temperatura}
         fracao={fracaoDaBarra(temperatura)}
         alerta={temperaturaEmAlerta(temperatura)}
