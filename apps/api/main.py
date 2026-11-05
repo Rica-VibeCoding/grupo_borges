@@ -39,6 +39,7 @@ from routers import contas as contas_router
 from routers import conversas as conversas_router
 from routers import ask_user as ask_user_router
 from routers import events as events_router
+from routers import energia as energia_router
 from routers import fleet as fleet_router
 from routers import faxina as faxina_router
 from routers import hooks as hooks_router
@@ -240,6 +241,7 @@ app.include_router(stream_router.router, prefix="/api/stream", tags=["stream"])
 app.include_router(tts_router.router, prefix="/api", tags=["tts"])
 app.include_router(vps_router.router, prefix="/api/vps", tags=["vps"])
 app.include_router(maquinas_router.router, prefix="/api/maquinas", tags=["maquinas"])
+app.include_router(energia_router.router, prefix="/api/energia", tags=["energia"])
 
 # Static files: imagens de tasks E os anexos de agente. O diretório é criado
 # on-demand pelo endpoint de upload, mas garantimos que exista no boot para o

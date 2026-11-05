@@ -25,14 +25,25 @@ type Fase = 'parado' | 'confirmando' | 'fechando';
 export function PilulaDaMaquina({
   children,
   aoTocar,
+  perigo = false,
   ...resto
-}: { children: ReactNode; aoTocar: () => void } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'onClick' | 'children'>) {
+}: {
+  children: ReactNode;
+  aoTocar: () => void;
+  /** A ação que derruba algo (o "Desligar Arsenal" confirmado): texto em `state-fail`. */
+  perigo?: boolean;
+} & Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'onClick' | 'children'>) {
   return (
     <button
       type="button"
       onClick={aoTocar}
       className="ck-vps-botao flex shrink-0 items-center"
-      style={{ minHeight: 'var(--ck-touch-min)', paddingInline: 'var(--ck-space-1)', marginInline: 'calc(var(--ck-space-1) * -1)' }}
+      style={{
+        minHeight: 'var(--ck-touch-min)',
+        paddingInline: 'var(--ck-space-1)',
+        marginInline: 'calc(var(--ck-space-1) * -1)',
+        cursor: resto.disabled && !resto['aria-busy'] ? 'not-allowed' : undefined,
+      }}
       {...resto}
     >
       <span
@@ -43,7 +54,16 @@ export function PilulaDaMaquina({
           borderRadius: 'var(--ck-radius-pill)',
           fontSize: 'var(--ck-text-sm)',
           fontWeight: 500,
-          color: resto.disabled ? 'var(--ck-text-secondary)' : 'var(--ck-text-primary)',
+          // Bloqueado (sem caminho, não ocupado) tem de parecer apagado: sem fundo, sem borda,
+          // opacidade baixa — no print de 05/11 o contorno ainda parecia clicável (Pavan).
+          background: resto.disabled ? 'transparent' : undefined,
+          border: resto.disabled ? '1px solid transparent' : undefined,
+          opacity: resto.disabled && !resto['aria-busy'] ? 0.4 : undefined,
+          color: resto.disabled
+            ? 'var(--ck-text-secondary)'
+            : perigo
+              ? 'var(--ck-state-fail)'
+              : 'var(--ck-text-primary)',
         }}
       >
         {children}
