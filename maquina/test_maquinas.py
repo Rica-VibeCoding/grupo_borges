@@ -206,6 +206,62 @@ def test_janela_exige_app_slice_e_env_hyprland(linux):
     assert linux.m.abertos()["itens"][0]["grupo"] == "protegido"
 
 
+@pytest.mark.parametrize("agente,nome,esperado", [
+    ("estudio", "Estúdio", "Estúdio"), ("note", "Omarchy", "Omarchy"),
+    ("fluytcom", "Fluyt Com", "Fluyt Com"), ("novo-agente", None, "Novo Agente"),
+])
+def test_rotulo_scope_agente_usa_config_antes_do_processo_e_perfil(linux, agente, nome, esperado):
+    if nome is not None:
+        linux.m.agentes[agente] = nome
+    linux.chrome(nome=f"app.slice/cockpit-tmux-{agente}-a1b2.scope")
+    linux.processo(101, ppid=100, args=("bun",))
+    linux.scope(f"app.slice/cockpit-tmux-{agente}-a1b2.scope", 100, 101)
+    assert linux.m.rotulo(linux.m.scopes()[0], {}) == ("Agente " + esperado, esperado)
+
+
+@pytest.mark.parametrize("unidade,esperado", [
+    ("cockpit-maquina.service", "Painel desta máquina"),
+    ("cockpit-api.service", "API do cockpit local"), ("cockpit-v2.service", "Cockpit local"),
+    ("cockpit-maquina-idle.service", "Vigia de teclado e mouse"),
+    ("tailscaled.service", "Tailscale"), ("sshd.service", "Acesso SSH"),
+    ("sshd@conexao.service", "Acesso SSH"),
+    ("pipewire.service", "Som (PipeWire)"), ("pipewire-pulse.service", "Som (PulseAudio)"),
+    ("wireplumber.service", "Som (WirePlumber)"),
+    ("gnome-keyring-daemon.service", "Chaveiro de senhas"),
+    ("gnome-keyring-daemon@ssh.service", "Chaveiro de senhas"),
+    ("init.scope", "Sistema"), ("systemd.service", "Sistema"),
+    ("systemd-user.service", "Sistema"), ("dbus.service", "Sistema"),
+    ("dbus-broker.service", "Sistema"), ("dbus-broker-launch.service", "Sistema"),
+    ("xdg-desktop-portal.service", "Serviços da sessão (portais)"),
+    ("xdg-desktop-portal-hyprland.service", "Serviços da sessão (portais)"),
+    ("xdg-document-portal.service", "Serviços da sessão (documentos)"),
+    ("xdg-permission-store.service", "Serviços da sessão (permissões)"),
+    ("gvfs-daemon.service", "Serviços da sessão (arquivos)"),
+    ("gvfsd.service", "Serviços da sessão (arquivos)"),
+    ("at-spi-dbus-bus.service", "Serviços da sessão (acessibilidade)"),
+    ("at-spi-bus-launcher.service", "Serviços da sessão (acessibilidade)"),
+])
+def test_rotulo_servico_usa_unit_antes_do_executavel_e_janela(linux, unidade, esperado):
+    linux.processo(10, args=("python3",))
+    linux.scope("session.slice/" + unidade, 10)
+    assert linux.m.rotulo(linux.m.scopes()[0], {10: {"class": "foot"}}) == (esperado, None)
+
+
+@pytest.mark.parametrize("unidade,exe,esperado", [
+    ("backup-diario.service", "python", "Backup diario"),
+    ("sincronizar_arquivos.service", "python3", "Sincronizar arquivos"),
+    ("portal-local.service", "next-server", "Portal local"),
+    ("sshfs-dados.service", "sshfs", "Sshfs dados"),
+    ("outro-agente.scope", "bun", "Outro agente"),
+    ("outra-sessao.scope", "claude", "Outra sessao"),
+    (r"backup\x2ddiario@casa.service", "python", "Backup diario casa"),
+])
+def test_rotulo_desconhecido_usa_unit_legivel(linux, unidade, exe, esperado):
+    linux.processo(10, args=(exe,))
+    linux.scope("app.slice/" + unidade, 10)
+    assert linux.m.rotulo(linux.m.scopes()[0], {10: {"class": "python"}}) == (esperado, None)
+
+
 @pytest.mark.parametrize("nome,args", [
     ("app.slice/cockpit-tmux-fluytcom-abc.scope", ("chrome",)),
     ("app.slice/cockpit-maquina.service", ("python3", "painel.py")),

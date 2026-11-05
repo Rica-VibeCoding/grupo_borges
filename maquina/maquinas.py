@@ -261,18 +261,37 @@ class Maquinas:
         return "protegido"
 
     def rotulo(self, scope, janelas):
+        for parte in Path(scope.nome).parts:
+            agente = re.fullmatch(r"cockpit-tmux-(.+)-[^-]+\.scope", parte)
+            if agente:
+                ident = agente[1]
+                dono = self.agentes.get(ident, ident.replace("-", " ").replace("_", " ").title())
+                return "Agente " + dono, dono
+        unidade = Path(scope.nome).stem
+        servico = unidade.split("@", 1)[0]
+        conhecidos = {
+            "cockpit-maquina": "Painel desta máquina", "cockpit-api": "API do cockpit local",
+            "cockpit-v2": "Cockpit local", "cockpit-maquina-idle": "Vigia de teclado e mouse",
+            "tailscaled": "Tailscale", "sshd": "Acesso SSH",
+            "pipewire": "Som (PipeWire)", "pipewire-pulse": "Som (PulseAudio)",
+            "wireplumber": "Som (WirePlumber)", "gnome-keyring-daemon": "Chaveiro de senhas",
+            "init": "Sistema", "systemd": "Sistema", "dbus": "Sistema",
+        }
+        if servico in conhecidos:
+            return conhecidos[servico], None
+        if servico.startswith(("systemd-", "dbus-")):
+            return "Sistema", None
+        for prefixo, nome in (
+            ("xdg-desktop-portal", "portais"), ("xdg-document-portal", "documentos"),
+            ("xdg-permission-store", "permissões"), ("gvfs", "arquivos"),
+            ("at-spi", "acessibilidade"),
+        ):
+            if servico.startswith(prefixo):
+                return f"Serviços da sessão ({nome})", None
         perfil = self.perfil(scope.principal)
         if perfil is not None:
             nome = NOMES_PERFIL.get(perfil, self.agentes.get(perfil, perfil.replace("-", " ").title()))
             return "Chrome do " + nome, self.agentes.get(perfil, nome)
-        for parte in Path(scope.nome).parts:
-            if parte.startswith("cockpit-tmux-"):
-                agente = parte.removeprefix("cockpit-tmux-").rsplit("-", 1)[0]
-                dono = self.agentes.get(agente, agente)
-                return "Sessão do " + dono, dono
-        nomes = {Path(a).name.lower() for p in scope.processos for a in p.args[:1]}
-        if "claude" in nomes or "bun" in nomes:
-            return "Agentes (Claude / Bun)", None
         janela = next((janelas[p.pid] for p in scope.processos if p.pid in janelas), {})
         classe = str(janela.get("class", "")).lower()
         exe = Path(scope.principal.args[0]).name if scope.principal.args else scope.caminho.stem
@@ -280,7 +299,10 @@ class Maquinas:
                 "code": "VS Code", "code-oss": "VS Code", "soffice.bin": "LibreOffice",
                 "libreoffice": "LibreOffice"}.get(classe) or {
                     "chrome": "Chrome pessoal", "foot": "Terminal", "code": "VS Code",
-                    "soffice.bin": "LibreOffice"}.get(exe, classe or exe)
+                    "soffice.bin": "LibreOffice"}.get(exe)
+        if not nome:
+            unidade = re.sub(r"\\x([0-9a-fA-F]{2})", lambda m: chr(int(m[1], 16)), unidade)
+            nome = re.sub(r"[-_@]+", " ", unidade).capitalize()
         return nome, None
 
     @staticmethod
