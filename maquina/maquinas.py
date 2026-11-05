@@ -276,7 +276,10 @@ class Maquinas:
             "pipewire": "Som (PipeWire)", "pipewire-pulse": "Som (PulseAudio)",
             "wireplumber": "Som (WirePlumber)", "gnome-keyring-daemon": "Chaveiro de senhas",
             "init": "Sistema", "systemd": "Sistema", "dbus": "Sistema",
+            "ze_claude": "Pasta da VPS (sshfs)",
         }
+        if servico.startswith("tmux-spawn-"):
+            return "Sessões de terminal (agentes)", None
         if servico in conhecidos:
             return conhecidos[servico], None
         if servico.startswith(("systemd-", "dbus-")):

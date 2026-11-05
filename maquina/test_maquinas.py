@@ -229,6 +229,8 @@ def test_rotulo_scope_agente_usa_config_antes_do_processo_e_perfil(linux, agente
     ("wireplumber.service", "Som (WirePlumber)"),
     ("gnome-keyring-daemon.service", "Chaveiro de senhas"),
     ("gnome-keyring-daemon@ssh.service", "Chaveiro de senhas"),
+    ("ze_claude.service", "Pasta da VPS (sshfs)"),
+    ("tmux-spawn-45bb3e23-2f45-4847.scope", "Sessões de terminal (agentes)"),
     ("init.scope", "Sistema"), ("systemd.service", "Sistema"),
     ("systemd-user.service", "Sistema"), ("dbus.service", "Sistema"),
     ("dbus-broker.service", "Sistema"), ("dbus-broker-launch.service", "Sistema"),
