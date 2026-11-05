@@ -4,7 +4,7 @@
 
 - **Tela:** `app/abertos/page.tsx`; `components/maquinas/` (painel-da-maquina, painel-local, lista-de-abertos, linha-aberta, linhas-das-maquinas, faixa-de-energia, selo-de-maquinas, usa-*); `lib/maquinas.ts`, `lib/linhas-das-maquinas.ts`, `lib/energia.ts` (+ `.test.ts`, rodar com `node --test`).
 - **API (VPS e Arsenal):** `apps/api/routers/{maquinas,energia,vps}.py`, `services/{maquinas,energia,vps_recursos}.py`, testes em `apps/api/tests/` (`uv run pytest`). Lista de máquinas do painel: `MAQUINAS` em `services/maquinas.py`; de energia: `MAQUINAS` em `services/energia.py`.
-- **Painel do Arsenal:** `maquina/` no repo (painel.py, maquinas.py, agentes.py, testes). Instalado em `~/.local/share/cockpit-maquina/`; chave em `~/.config/cockpit-maquina/chave` (0600). `agentes.json` é privado e só existe lá.
+- **Painel do Arsenal:** `maquina/` no repo (painel.py, maquinas.py, agentes.py, testes). Instalado em `~/.local/share/cockpit-maquina/`; chave em `~/.config/cockpit-maquina/chave` (0600). `agentes.json` é privado e só existe lá. O "parado há" sobrevive ao restart por `~/.cache/cockpit-maquina/observacoes.json` (relógio de parede); apagar o arquivo zera a contagem. O painel escuta só no IP Tailscale: testar com `http://100.91.105.22:8787`, não `127.0.0.1`.
 - **Ociosidade:** hypridle com config própria (`~/.config/cockpit-maquina/hypridle.conf`, serviço `cockpit-maquina-idle`). O `hypridle.service` do pacote está mascarado porque o padrão dele trava a tela e suspende.
 
 ## Contratos
