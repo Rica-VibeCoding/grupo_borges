@@ -24,6 +24,9 @@ serviços e containers. Configuração e limites: [maquina-vps](../docs/maquina-
   **um core** (o limiar anterior). Primeira leitura, contador recriado ou
   indisponível não são prova de ociosidade. O cache antigo de `schedstat` é
   descartado uma vez; o novo histórico continua sobrevivendo a restarts.
+  `parado_s` é `null` sem duas amostras válidas, `0` quando ativo e o tempo
+  medido em segundos quando ocioso. No terminal agrupado, qualquer membro
+  ativo torna o conjunto ativo; sem ativo, um membro desconhecido mantém `null`.
 - RAM dos itens: `memory.stat: anon + shmem`, residente, sem swap e sem cache
   de arquivos recuperável. Não é `memory.current`, que inclui cache e kernel;
   antes era PSS + SwapPss. O total continua `MemTotal - MemAvailable`.

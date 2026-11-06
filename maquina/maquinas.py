@@ -499,8 +499,11 @@ class Maquinas:
     def parado(self, item_id):
         with self._trava:
             obs = self._observacoes.get(item_id)
-            if obs is None or not obs.confirmado:
+            if obs is None or obs.cpu_pct is None:
                 return None
+            # Delta válido e ociosidade não confirmada significam atividade.
+            if not obs.confirmado:
+                return 0
             # Não extrapola tempo que o painel ainda não amostrou.
             return max(0, int(obs.amostrado - obs.desde))
 
@@ -550,11 +553,13 @@ class Maquinas:
             for alvo, scopes_item, cadeira in grupos:
                 parados = [parados_scopes[s.id] for s in scopes_item]
                 cpus = [cpu_scopes[s.id] for s in scopes_item]
+                # Um membro ativo basta, mesmo com outro ainda sem duas amostras.
+                parado = 0 if 0 in parados else None if None in parados else min(parados)
                 itens.append({"id": alvo.id, "grupo": "terminal",
                               "rotulo": rotulo + " · cadeira" if cadeira else rotulo, "dono": dono,
                               "memoria_mb": round(sum(self.memoria(s) for s in scopes_item), 2),
                               "cpu_pct": round(sum(cpus), 1) if None not in cpus else None,
-                              "parado_s": None if None in parados else min(parados),
+                              "parado_s": parado,
                               "abas": [], "pede_confirmacao": False,
                               "acao_rotulo": "Fechar cadeira" if cadeira else "Fechar " + rotulo})
         return self.contabilizar({"observado_desde": self.observado_desde, "itens": itens}, cpu_total)

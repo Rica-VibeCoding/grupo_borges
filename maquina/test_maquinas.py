@@ -465,7 +465,7 @@ def test_amostras_3s_limiar_parados_30min_sem_pss_cdp(linux, monkeypatch):
     assert linux.m.parado(item_id) == 1800
     linux.agora[1] = 1803
     linux.m.amostrar()
-    assert linux.m.parado(item_id) is None
+    assert linux.m.parado(item_id) == 0
     assert linux.m.resumo(0, None)["parados_30min"] == 0
 
 
@@ -508,7 +508,7 @@ def test_cpu_conta_worker_ausente_do_proc_na_segunda_leitura(linux, monkeypatch,
     linux.m.amostrar()
     item = linux.m.abertos()["itens"][0]
     assert (principal / "schedstat").read_text() == "0 0 1\n"
-    assert item["cpu_pct"] == 20 and item["parado_s"] is None
+    assert item["cpu_pct"] == 20 and item["parado_s"] == 0
     assert linux.m._observacoes[item_id].confirmado is False
     linux.agora[1] = 6
     total(linux, ocupado=90, ocioso=1150)
@@ -590,7 +590,64 @@ def test_limiar_exato_1pct_de_um_core(linux, delta, dormindo):
     linux.agora[1] = 3
     uso(pasta, delta)
     linux.m.amostrar()
-    assert linux.m.parado(item_id) == (3 if dormindo else None)
+    assert linux.m.parado(item_id) == (3 if dormindo else 0)
+
+
+def test_atividade_distingue_primeira_amostra_ativo_e_retorno_do_repouso(linux, monkeypatch):
+    monkeypatch.setattr(os, "cpu_count", lambda: 64)
+    linux.processo(10)
+    pasta = linux.scope("app.slice/a.scope", 10)
+    linux.m.amostrar()
+    assert linux.m.abertos()["itens"][0]["parado_s"] is None
+    linux.agora[1] = 3
+    uso(pasta, 30_000)  # Ativo no limiar, mesmo arredondando CPU da máquina a 0%.
+    linux.m.amostrar()
+    item = linux.m.abertos()["itens"][0]
+    assert item["cpu_pct"] == 0 and item["parado_s"] == 0
+    for segundo, esperado in ((66, 63), (69, 66), (72, 0)):
+        linux.agora[1] = segundo
+        if segundo == 72:
+            uso(pasta, 60_000)
+        linux.m.amostrar()
+        assert linux.m.abertos()["itens"][0]["parado_s"] == esperado
+
+
+@pytest.mark.parametrize("servidor,sessao,esperado", [
+    (0, 0, 0), (0, 63, 0), (63, 0, 0), (63, 63, 63),
+    (0, None, 0), (None, 0, 0), (63, None, None), (None, 63, None), (None, None, None),
+])
+def test_atividade_terminal_prioriza_membro_ativo_e_isola_cadeira(linux, servidor, sessao, esperado):
+    linux.processo(10, args=("tmux",))
+    pastas = [linux.scope("app.slice/cockpit-tmux-fluytcom-a1b2.scope", 10)]
+    for pid in (100, 200):
+        linux.processo(pid, ppid=10, args=("claude",))
+        pastas.append(linux.scope(f"app.slice/tmux-spawn-{pid}.scope", pid))
+    linux.m.amostrar()
+    assert all(i["parado_s"] is None for i in linux.m.abertos()["itens"][:-1])
+    linux.agora[1] = 63
+    for pasta, parado in zip(pastas, (servidor, sessao, 0)):
+        if parado is None:
+            (pasta / "cpu.stat").unlink()
+        elif parado == 0:
+            uso(pasta, 630_000)
+    linux.m.amostrar()
+    agente, cadeira = linux.m.abertos()["itens"][:-1]
+    assert agente["parado_s"] == esperado
+    assert cadeira["parado_s"] == 0
+
+
+@pytest.mark.parametrize("duas_amostras,esperado", [(False, None), (True, 0)])
+def test_cache_distingue_primeira_amostra_de_atividade(linux, duas_amostras, esperado):
+    linux.processo(10)
+    pasta = linux.scope("app.slice/a.scope", 10)
+    linux.m.amostrar()
+    if duas_amostras:
+        linux.agora[1] = 3
+        uso(pasta, 30_000)
+        linux.m.amostrar()
+    novo = Maquinas(home=linux.m.home, proc=linux.m.proc, cgroup=linux.m.cgroup,
+                    relogio=lambda: linux.agora[0], monotono=lambda: linux.agora[1])
+    assert novo.parado(novo.scopes()[0].id) == esperado
 
 
 @pytest.mark.parametrize("intervalo,mono", [(10, 2410), (300, 2700), (10, 5), (300, 5)])
@@ -1078,7 +1135,7 @@ def test_frota_cpu_compartilhada_nao_duplica_e_conta_threads(linux, frota, monke
     leitura = frota.m.abertos()
     terminais = [i for i in leitura["itens"] if i["grupo"] == "terminal"]
     assert [i["cpu_pct"] for i in terminais] == [10, 20]
-    assert all(i["parado_s"] is None for i in terminais)
+    assert all(i["parado_s"] == 0 for i in terminais)
     assert sum(i["cpu_pct"] for i in leitura["itens"]) == 40
     assert leitura["itens"][-1]["cpu_pct"] == 7.5
 
