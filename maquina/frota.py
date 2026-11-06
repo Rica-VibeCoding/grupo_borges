@@ -28,6 +28,40 @@ class Sessao(Scope):
 
 
 class MaquinasFrota(Maquinas):
+    def _contadores_cpu(self, scope):
+        # Sessões atravessam/compartilham cgroups: o contador da unidade inteira
+        # duplicaria CPU e atribuiria trabalho ao dono errado. /proc/<pid>/stat
+        # inclui TODAS as threads (utime+stime), ao contrário de schedstat.
+        # Workers que nascem e morrem entre leituras ficam em Fora da lista.
+        contadores = {}
+        for p in scope.processos:
+            try:
+                campos = (self.proc / str(p.pid) / "stat").read_text().rsplit(")", 1)[1].split()
+                if int(campos[19]) == p.inicio:
+                    uso = (int(campos[11]) + int(campos[12])) * 1_000_000 // os.sysconf("SC_CLK_TCK")
+                    contadores[f"pid:{p.pid}:{p.inicio}"] = uso
+            except (OSError, ValueError, IndexError):
+                pass
+        return contadores
+
+    @staticmethod
+    def _delta_cpu(cpus, anterior):
+        if anterior is None or any(cpu < anterior.cpus.get(k, 0) for k, cpu in cpus.items()):
+            return None
+        return sum(cpu - anterior.cpus.get(k, 0) for k, cpu in cpus.items())
+
+    def memoria(self, scope):
+        # Mesmo recorte residente anon+shmem, proporcional entre processos.
+        kb = 0
+        for p in scope.processos:
+            try:
+                for linha in (self.proc / str(p.pid) / "smaps_rollup").read_text().splitlines():
+                    if linha.startswith(("Pss_Anon:", "Pss_Shmem:")):
+                        kb += int(linha.split()[1])
+            except (OSError, ValueError, IndexError):
+                pass
+        return round(kb / 1024, 2)
+
     def __init__(self, *, agentes=(), sockets=None, executar=None, **kwargs):
         kwargs.setdefault("cgroup", Path("/sys/fs/cgroup"))
         super().__init__(agentes=agentes, **kwargs)
