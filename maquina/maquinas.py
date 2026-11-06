@@ -22,6 +22,7 @@ import time
 from urllib.parse import urlsplit
 
 from chrome_processos import agrupar_chromes
+from atividade_agentes import RegistrosClaude
 from medicao_processos import RELOGIO, contadores_cpu, delta_processos, memoria_mb, soma_medidas
 
 
@@ -36,6 +37,9 @@ NOMES_PERFIL = {
     "agente": "Agente", "campanha": "Campanha", "fluytcom": "Fluyt Com",
     "fluytpos": "Fluyt Pós", "fluytfin": "Fluyt Fin",
 }
+
+# Ruído Chrome ocioso medido no Arsenal fica abaixo de 10% de um núcleo.
+CPU_TRABALHO_USEC_S = 100_000
 
 
 class Falha(Exception):
@@ -77,6 +81,7 @@ class Observacao:
     desde: float
     confirmado: bool = False
     cpu_pct: float | None = None
+    atividade_conhecida: bool = True
 
 
 def opcao(args, nome):
@@ -160,6 +165,9 @@ class Maquinas:
         self._cpu_anterior = None
         self._cpu_total = None
         self._observacoes = {}
+        self._registros_claude = RegistrosClaude()
+        self._configs_claude = {}
+        self._cpu_trabalho = {}
         self._trava = threading.RLock()
         self._fechamento = threading.Lock()
         self._arquivo_observacoes = self.home / ".cache/cockpit-maquina/observacoes.json"
@@ -168,8 +176,8 @@ class Maquinas:
     def _restaurar_observacoes(self):
         try:
             dados = json.loads(self._arquivo_observacoes.read_text(encoding="utf-8"))
-            # O cache antigo media apenas a thread principal em nanossegundos.
-            if not isinstance(dados, dict) or dados.get("versao") != 2:
+            # v2 decidia atividade por CPU: não transporta essa conclusão ao v3.
+            if not isinstance(dados, dict) or dados.get("versao") != 3:
                 return
             if not isinstance(dados, dict) or type(dados["observado_desde"]) is not int:
                 raise ValueError("observações inválidas")
@@ -197,7 +205,8 @@ class Maquinas:
                                            or not math.isfinite(cpu_pct) or cpu_pct < 0):
                     raise ValueError("CPU inválida")
                 observacoes[item_id] = Observacao(
-                    cpus, tempo(obs["amostrado"]), tempo(obs["desde"]), obs["confirmado"], cpu_pct)
+                    cpus, tempo(obs["amostrado"]), tempo(obs["desde"]), obs["confirmado"], cpu_pct,
+                    obs.get("atividade_conhecida") is True)
         except (OSError, ValueError, TypeError, KeyError, OverflowError):
             return
         self._observacoes = observacoes
@@ -206,11 +215,11 @@ class Maquinas:
     def _salvar_observacoes(self):
         # Só o relógio de parede é transportável entre reinícios da máquina.
         deslocamento = self.relogio() - self.monotono()
-        dados = {"versao": 2, "observado_desde": self.observado_desde, "observacoes": {
+        dados = {"versao": 3, "observado_desde": self.observado_desde, "observacoes": {
             item_id: {"cpus": obs.cpus,
                       "amostrado": obs.amostrado + deslocamento,
                       "desde": obs.desde + deslocamento, "confirmado": obs.confirmado,
-                      "cpu_pct": obs.cpu_pct}
+                      "cpu_pct": obs.cpu_pct, "atividade_conhecida": obs.atividade_conhecida}
             for item_id, obs in self._observacoes.items()}}
         temporario = None
         try:
@@ -478,8 +487,58 @@ class Maquinas:
         return max(0, sum((cpu - anterior.cpus[k]) * (-1 if k.startswith("-") else 1)
                           for k, cpu in cpus.items()))
 
+    def _config_claude(self, processo):
+        chave = (processo.pid, processo.inicio)
+        if chave not in self._configs_claude:
+            try:
+                env = (self.proc / str(processo.pid) / "environ").read_bytes().split(b"\0")
+                config = next((os.fsdecode(v.split(b"=", 1)[1]) for v in env
+                               if v.startswith(b"CLAUDE_CONFIG_DIR=")), None)
+                self._configs_claude[chave] = Path(config) if config else self.home / ".claude"
+            except OSError:
+                return self.home / ".claude"
+        return self._configs_claude[chave]
+
+    def _atividade_terminal(self, scope, delta, intervalo):
+        """True trabalhando, False parado, None sem evidência suficiente.
+
+        busy é um estado, não um timestamp com validade: espera de rede,
+        pensamento e sleep podem durar horas sem CPU nem escrita no JSONL.
+        """
+        claudes = [p for p in scope.processos if any(
+            Path(a).name in {"claude", "claude.exe", "cli.js"} for a in p.args[:2])]
+        pids_claude = {p.pid for p in claudes}
+        estados = []
+        for p in claudes:
+            if any(a in {"-p", "--print"} or a.startswith("--print=") for a in p.args[1:]):
+                estados.append(True)  # Execução não interativa viva é um turno em voo.
+                continue
+            dados = self._registros_claude.ler(self._config_claude(p), p)
+            status = dados.get("status")
+            estados.append(True if status in {"busy", "shell"} else
+                           False if status in {"idle", "waiting"} else None)
+        # Inclui filhos de ferramentas e MCPs que atravessaram scopes na VPS.
+        # Não inclui o redesenho do CLI nem do servidor tmux.
+        trabalho = [p for p in scope.processos if p.pid not in pids_claude
+                    and not any(Path(a).name.startswith("tmux") for a in p.args[:2])]
+        cpus = contadores_cpu(self.proc, trabalho)
+        anterior = self._cpu_trabalho.get(scope.id)
+        self._cpu_trabalho[scope.id] = cpus
+        uso = delta_processos(cpus, anterior)
+        if intervalo > 0 and uso is not None and uso >= intervalo * CPU_TRABALHO_USEC_S:
+            return True
+        if True in estados:
+            return True
+        if estados:
+            return None if None in estados else False
+        # Servidor em scope separado não pode manter seu agente girando.
+        if not trabalho:
+            return False
+        # Outros CLIs: CPU alta prova trabalho; CPU baixa não prova prompt.
+        return True if delta is not None and intervalo > 0 and delta >= intervalo * CPU_TRABALHO_USEC_S else None
+
     def amostrar(self):
-        """A cada 3 s; sem PSS, CDP ou consulta de estado dos agentes."""
+        """Heartbeat de recursos; estado Claude vem do cache atualizado por inotify."""
         with self._trava:
             agora = self.monotono()
             if self._ultima_amostra is not None and agora - self._ultima_amostra < 3:
@@ -492,32 +551,37 @@ class Maquinas:
                 self._cpu_total = round(max(0, min(100, 100 * (1 - idle / (atual[1] - self._cpu_anterior[1])))), 1)
             self._cpu_anterior = atual
             novas = {}
-            for scope in self.scopes():
+            scopes = self.scopes()
+            for scope in scopes:
                 cpus = self._contadores_cpu(scope)
                 anterior = self._observacoes.get(scope.id)
-                if not cpus:
-                    continue
-                delta = self._delta_cpu(cpus, anterior)
-                if delta is None:
-                    novas[scope.id] = Observacao(cpus, agora, agora)
-                    continue
-                intervalo = agora - anterior.amostrado
-                # 0,1 s / 10 s = 1% de um core, escalado ao intervalo real.
-                dormindo = intervalo > 0 and delta < intervalo * 10_000
+                delta = self._delta_cpu(cpus, anterior) if cpus else None
+                intervalo = agora - anterior.amostrado if anterior is not None else 0
+                atividade = (delta >= intervalo * CPU_TRABALHO_USEC_S
+                             if delta is not None and intervalo > 0 else None)
+                terminal = self._terminal(scope, scopes) is not None
+                if terminal:
+                    atividade = self._atividade_terminal(scope, delta, intervalo)
+                dormindo = atividade is False
                 cpu_pct = (round(delta / (intervalo * 1e6 * (os.cpu_count() or 1)) * 100, 1)
-                           if intervalo > 0 else None)
+                           if delta is not None and intervalo > 0 else None)
+                desde = (anterior.desde if dormindo and anterior is not None
+                         and (anterior.atividade_conhecida or not terminal) else agora)
                 novas[scope.id] = Observacao(
-                    cpus, agora, anterior.desde if dormindo else agora, dormindo, cpu_pct)
+                    cpus, agora, desde if dormindo else agora, dormindo, cpu_pct, atividade is not None)
             self._observacoes = novas
+            self._cpu_trabalho = {k: v for k, v in self._cpu_trabalho.items() if k in novas}
+            vivos = {(p.pid, p.inicio) for s in scopes for p in s.processos}
+            self._configs_claude = {k: v for k, v in self._configs_claude.items() if k in vivos}
             self._ultima_amostra = agora
             self._salvar_observacoes()
 
     def parado(self, item_id):
         with self._trava:
             obs = self._observacoes.get(item_id)
-            if obs is None or obs.cpu_pct is None:
+            if obs is None or not obs.atividade_conhecida:
                 return None
-            # Delta válido e ociosidade não confirmada significam atividade.
+            # Sinal válido sem ociosidade confirmada significa trabalho em voo.
             if not obs.confirmado:
                 return 0
             # Não extrapola tempo que o painel ainda não amostrou.

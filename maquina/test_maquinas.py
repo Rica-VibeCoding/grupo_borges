@@ -307,7 +307,8 @@ def test_parados_30min_exclui_terminais_e_spawns_orfaos(linux, monkeypatch):
     linux.m.amostrar()
     linux.agora[1] = 1800
     linux.m.amostrar()
-    assert all(linux.m.parado(s.id) == 1800 for s in linux.m.scopes())
+    assert all(linux.m.parado(s.id) == 1800 for s in linux.m.scopes()
+               if linux.m._terminal(s) is None)
     monkeypatch.setattr(maquinas.shutil, "disk_usage", lambda _: shutil._ntuple_diskusage(100, 25, 75))
     assert linux.m.resumo(0, None)["parados_30min"] == 2
 
@@ -581,8 +582,8 @@ def test_unidade_descendente_nao_duplica_cpu_e_ram(linux, monkeypatch):
     assert fora["cpu_pct"] == 10 and fora["memoria_mb"] == 3997
 
 
-@pytest.mark.parametrize("delta,dormindo", [(29_999, True), (30_000, False), (30_001, False)])
-def test_limiar_exato_1pct_de_um_core(linux, delta, dormindo):
+@pytest.mark.parametrize("delta,dormindo", [(299_999, True), (300_000, False), (300_001, False)])
+def test_limiar_exato_10pct_de_um_core(linux, delta, dormindo):
     linux.processo(10)
     pasta = linux.scope("app.slice/a.scope", 10)
     item_id = linux.m.scopes()[0].id
@@ -600,14 +601,14 @@ def test_atividade_distingue_primeira_amostra_ativo_e_retorno_do_repouso(linux, 
     linux.m.amostrar()
     assert linux.m.abertos()["itens"][0]["parado_s"] is None
     linux.agora[1] = 3
-    uso(pasta, 30_000)  # Ativo no limiar, mesmo arredondando CPU da máquina a 0%.
+    uso(pasta, 300_000)  # Ativo no limiar, apesar da pequena fatia da máquina (64 cores).
     linux.m.amostrar()
     item = linux.m.abertos()["itens"][0]
-    assert item["cpu_pct"] == 0 and item["parado_s"] == 0
+    assert item["cpu_pct"] == 0.2 and item["parado_s"] == 0
     for segundo, esperado in ((66, 63), (69, 66), (72, 0)):
         linux.agora[1] = segundo
         if segundo == 72:
-            uso(pasta, 60_000)
+            uso(pasta, 600_000)
         linux.m.amostrar()
         assert linux.m.abertos()["itens"][0]["parado_s"] == esperado
 
@@ -616,21 +617,15 @@ def test_atividade_distingue_primeira_amostra_ativo_e_retorno_do_repouso(linux, 
     (0, 0, 0), (0, 63, 0), (63, 0, 0), (63, 63, 63),
     (0, None, 0), (None, 0, 0), (63, None, None), (None, 63, None), (None, None, None),
 ])
-def test_atividade_terminal_prioriza_membro_ativo_e_isola_cadeira(linux, servidor, sessao, esperado):
+def test_atividade_terminal_prioriza_membro_ativo_e_isola_cadeira(linux, monkeypatch, servidor, sessao, esperado):
     linux.processo(10, args=("tmux",))
-    pastas = [linux.scope("app.slice/cockpit-tmux-fluytcom-a1b2.scope", 10)]
+    linux.scope("app.slice/cockpit-tmux-fluytcom-a1b2.scope", 10)
     for pid in (100, 200):
         linux.processo(pid, ppid=10, args=("claude",))
-        pastas.append(linux.scope(f"app.slice/tmux-spawn-{pid}.scope", pid))
-    linux.m.amostrar()
-    assert all(i["parado_s"] is None for i in linux.m.abertos()["itens"][:-1])
-    linux.agora[1] = 63
-    for pasta, parado in zip(pastas, (servidor, sessao, 0)):
-        if parado is None:
-            (pasta / "cpu.stat").unlink()
-        elif parado == 0:
-            uso(pasta, 630_000)
-    linux.m.amostrar()
+        linux.scope(f"app.slice/tmux-spawn-{pid}.scope", pid)
+    # Agregação é independente do sinal: estados vêm do detector de turno.
+    tempos = {s.id: t for s, t in zip(linux.m.scopes(), (servidor, sessao, 0))}
+    monkeypatch.setattr(linux.m, "parado", tempos.get)
     agente, cadeira = linux.m.abertos()["itens"][:-1]
     assert agente["parado_s"] == esperado
     assert cadeira["parado_s"] == 0
@@ -643,7 +638,7 @@ def test_cache_distingue_primeira_amostra_de_atividade(linux, duas_amostras, esp
     linux.m.amostrar()
     if duas_amostras:
         linux.agora[1] = 3
-        uso(pasta, 30_000)
+        uso(pasta, 300_000)
         linux.m.amostrar()
     novo = Maquinas(home=linux.m.home, proc=linux.m.proc, cgroup=linux.m.cgroup,
                     relogio=lambda: linux.agora[0], monotono=lambda: linux.agora[1])
@@ -661,7 +656,7 @@ def test_observacoes_preservam_40min_apos_reinicio(linux, intervalo, mono):
     arquivo = linux.m._arquivo_observacoes
     dados = json.loads(arquivo.read_text())
     assert arquivo.stat().st_mode & 0o777 == 0o600
-    assert dados["versao"] == 2 and dados["observado_desde"] == 10000
+    assert dados["versao"] == 3 and dados["observado_desde"] == 10000
     assert dados["observacoes"][item_id]["desde"] == 10000
     linux.agora[:] = [12400 + intervalo, mono]
     novo = Maquinas(home=linux.m.home, proc=linux.m.proc, cgroup=linux.m.cgroup,
@@ -1102,6 +1097,8 @@ def test_defaults_seguem_uid_real(monkeypatch, tmp_path):
 
 
 def test_frota_soma_sessao_atraves_de_scopes_e_separa_cadeira(linux, frota):
+    registro_claude(linux, 102, "idle")
+    registro_claude(linux, 202, "idle")
     principal = frota.sessao()
     # Cadeira em outro socket, servidor dentro de serviço protegido (poller).
     cadeira = frota.sessao("pavan-alerta", 200, cadeira=True, scope="app.slice/tmux-spawn-b.scope")
@@ -1137,7 +1134,8 @@ def test_frota_cpu_compartilhada_nao_duplica_e_conta_threads(linux, frota, monke
     leitura = frota.m.abertos()
     terminais = [i for i in leitura["itens"] if i["grupo"] == "terminal"]
     assert [i["cpu_pct"] for i in terminais] == [10, 20]
-    assert all(i["parado_s"] == 0 for i in terminais)
+    # Sem registro de turno, CPU do próprio Claude não prova trabalho.
+    assert all(i["parado_s"] is None for i in terminais)
     assert sum(i["cpu_pct"] for i in leitura["itens"]) == 40
     assert leitura["itens"][-1]["cpu_pct"] == 7.5
 
@@ -1165,7 +1163,7 @@ def test_frota_pid_que_muda_de_dono_nao_transfere_cpu_da_vida(linux, frota, monk
     total(linux, ocupado=0, ocioso=1240)
     frota.m.amostrar()
     assert frota.m.cpu(sessao.id) == 0
-    assert frota.m.parado(sessao.id) == 3
+    assert frota.m.parado(sessao.id) is None
     assert frota.m.abertos()["itens"][-1]["cpu_pct"] == 0
 
 
@@ -1529,3 +1527,158 @@ def test_frota_unidade_inteira_mede_cpu_pelo_cgroup_mesmo_com_worker_que_saiu(li
     frota.m.amostrar()
     item = next(s for s in frota.m.scopes() if s.caminho == pasta)
     assert frota.m.cpu(item.id) == 10
+
+
+def registro_claude(linux, processo_pid, status, *, config=None, **extra):
+    pid = processo_pid
+    pasta = (config or linux.m.home / ".claude") / "sessions"
+    pasta.mkdir(parents=True, exist_ok=True)
+    arquivo = pasta / f"{pid}.json"
+    arquivo.write_text(json.dumps({"pid": pid, "procStart": str(pid * 10),
+                                   "status": status, **extra}))
+    return arquivo
+
+
+def terminal_claude(linux, frota, vps, args=("claude",)):
+    if vps:
+        sc = frota.sessao()
+        linux.processo(102, ppid=101, args=args)
+        return frota.m, sc, 102
+    linux.processo(10, args=args)
+    linux.scope("app.slice/cockpit-tmux-fluytcom-abc.scope", 10)
+    return linux.m, linux.m.scopes()[0], 10
+
+
+@pytest.mark.parametrize("vps", [False, True])
+def test_prompt_ocioso_ignora_ruido_cpu_e_transcript_recente(linux, frota, vps):
+    m, sc, pid = terminal_claude(linux, frota, vps)
+    registro_claude(linux, pid, "idle")
+    # Metadata no JSONL não inicia turno; não procura transcript mais novo.
+    transcript = m.home / ".claude/projects/qualquer/sessao.jsonl"
+    transcript.parent.mkdir(parents=True)
+    transcript.write_text('{"type":"metadata"}\n')
+    m.amostrar()
+    for segundo in range(3, 67, 3):
+        linux.agora[1] = segundo
+        uso(sc.caminho, segundo * 16_000)  # 1,6% de um core, bug original.
+        arquivo = linux.m.proc / str(pid) / "stat"
+        prefixo, dados = arquivo.read_text().rsplit(")", 1)
+        campos = dados.split()
+        campos[11] = str(round(segundo * 0.016 * os.sysconf("SC_CLK_TCK")))
+        arquivo.write_text(prefixo + ") " + " ".join(campos))
+        m.amostrar()
+    item = next(i for i in m.abertos()["itens"] if i["id"] == sc.id)
+    assert item["parado_s"] == 66
+    assert item["cpu_pct"] is not None
+
+
+@pytest.mark.parametrize("vps", [False, True])
+@pytest.mark.parametrize("modo", ["busy", "shell", "print"])
+def test_turno_sem_cpu_sem_transcript_nao_expira(linux, frota, vps, modo):
+    args = ("claude", "-p", "teste") if modo == "print" else ("claude",)
+    m, sc, pid = terminal_claude(linux, frota, vps, args)
+    if modo != "print":
+        registro_claude(linux, pid, modo)
+    m.amostrar()
+    linux.agora[1] = 7200
+    m.amostrar()
+    assert m.parado(sc.id) == 0
+    assert m.cpu(sc.id) == 0
+
+
+@pytest.mark.parametrize("vps", [False, True])
+def test_build_filho_trabalha_mesmo_com_registro_idle(linux, frota, vps):
+    m, sc, pid = terminal_claude(linux, frota, vps)
+    registro_claude(linux, pid, "idle")
+    worker = linux.processo(600, ppid=pid, args=("ninja",))
+    # Filho dentro da sessão, inclusive em outra unidade na VPS.
+    linux.scope("app.slice/build.scope" if vps else str(sc.caminho.relative_to(m.cgroup)),
+                *([600] if vps else [pid, 600]))
+    (m.proc / "uptime").write_text("100 0")
+    m.amostrar()
+    campos = worker.joinpath("stat").read_text().rsplit(")", 1)
+    dados = campos[1].split()
+    dados[11] = str(os.sysconf("SC_CLK_TCK") * 2)
+    worker.joinpath("stat").write_text(campos[0] + ") " + " ".join(dados))
+    (m.proc / "uptime").write_text("103 0")
+    linux.agora[1] = 3
+    m.amostrar()
+    assert m.parado(sc.id) == 0
+
+
+@pytest.mark.parametrize("mudanca", ["pid", "procStart", "formato", "ausente"])
+def test_registro_invalido_nao_inventa_prompt(linux, frota, mudanca):
+    m, sc, pid = terminal_claude(linux, frota, False)
+    extras = {mudanca: -1} if mudanca in {"pid", "procStart"} else {}
+    arq = registro_claude(linux, pid, "idle", **extras)
+    if mudanca == "formato":
+        arq.write_text('[]')
+    elif mudanca == "ausente":
+        arq.unlink()
+    m.amostrar()
+    linux.agora[1] = 120
+    m.amostrar()
+    assert m.parado(sc.id) is None
+
+
+def test_eventos_transicao_atomicidade_exclusao_sem_reler_arquivo(linux, frota, monkeypatch):
+    m, sc, pid = terminal_claude(linux, frota, False)
+    arq = registro_claude(linux, pid, "idle")
+    m.amostrar()
+    linux.agora[1] = 63
+    m.amostrar()
+    assert m.parado(sc.id) == 63
+    # Sem eventos, o heartbeat não abre o arquivo outra vez.
+    ler = m._registros_claude._ler
+    monkeypatch.setattr(m._registros_claude, "_ler", lambda _: pytest.fail("sondou registro sem evento"))
+    linux.agora[1] = 66
+    m.amostrar()
+    assert m.parado(sc.id) == 66
+    monkeypatch.setattr(m._registros_claude, "_ler", ler)
+    temporario = arq.with_suffix(".tmp")
+    temporario.write_text(json.dumps({"pid": pid, "procStart": str(pid * 10), "status": "busy"}))
+    temporario.replace(arq)
+    linux.agora[1] = 69
+    m.amostrar()
+    assert m.parado(sc.id) == 0
+    registro_claude(linux, pid, "idle")
+    linux.agora[1] = 72
+    m.amostrar()
+    assert m.parado(sc.id) == 3
+    arq.unlink()
+    linux.agora[1] = 75
+    m.amostrar()
+    assert m.parado(sc.id) is None
+
+
+def test_config_claude_customizada(linux, frota):
+    m, sc, pid = terminal_claude(linux, frota, False)
+    config = m.home / "conta-cliente"
+    (m.proc / str(pid) / "environ").write_bytes(f"CLAUDE_CONFIG_DIR={config}\0".encode())
+    registro_claude(linux, pid, "busy", config=config)
+    m.amostrar()
+    assert m.parado(sc.id) == 0
+
+
+def test_vigia_perdida_nao_prova_idle(linux, frota):
+    m, sc, pid = terminal_claude(linux, frota, False)
+    registro_claude(linux, pid, "idle")
+    m.amostrar()
+    assert m.parado(sc.id) == 0
+    m._registros_claude._falhou = True
+    linux.agora[1] = 66
+    m.amostrar()
+    assert m.parado(sc.id) is None
+
+
+def test_historico_v2_com_limiar_antigo_e_descartado(linux):
+    linux.processo(10)
+    linux.scope("app.slice/a.scope", 10)
+    linux.m.amostrar()
+    linux.agora[1] = 63
+    linux.m.amostrar()
+    dados = json.loads(linux.m._arquivo_observacoes.read_text())
+    dados["versao"] = 2
+    linux.m._arquivo_observacoes.write_text(json.dumps(dados))
+    novo = Maquinas(home=linux.m.home, proc=linux.m.proc, cgroup=linux.m.cgroup)
+    assert novo.parado(novo.scopes()[0].id) is None
