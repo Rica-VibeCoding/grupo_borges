@@ -1,4 +1,4 @@
-"""Sessões da VPS: parentesco de panes, nunca o cgroup compartilhado da frota.
+"""Sessões da VPS por panes; Codex órfão por scope de dono inequívoco.
 
 O servidor tmux e serviços ficam protegidos. Fechar alcança apenas uma sessão
 identificada pelo socket, id nativo e starttime dos processos, inclusive MCPs
@@ -26,6 +26,12 @@ class Sessao(Scope):
     cadeira: bool
     servidor: Processo
     panes: tuple[Processo, ...]
+
+
+@dataclass(frozen=True)
+class CadeiraCodex(ScopePorProcessos):
+    # Recorte do scope do agente: RAM e CPU pelos processos, nunca o cgroup.
+    ident: str
 
 
 class MaquinasFrota(Maquinas):
@@ -122,6 +128,19 @@ class MaquinasFrota(Maquinas):
             "next", "next-server", "n8n",
         }) or any(n.startswith(("sshd", "containerd-shim", "next-server")) for n in nomes))
 
+    @staticmethod
+    def _codex_exec(processo):
+        args = processo.args
+        if args and Path(args[0]).name in {"node", "nodejs"}:
+            args = args[1:]
+        return (len(args) >= 2 and Path(args[0]).name in {"codex", "codex.js"}
+                and args[1] in {"exec", "e"})
+
+    def _permitido(self, processo, unidade):
+        return not (self._infra(processo) or Path(unidade.nome).suffix == ".service"
+                    or {"system.slice", "session.slice"} & set(Path(unidade.nome).parts)
+                    or Path(unidade.nome).name.startswith("docker-"))
+
     def scopes(self):
         brutos = super()._scopes_unidades()
         if any(Path(s.nome).name.startswith("docker-") for s in brutos):
@@ -149,9 +168,7 @@ class MaquinasFrota(Maquinas):
                     continue
                 p = processos[pid]
                 unidade = unidades[pid]
-                if (self._infra(p) or Path(unidade.nome).suffix == ".service"
-                        or {"system.slice", "session.slice"} & set(Path(unidade.nome).parts)
-                        or Path(unidade.nome).name.startswith("docker-")):
+                if not self._permitido(p, unidade):
                     continue
                 candidatos.add(pid)
                 fila.extend(filhos.get(pid, ()))
@@ -164,6 +181,53 @@ class MaquinasFrota(Maquinas):
                                   tuple(processos[pid] for pid in sorted(candidatos)), principal,
                                   str(socket), alvo, ident, cadeira, servidor, panes))
             usados.update(candidatos)
+        # fork herda o cgroup, mesmo quando o processo perde o pai. O scope
+        # não tem "main PID" (systemd.scope) e pode abrigar várias sessões:
+        # parentesco comprovado vence; cgroup só decide com UMA sessão viva.
+        donos_pid = {p.pid: s for s in sessoes for p in s.processos}
+        donos_unidade = {}
+        for s in sessoes:
+            for p in s.processos:
+                donos_unidade.setdefault(unidades[p.pid].nome, {})[s.id] = s
+        cadeiras, separados = [], set()
+        for raiz in sorted(processos.values(), key=lambda p: (p.inicio, p.pid)):
+            if not self._codex_exec(raiz) or not self._permitido(raiz, unidades[raiz.pid]):
+                continue
+            # O launcher Node e o binário nativo são a mesma execução.
+            ancestral, vistos = raiz.ppid, {raiz.pid}
+            while ancestral in processos and ancestral not in vistos:
+                vistos.add(ancestral)
+                if self._codex_exec(processos[ancestral]):
+                    break
+                ancestral = processos[ancestral].ppid
+            else:
+                dono = donos_pid.get(raiz.pid)
+                if dono is None:
+                    candidatos = donos_unidade.get(unidades[raiz.pid].nome, {})
+                    if len(candidatos) != 1:
+                        continue
+                    dono = next(iter(candidatos.values()))
+                membros, fila = set(), [raiz.pid]
+                while fila:
+                    pid = fila.pop()
+                    if pid in membros or pid in separados:
+                        continue
+                    p = processos[pid]
+                    if (not self._permitido(p, unidades[pid])
+                            or (pid in donos_pid and donos_pid[pid].id != dono.id)
+                            or any(p in s.panes for s in sessoes)):
+                        continue
+                    membros.add(pid)
+                    fila.extend(filhos.get(pid, ()))
+                if not membros:
+                    continue
+                nome = f"{dono.nome}/codex/{raiz.pid}"
+                cadeiras.append(CadeiraCodex(unidades[raiz.pid].caminho, nome,
+                    tuple(processos[pid] for pid in sorted(membros)), raiz, dono.ident))
+                separados.update(membros)
+        sessoes = [replace(s, processos=tuple(p for p in s.processos if p.pid not in separados))
+                   for s in sessoes]
+        usados.update(separados)
         protegidos = []
         for s in brutos:
             restantes = tuple(p for p in s.processos if p.pid not in usados)
@@ -175,15 +239,19 @@ class MaquinasFrota(Maquinas):
             protegidos.append(ScopePorProcessos(s.caminho, s.nome, restantes, principal)
                               if len(restantes) != len(s.processos)
                               else replace(s, principal=principal))
-        return protegidos + sessoes
+        return protegidos + sessoes + cadeiras
 
     def _terminal(self, scope, scopes=None):
-        return scope if isinstance(scope, Sessao) else None
+        return scope if isinstance(scope, (Sessao, CadeiraCodex)) else None
 
     def classificar(self, scope, janelas, scopes=None):
-        return "terminal" if isinstance(scope, Sessao) else "protegido"
+        return "terminal" if isinstance(scope, (Sessao, CadeiraCodex)) else "protegido"
 
     def rotulo(self, scope, janelas):
+        if isinstance(scope, CadeiraCodex):
+            a = self.cadastro[scope.ident]
+            dono = self.agentes.get(a.get("cadeira_de", scope.ident), a["nome"])
+            return dono + " · Codex", dono
         if isinstance(scope, Sessao):
             a = self.cadastro[scope.ident]
             dono = self.agentes.get(a.get("cadeira_de", scope.ident), a["nome"])
@@ -216,13 +284,16 @@ class MaquinasFrota(Maquinas):
                     if self.processo(p.pid) != p:
                         raise Falha(409, "A sessão mudou; atualize a lista.")
                 atual = self._achar(item_id)
-                if (atual.servidor != sessao.servidor or atual.panes != sessao.panes
-                        or atual.processos != sessao.processos):
+                if (type(atual) is not type(sessao) or atual.principal != sessao.principal
+                        or atual.processos != sessao.processos
+                        or (isinstance(sessao, Sessao) and
+                            (atual.servidor != sessao.servidor or atual.panes != sessao.panes))):
                     raise Falha(409, "A sessão mudou; atualize a lista.")
                 # O alvo $N é exato; nunca kill-server nem kill do cgroup.
-                r = self._tmux(sessao.socket, "kill-session", "-t", sessao.alvo)
-                if r.returncode:
-                    raise Falha(409, "Não foi possível fechar a sessão.")
+                if isinstance(sessao, Sessao):
+                    r = self._tmux(sessao.socket, "kill-session", "-t", sessao.alvo)
+                    if r.returncode:
+                        raise Falha(409, "Não foi possível fechar a sessão.")
                 for _, fd in reversed(fds):
                     try:
                         signal.pidfd_send_signal(fd, signal.SIGTERM)
