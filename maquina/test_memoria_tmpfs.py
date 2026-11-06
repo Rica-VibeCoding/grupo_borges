@@ -69,8 +69,9 @@ def test_mincore_real_conta_paginas_sem_materializar_buracos_e_sem_duplicar_link
         _, ram, blocos = tmpfs.residente(arq, arq.stat().st_dev)
         assert ram == blocos == 2 * tmpfs.PAGINA
         assert arq.stat().st_size == 3 * tmpfs.PAGINA
-        ram_total, blocos_total, _ = tmpfs.recorte(pasta, arq.stat().st_dev, time.monotonic() + 2)
+        ram_total, blocos_total, parcial = tmpfs.recorte(pasta, arq.stat().st_dev, time.monotonic() + 2)
         assert ram_total == blocos_total == ram
+        assert not parcial
 
 
 def test_prazo_limita_varredura_sem_sugerir_medida_completa(tmp_path):

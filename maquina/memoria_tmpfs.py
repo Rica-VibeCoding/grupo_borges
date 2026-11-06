@@ -24,6 +24,9 @@ PAGINA = os.sysconf("SC_PAGE_SIZE")
 def residente(arquivo, dispositivo, limite=float("inf")):
     # Sem seguir symlinks nem tocar o conteúdo. mincore mente (todos residentes)
     # para arquivos sem posse/permissão: restringe a dono ou root.
+    info = os.stat(arquivo, follow_symlinks=False)
+    if not stat.S_ISREG(info.st_mode) or info.st_dev != dispositivo:
+        return None
     fd = os.open(arquivo, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_NOATIME)
     try:
         info = os.fstat(fd)
