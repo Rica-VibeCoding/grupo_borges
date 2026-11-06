@@ -21,7 +21,8 @@ import threading
 import time
 from urllib.parse import urlsplit
 
-from medicao_processos import soma_medidas
+from chrome_processos import agrupar_chromes
+from medicao_processos import contadores_cpu, memoria_mb, soma_medidas
 
 
 IDENT = re.compile(r"[A-Za-z0-9_-]{1,64}\Z")
@@ -261,6 +262,9 @@ class Maquinas:
             return None
 
     def scopes(self):
+        return agrupar_chromes(self, self._scopes_unidades())
+
+    def _scopes_unidades(self):
         # Um item por unidade; sub-cgroups sem unidade pertencem à unidade mais próxima.
         unidades = {}
         for arquivo in sorted(self.cgroup.rglob("cgroup.procs")):
@@ -418,6 +422,8 @@ class Maquinas:
         return {k: int(v) for k, v in (linha.split() for linha in arquivo.read_text().splitlines())}
 
     def memoria(self, scope):
+        if isinstance(scope, ScopePorProcessos):
+            return memoria_mb(self.proc, scope.processos)
         # RAM residente: não mistura swap ou todo o cache de memory.current
         # com o total MemTotal - MemAvailable. Kernel/cache ficam no residual.
         try:
@@ -442,6 +448,8 @@ class Maquinas:
                 yield filha
 
     def _contadores_cpu(self, scope):
+        if isinstance(scope, ScopePorProcessos):
+            return contadores_cpu(self.proc, scope.processos)
         # Inode + boot distinguem uma unidade recriada e um reboot. O contador
         # sobrevive à saída de workers e inclui threads e cgroups descendentes.
         try:
@@ -620,8 +628,9 @@ class Maquinas:
 
         janelas = self.janelas()
         scopes = self.scopes()
-        parados = sum(self.classificar(s, janelas, scopes) in {"agente", "seus"}
-                      and (self.parado(s.id) or 0) >= 1800 for s in scopes)
+        tempos = [self.parado(s.id) for s in scopes
+                  if self.classificar(s, janelas, scopes) in {"agente", "seus"}]
+        parados = None if None in tempos else sum(t >= 1800 for t in tempos)
         return {"cpu_pct": cpu_pct, "ram": recurso(mem["MemTotal"] / 1024, mem["MemAvailable"] / 1024),
                 "disco": recurso(disco.total / 2**20, disco.free / 2**20),
                 "temperatura_c": temperatura_c, "parados_30min": parados,
@@ -668,7 +677,13 @@ class Maquinas:
                     except OSError:
                         raise Falha(409, "Não foi possível enviar SIGTERM.") from None
                 limite = self.monotono() + 8
-                while scope.caminho.exists():
+                def ainda_vivo():
+                    if isinstance(scope, ScopePorProcessos):
+                        return any((p := self.processo(antigo.pid)) is not None and p.inicio == antigo.inicio
+                                   for antigo in scope.processos)
+                    return scope.caminho.exists()
+
+                while ainda_vivo():
                     if self.monotono() >= limite:
                         raise Falha(409, "O item não fechou em 8 segundos.")
                     time.sleep(0.1)

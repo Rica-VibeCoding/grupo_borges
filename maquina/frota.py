@@ -125,7 +125,7 @@ class MaquinasFrota(Maquinas):
         }) or any(n.startswith(("sshd", "containerd-shim", "next-server")) for n in nomes))
 
     def scopes(self):
-        brutos = super().scopes()
+        brutos = super()._scopes_unidades()
         if any(Path(s.nome).name.startswith("docker-") for s in brutos):
             self._nomes_containers()
         processos = {p.pid: p for s in brutos for p in s.processos}

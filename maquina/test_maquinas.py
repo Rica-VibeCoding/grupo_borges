@@ -1388,3 +1388,79 @@ def test_memoria_indisponivel_e_null_sem_soma_parcial(linux, frota, recorte):
         item = leitura['itens'][0]
     assert item['memoria_mb'] is None
     assert leitura['itens'][-1]['memoria_mb'] is None
+
+
+@pytest.mark.parametrize('fora_de_user', [False, True])
+def test_chrome_agrega_filhos_por_parentesco_ram_cpu_atividade_e_residual(linux, monkeypatch, fora_de_user):
+    monkeypatch.setattr(os, 'cpu_count', lambda: 4)
+    pasta = linux.chrome(100, 'teste', porta=0)
+    linux.processo(110, ppid=100, args=('chrome', '--type=zygote'), pss=20 * 1024)
+    linux.processo(120, ppid=110, args=('chrome', '--type=renderer'), pss=100 * 1024)
+    linux.processo(130, ppid=100, args=('chrome', '--type=gpu-process'), pss=30 * 1024)
+    # Um Chrome alheio com o mesmo texto de perfil NÃO é filho.
+    linux.processo(900, args=('chrome', '--type=renderer', f'--user-data-dir={linux.m.home}/.config/ze-chrome-teste'), pss=10 * 1024)
+    if not fora_de_user:
+        linux.processo(800, args=('sleep',), pss=5 * 1024)
+        linux.scope('app.slice/lancador.scope', 110, 120, 130, 800)
+    linux.m.amostrar()
+    linux.agora[1] = 1800
+    linux.m.amostrar()
+    browser = next(s for s in linux.m.scopes() if s.principal.pid == 100)
+    assert {p.pid for p in browser.processos} == {100, 110, 120, 130}
+    assert linux.m.parado(browser.id) == 1800
+    monkeypatch.setattr(maquinas.shutil, 'disk_usage', lambda _: shutil._ntuple_diskusage(100, 50, 50))
+    assert linux.m.resumo(0, None)['parados_30min'] == 1
+    # Só o renderer trabalha: a atividade do principal sozinho diria parado.
+    arq = linux.m.proc / '120/stat'
+    prefixo, dados = arq.read_text().rsplit(')', 1)
+    campos = dados.split()
+    campos[11] = str(round(1.2 * os.sysconf('SC_CLK_TCK')))
+    arq.write_text(prefixo + ') ' + ' '.join(campos))
+    linux.agora[1] = 1803
+    total(linux, ocupado=48, ocioso=1072)
+    linux.m.amostrar()
+    leitura = linux.m.abertos()
+    item = next(i for i in leitura['itens'] if i['grupo'] == 'agente')
+    assert item['memoria_mb'] == 151
+    assert item['cpu_pct'] == 10
+    assert item['parado_s'] == 0
+    assert item['acao_rotulo'] == 'Fechar Chrome do Teste'
+    assert linux.m.resumo(40, None)['parados_30min'] == 0
+    assert leitura['itens'][-1]['memoria_mb'] == (3849 if fora_de_user else 3844)
+    assert leitura['itens'][-1]['cpu_pct'] == 30
+    if not fora_de_user:
+        protegido = next(i for i in leitura['itens'] if i['rotulo'] == 'Lancador')
+        assert protegido['memoria_mb'] == 5 and protegido['cpu_pct'] == 0
+
+
+def test_chrome_nao_desprotege_unidade_de_infra_ou_captura_outro_browser(linux):
+    linux.chrome(100, 'teste', porta=0)
+    linux.processo(110, ppid=100, args=('chrome', '--user-data-dir=~/.config/ze-chrome-outro'))
+    linux.scope('app.slice/outro.scope', 110)
+    assert len(linux.m.scopes()) == 2
+    linux.chrome(200, 'teste', porta=0, nome='app.slice/cockpit-protegido.scope')
+    linux.processo(210, ppid=200, args=('chrome', '--type=renderer'))
+    assert all(210 not in {p.pid for p in s.processos} for s in linux.m.scopes())
+
+
+@pytest.mark.parametrize('filho_fecha', [False, True])
+def test_chrome_fechar_so_confirma_depois_dos_filhos_e_libera_ram_inteira(linux, sinal_simulado, monkeypatch, filho_fecha):
+    pasta = linux.chrome(100, 'teste', porta=0)
+    linux.processo(110, ppid=100, args=('chrome', '--type=renderer'), pss=20 * 1024)
+    item_id = linux.m.scopes()[0].id
+    assert linux.m.resumo(0, None)['parados_30min'] is None
+
+    def sinal(fd, sig):
+        assert sig == signal.SIGTERM
+        shutil.rmtree(pasta)
+        shutil.rmtree(linux.m.proc / '100')
+        if filho_fecha:
+            shutil.rmtree(linux.m.proc / '110')
+
+    monkeypatch.setattr(signal, 'pidfd_send_signal', sinal)
+    monkeypatch.setattr(maquinas.time, 'sleep', lambda n: linux.agora.__setitem__(1, linux.agora[1] + n))
+    if filho_fecha:
+        assert linux.m.fechar(item_id) == {'liberou_mb': 21}
+    else:
+        falha(409, linux.m.fechar, item_id)
+        assert (linux.m.proc / '110').exists()
