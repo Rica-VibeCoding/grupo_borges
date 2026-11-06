@@ -24,7 +24,7 @@ ENV_NOME = re.compile(r"[a-zA-Z_][a-zA-Z0-9_]*\Z")
 
 
 def configurar():
-    c = json.loads((PASTA / "agentes.json").read_text())
+    c = json.loads(Path(os.environ.get("COCKPIT_MAQUINA_CONFIG", PASTA / "agentes.json")).read_text())
     ip = ipaddress.IPv4Address(c["ip_tailscale"])
     if ip not in ipaddress.ip_network("100.64.0.0/10"):
         raise ValueError("ip_tailscale precisa ser um IPv4 do Tailscale")
@@ -32,6 +32,8 @@ def configurar():
         raise ValueError("porta inválida")
     if not isinstance(c["janela_tokens"], int) or c["janela_tokens"] <= 0:
         raise ValueError("janela_tokens inválida")
+    if type(c.get("frota_vps", False)) is not bool:
+        raise ValueError("frota_vps precisa ser booleano")
     if not Path(c["claude"]).is_absolute() or not isinstance(c["path"], str):
         raise ValueError("claude precisa de caminho absoluto; path precisa ser texto")
     ids, sockets = set(), set()

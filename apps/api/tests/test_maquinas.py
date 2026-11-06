@@ -105,6 +105,7 @@ async def test_lista_nao_consulta_o_painel(cliente, painel):
         {"id": "arsenal", "nome": "Arsenal"},
         {"id": "note", "nome": "Note"},
         {"id": "pc", "nome": "PC"},
+        {"id": "vps", "nome": "VPS"},
     ]
     assert painel[2] == []
 
@@ -145,7 +146,7 @@ async def test_cache_e_trava_sao_por_maquina(cliente, painel, monkeypatch):
 
 
 @pytest.mark.parametrize("falha", ["conexao", "timeout", "http", "json", "contrato", "nan"])
-@pytest.mark.parametrize("maquina", ["arsenal", "note", "pc"])
+@pytest.mark.parametrize("maquina", ["arsenal", "note", "pc", "vps"])
 async def test_resumo_offline_tambem_tem_cache(cliente, painel, falha, maquina):
     instalar, agora, pedidos = painel
 
@@ -174,7 +175,7 @@ async def test_resumo_offline_tambem_tem_cache(cliente, painel, falha, maquina):
     assert len(pedidos) == 2
 
 
-@pytest.mark.parametrize("maquina", ["arsenal", "note", "pc"])
+@pytest.mark.parametrize("maquina", ["arsenal", "note", "pc", "vps"])
 async def test_sem_chave_nao_faz_pedido_e_env_e_lido_na_chamada(cliente, painel, monkeypatch, maquina):
     entrada = maquinas.MAQUINAS[maquina]
     monkeypatch.delenv(entrada["chave_env"])
@@ -190,7 +191,7 @@ async def test_sem_chave_nao_faz_pedido_e_env_e_lido_na_chamada(cliente, painel,
     assert painel[2][0].headers["Authorization"] == "Bearer nova-chave"
 
 
-@pytest.mark.parametrize("maquina,ip", [("note", "100.116.209.95"), ("pc", "100.118.54.91")])
+@pytest.mark.parametrize("maquina,ip", [("note", "100.116.209.95"), ("pc", "100.118.54.91"), ("vps", "100.116.1.44")])
 async def test_novas_maquinas_url_padrao_e_recuperacao_apos_desligar(cliente, painel, maquina, ip):
     online = [False]
 
@@ -210,16 +211,17 @@ async def test_novas_maquinas_url_padrao_e_recuperacao_apos_desligar(cliente, pa
     assert len(painel[2]) == 2
 
 
+@pytest.mark.parametrize("maquina", ["arsenal", "vps"])
 @pytest.mark.parametrize("rota,limite_s", [("resumo", 3), ("abertos", 6), ("fechar", 12)])
-async def test_authorization_timeout_e_repasse_sem_cache(cliente, painel, rota, limite_s):
+async def test_authorization_timeout_e_repasse_sem_cache(cliente, painel, rota, limite_s, maquina):
     instalar, _, pedidos = painel
     corpo = {"resumo": RESUMO, "abertos": ABERTOS, "fechar": {"liberou_mb": 31.5}}[rota]
     instalar(lambda _: httpx.Response(200, json=corpo))
     for _ in range(2):
         if rota == "fechar":
-            resposta = await cliente.post(f"/api/maquinas/arsenal/{rota}", json={"id": "Chrome_123-abc"})
+            resposta = await cliente.post(f"/api/maquinas/{maquina}/{rota}", json={"id": "Chrome_123-abc"})
         else:
-            resposta = await cliente.get(f"/api/maquinas/arsenal/{rota}")
+            resposta = await cliente.get(f"/api/maquinas/{maquina}/{rota}")
         assert resposta.status_code == 200
         assert resposta.json() == ({**corpo, "online": True} if rota == "resumo" else corpo)
     assert len(pedidos) == (1 if rota == "resumo" else 2)

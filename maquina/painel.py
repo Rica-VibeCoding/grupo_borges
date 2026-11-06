@@ -16,7 +16,11 @@ from maquinas import Falha, IDENT, Maquinas
 INTERVALO = 3
 TRAVA = threading.Lock()
 FOTO = {"maquina": [], "agentes": [], "atualizado": None}
-MAQUINAS = Maquinas(agentes=AGENTES.values())
+if CONFIG.get("frota_vps", False):
+    from frota import MaquinasFrota
+    MAQUINAS = MaquinasFrota(agentes=AGENTES.values())
+else:
+    MAQUINAS = Maquinas(agentes=AGENTES.values())
 CPU_PCT = 0.0
 
 
@@ -133,7 +137,8 @@ def coletar():
         except (OSError, ValueError, KeyError) as exc:
             campos, erro = [], "Não foi possível ler o estado da máquina."
             print(f"Coleta da máquina: {exc}", flush=True)
-        for a in AGENTES.values():
+        # A VPS usa o cockpit para operar os agentes; aqui só mede as sessões.
+        for a in (() if CONFIG.get("frota_vps", False) else AGENTES.values()):
             try:
                 e = estado(a)
                 # A página não precisa de PID, pane ou caminhos internos.
@@ -240,6 +245,8 @@ class H(BaseHTTPRequestHandler):
             MAQUINAS.autorizar(self.headers.get_all("Authorization", []))
         except Falha as exc:
             return self.responder(exc.status, {"mensagem": exc.mensagem})
+        if CONFIG.get("frota_vps", False):
+            return self.responder(403, {"mensagem": "Use o cockpit para operar a frota."})
         if self.headers.get_content_type() != "application/x-www-form-urlencoded":
             return self.responder(415, {"mensagem": "Formato de pedido inválido."})
         try:
