@@ -26,12 +26,15 @@ export function PilulaDaMaquina({
   children,
   aoTocar,
   perigo = false,
+  mostrar = false,
   ...resto
 }: {
   children: ReactNode;
   aoTocar: () => void;
   /** A ação que derruba algo (o "Desligar Arsenal" confirmado): texto em `state-fail`. */
   perigo?: boolean;
+  /** Abre e fecha um grupo: leva o tom de link, para não se confundir com o Fechar. */
+  mostrar?: boolean;
   ref?: Ref<HTMLButtonElement>;
 } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'onClick' | 'children'>) {
   return (
@@ -49,6 +52,7 @@ export function PilulaDaMaquina({
     >
       <span
         className="ck-vps-pilula flex items-center"
+        data-mostrar={mostrar || undefined}
         style={{
           minHeight: '32px',
           padding: '0 var(--ck-space-3)',
@@ -64,7 +68,9 @@ export function PilulaDaMaquina({
             ? 'var(--ck-text-secondary)'
             : perigo
               ? 'var(--ck-state-fail)'
-              : 'var(--ck-text-primary)',
+              : mostrar
+                ? 'var(--ck-pilula-mostrar-fg)'
+                : 'var(--ck-text-primary)',
         }}
       >
         {children}

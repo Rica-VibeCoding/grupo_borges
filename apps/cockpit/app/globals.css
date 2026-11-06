@@ -167,6 +167,18 @@
    * escada — canvas 10.11 · nav 9.18 · composer 8.28 · raised 7.40. */
   --ck-link: oklch(0.82 0.09 250);                 /* #97c9fd */
 
+  /* -- pílula que mostra e esconde um grupo da tela Abertos: exceção ao matiz
+   * reservado, pedida pelo Rica (05/11) para não se confundir com o Fechar. Usa
+   * a cor do link, sem sublinhado, em fundo quase neutro. Sobe sobre o `composer`
+   * e o Fechar desce ao `canvas`: as duas se separam por matiz e por luz. Mesmo
+   * fundo no cartão e no Protegido. Em `oklab`: em `oklch` a mistura com o cinza
+   * gira o matiz (a superfície tem hue 0). Texto sobre fundo 5.73:1, hover 5.00:1,
+   * pressionado 4.56:1. */
+  --ck-pilula-mostrar-fg: var(--ck-link);
+  --ck-pilula-mostrar-bg: color-mix(in oklab, var(--ck-link) 18%, var(--ck-surface-composer));
+  --ck-pilula-mostrar-bg-hover: color-mix(in oklab, var(--ck-link) 24%, var(--ck-surface-composer));
+  --ck-pilula-mostrar-bg-pressed: color-mix(in oklab, var(--ck-link) 28%, var(--ck-surface-composer));
+
   /* -- seleção ------------------------------------------------------------
    * Força fundo E cor: sem forçar, selecionar texto em state-fail ou diff-add
    * produz um par que ninguém mediu. Forçado, existe UM par e ele dá 7.57:1. */
@@ -1885,8 +1897,7 @@ html[data-troca-agente] .ck-palco {
   box-shadow: inset 0 1px 0 0 var(--ck-edge-light);
 }
 /* O grupo Protegido da tela Abertos: o que não se fecha fica um degrau ABAIXO da
- * mesa, fora de alcance — sem fio de luz, com contorno; a pílula sobe para o
- * `composer` porque o `canvas` dela sumiria aqui. */
+ * mesa, fora de alcance — sem fio de luz, com contorno. */
 .ck-vps-poco {
   background: var(--ck-surface-canvas);
   box-shadow: inset 0 0 0 1px var(--ck-edge-hairline);
@@ -1900,7 +1911,6 @@ html[data-troca-agente] .ck-palco {
 .ck-vps-medida[data-alerta='true'] :is(.ck-vps-rotulo, .ck-vps-valor) { color: var(--ck-state-attention); }
 .ck-vps-medida[data-alerta='true'] .ck-vps-preenche { background: var(--ck-state-attention); }
 .ck-vps-pilula { background-color: var(--ck-surface-canvas); }
-.ck-vps-poco .ck-vps-pilula { background-color: var(--ck-surface-composer); }
 .ck-vps-botao:not(:disabled):hover .ck-vps-pilula { background-image: linear-gradient(var(--ck-overlay-hover), var(--ck-overlay-hover)); }
 .ck-vps-botao:not(:disabled):active .ck-vps-pilula { background-image: linear-gradient(var(--ck-overlay-pressed), var(--ck-overlay-pressed)); }
 @media (prefers-reduced-motion: reduce) {
@@ -1930,6 +1940,20 @@ html[data-troca-agente] .ck-palco {
   background-image: linear-gradient(var(--ck-overlay-hover), var(--ck-overlay-hover));
   box-shadow: inset 0 0 0 1px var(--ck-edge-functional);
 }
+/* Mostrar/Esconder: a pílula já é mais clara que `raised`, onde o véu é proibido;
+ * o gesto responde subindo o tom. Depois do foco, para ganhar dele no empate. O
+ * hover só com ponteiro de verdade: no toque ele fica preso depois de soltar. O
+ * fio de foco é `text-secondary` porque `edge-functional` dá 2.2:1 sobre este fundo. */
+.ck-vps-pilula[data-mostrar] { background-color: var(--ck-pilula-mostrar-bg); }
+.ck-vps-botao:is(:hover, :active, :focus-visible) .ck-vps-pilula[data-mostrar] { background-image: none; }
+@media (hover: hover) and (pointer: fine) {
+  .ck-vps-botao:hover .ck-vps-pilula[data-mostrar] { background-color: var(--ck-pilula-mostrar-bg-hover); }
+}
+.ck-vps-botao:focus-visible .ck-vps-pilula[data-mostrar] {
+  background-color: var(--ck-pilula-mostrar-bg-hover);
+  box-shadow: inset 0 0 0 1px var(--ck-text-secondary);
+}
+.ck-vps-botao:active .ck-vps-pilula[data-mostrar] { background-color: var(--ck-pilula-mostrar-bg-pressed); }
 /* "Liberou 410 MB": o único movimento da tela Abertos — a resposta ao toque
  * de fechar, no gesto de chegada da casa. Com movimento reduzido, aparece. */
 @media (prefers-reduced-motion: no-preference) {
