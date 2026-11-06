@@ -1,6 +1,12 @@
-"""RAM física fora dos apps; fontes e unidades descritas em docs/maquinas-memoria.md."""
+"""RAM física fora dos apps; fontes e limites em maquina/README.md."""
+
+from functools import lru_cache
+import gzip
+import os
+from pathlib import Path
 
 from medicao_processos import memoria_mb
+from memoria_tmpfs import compartilhada
 
 
 def item_memoria(ident, rotulo, mb, fontes=None):
@@ -10,14 +16,40 @@ def item_memoria(ident, rotulo, mb, fontes=None):
             "memoria_fontes": fontes or {}}
 
 
-def kernel(mem):
+@lru_cache(maxsize=8)
+def pilhas_vmalloc(proc):
+    candidatos = [(proc / "config.gz", True)]
+    if proc == Path("/proc"):
+        candidatos.append((Path("/boot") / ("config-" + os.uname().release), False))
+    for arquivo, comprimido in candidatos:
+        try:
+            texto = gzip.decompress(arquivo.read_bytes()).decode() if comprimido else arquivo.read_text()
+            if "CONFIG_VMAP_STACK=y" in texto.splitlines():
+                return True
+            if "# CONFIG_VMAP_STACK is not set" in texto.splitlines():
+                return False
+        except (OSError, ValueError, EOFError):
+            pass
+    return None
+
+
+def kernel(mem, proc=None):
     # Slab inclui SReclaimable: somá-lo inteiro contaria cache reclamável.
     campos = ("SUnreclaim", "KernelStack", "PageTables", "SecPageTables")
     fontes = {k: mem[k] * 1024 for k in campos if k in mem}
     # SecPageTables não existe em kernels antigos; os outros são obrigatórios.
-    mb = (round(sum(fontes.values()) / 2**20, 2)
+    vmap = pilhas_vmalloc(proc) if proc is not None else None
+    if vmap is not None and "VmallocUsed" in mem:
+        fontes["VmallocUsed"] = mem["VmallocUsed"] * 1024
+    total = sum(fontes.values())
+    if vmap and "VmallocUsed" in fontes:
+        # VMAP_STACK: pilhas já estão em VmallocUsed. Nunca soma ambas.
+        total -= fontes.get("KernelStack", 0)
+    mb = (round(total / 2**20, 2)
           if all(k in mem for k in campos[:3]) else None)
-    return item_memoria("memoria-kernel", "Kernel", mb, fontes)
+    item = item_memoria("memoria-kernel", "Kernel", mb, fontes)
+    item["kernel_vmap_stack"] = vmap
+    return item
 
 
 def zram(sys_block):
@@ -39,6 +71,17 @@ def zram(sys_block):
     item = item_memoria("memoria-zram", "Swap comprimido (zram)", mb, fontes)
     item["zram_dispositivos"] = dispositivos
     return item
+
+
+def cache_retido(mem):
+    # Inversa de si_mem_available (mm/show_mem.c): reserva de páginas livres +
+    # parcelas da LRU de arquivos e KReclaimable excluídas da estimativa.
+    campos = ("MemFree", "Active(file)", "Inactive(file)", "KReclaimable", "MemAvailable")
+    fontes = {k: mem[k] * 1024 for k in campos if k in mem}
+    valor = (sum(fontes[k] for k in campos[:-1]) - fontes[campos[-1]]
+             if len(fontes) == len(campos) else None)
+    return item_memoria("memoria-cache-retido", "Cache que o kernel segura",
+                        round(valor / 2**20, 2) if valor is not None and valor >= 0 else None, fontes)
 
 
 def servicos(maquinas, scopes):
@@ -66,9 +109,9 @@ def servicos(maquinas, scopes):
             for unidade in (caminho, *filhos):
                 mem = maquinas._estatisticas(unidade / "memory.stat")
                 fontes[str(unidade / "memory.stat")] = {
-                    "anon": mem["anon"], "shmem": mem["shmem"],
+                    "anon": mem["anon"],
                     "sinal": 1 if unidade == caminho else -1}
-            uso = sum(v["sinal"] * (v["anon"] + v["shmem"]) for v in fontes.values())
+            uso = sum(v["sinal"] * v["anon"] for v in fontes.values())
             if uso < 0:
                 raise ValueError("leituras de cgroup divergentes")
             mb = round(uso / 2**20, 2)
@@ -89,9 +132,20 @@ def servicos(maquinas, scopes):
             nome = str(caminho.relative_to(raiz))
             itens.append(item_memoria("sistema:" + nome,
                          "Sistema · " + caminho.stem, mb, fontes))
-    return itens
+    if not itens:
+        return []
+    mb = None if any(i["memoria_mb"] is None for i in itens) else round(
+        sum(i["memoria_mb"] for i in itens), 2)
+    nomes = [i["rotulo"].removeprefix("Sistema · ") for i in itens
+             if i["memoria_mb"] is not None and i["memoria_mb"] >= 20]
+    rotulo = "Serviços do sistema" + (" · " + ", ".join(nomes) if nomes else "")
+    return [item_memoria("memoria-servicos", rotulo, mb,
+                        {i["id"]: {"memoria_mb": i["memoria_mb"],
+                                   "fontes": i["memoria_fontes"]} for i in itens})]
 
 
 def itens_sistema(maquinas, mem, scopes):
-    itens = [kernel(mem), zram(maquinas.sys_block), *servicos(maquinas, scopes)]
-    return [i for i in itens if i is not None and i["memoria_mb"] != 0]
+    itens = [kernel(mem, maquinas.proc), zram(maquinas.sys_block), cache_retido(mem),
+             *compartilhada(maquinas.proc, mem, item_memoria), *servicos(maquinas, scopes)]
+    return [i for i in itens if i is not None and
+            (i["memoria_mb"] != 0 or i["id"].startswith("tmpfs:"))]

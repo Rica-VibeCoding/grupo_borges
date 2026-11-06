@@ -131,7 +131,7 @@ const NOME_DO_GRUPO: Record<Grupo, string> = {
   terminal: 'Agentes',
   agente: 'Chrome de agente',
   protegido: 'Protegido',
-  residual: 'Sistema e sem dono',
+  residual: 'Memória do sistema',
 };
 
 const ORDEM_DOS_GRUPOS: Grupo[] = ['seus', 'terminal', 'agente', 'protegido', 'residual'];

@@ -13,13 +13,16 @@
 - `/api/energia` → `[{id, nome, ligado, ligar:{pode, motivo}, em_andamento}]`. `ligado` = TCP 22 em ≤3 s, cache 15 s. `/impacto` → agentes (scopes `cockpit-tmux-*` + nomes do `agentes.json`), Chromes (no Arsenal, pela MESMA lista do painel; fora dele, pelo `ps`/PowerShell), `em_uso`. `/desligar` exige `{confirmo:true}`; Linux = `sudo -n systemctl poweroff` por SSH, PC = `pc.sh desligar`. `/ligar` em máquina ligada não executa nada.
 - `/api/vps` → nome, temperatura (coretemp/k10temp; `null` sem sensor), consumidores.
 
-O residual **Fora da lista** tem grupo próprio: não conta abertos nem soma no Protegido. Residual negativo ou sem todos os operandos é `null`. Resumo com CPU `null` continua online; o PC usa `parados_30min: null` e explica a lista indisponível por 501.
+O residual **Memória do sistema** tem grupo próprio: não conta abertos nem soma no Protegido. Residual negativo ou sem todos os operandos é `null`. Resumo com CPU `null` continua online; o PC usa `parados_30min: null` e explica a lista indisponível por 501.
 
 `painel-local.tsx` continua importado pelo fallback de `app/abertos/page.tsx`: não é usado para as quatro máquinas cadastradas, mas atende um nome local fora desse cadastro.
 
 ## Medições que custaram
 
-- Memória = RAM residente anônima + shmem: `anon + shmem` de `memory.stat` nas unidades inteiras (descontando unidades filhas); `Pss_Anon + Pss_Shmem` de `smaps_rollup` nos recortes de sessão e Chromes que atravessam unidades. Sem swap/cache; falha de medição = `null`. CPU amostrada a cada 3 s: `cpu.stat` do cgroup nas unidades inteiras; nos recortes, `/proc/<pid>/stat`, onde processo que nasceu depois da amostra anterior conta inteiro, o que saiu fica no residual e o que chegou de outro item (CPU da vida inteira) deixa o item sem delta até a próxima. Fechar = CDP `Browser.close`, com SIGTERM por pidfd de reserva; nunca SIGKILL.
+- Memória: `anon` de `memory.stat` nas unidades inteiras (descontando filhas),
+  `Pss_Anon` nos recortes; shmem/tmpfs, cache retido, kernel e zram têm linhas
+  próprias. Fontes, fórmulas e limites: [README da máquina](../../../../../../maquina/README.md#quebra-da-ram-física).
+  Sem swap/cache nos apps; falha de medição = `null`. CPU amostrada a cada 3 s: `cpu.stat` do cgroup nas unidades inteiras; nos recortes, `/proc/<pid>/stat`, onde processo que nasceu depois da amostra anterior conta inteiro, o que saiu fica no residual e o que chegou de outro item (CPU da vida inteira) deixa o item sem delta até a próxima. Fechar = CDP `Browser.close`, com SIGTERM por pidfd de reserva; nunca SIGKILL.
 - `query user` do Windows sai com código 1 mesmo listando quem está logado; só 255 é falha de SSH.
 - Chrome no Windows: contar só o processo sem `--type=` (eram 44 processos e 4 Chromes).
 - No Arsenal, os agentes são scopes do systemd; `tmux list-sessions` sem socket não acha nada.

@@ -43,7 +43,9 @@ def linux(tmp_path, monkeypatch):
     (proc / "sys/kernel/random/boot_id").write_text("boot-teste")
     (proc / "stat").write_text("cpu 0 0 0 1000 0 0 0 0 0 0\n")
     (proc / "meminfo").write_text("MemTotal: 8192000 kB\nMemAvailable: 4096000 kB\n"
-                                 "SUnreclaim: 0 kB\nKernelStack: 0 kB\nPageTables: 0 kB\n")
+                                 "SUnreclaim: 0 kB\nKernelStack: 0 kB\nPageTables: 0 kB\n"
+                                 "MemFree: 4096000 kB\nActive(file): 0 kB\nInactive(file): 0 kB\n"
+                                 "KReclaimable: 0 kB\nShmem: 0 kB\n")
     agora = [10_000.0, 0.0]
     m = Maquinas(home=home, proc=proc, cgroup=cg, cgroup_sistema=cg,
                  sys_block=tmp_path / "sys-block", runtime=runtime,
@@ -555,12 +557,12 @@ def test_fora_da_lista_fecha_cpu_e_ram_e_nao_e_fechavel(linux, monkeypatch):
     linux.m.amostrar()
     leitura = linux.m.abertos()
     item, fora = leitura["itens"]
-    assert item["cpu_pct"] == 20 and item["memoria_mb"] == 120
+    assert item["cpu_pct"] == 20 and item["memoria_mb"] == 100
     assert fora["rotulo"] == "Sem dono" and fora["grupo"] == "residual"
-    assert fora["cpu_pct"] == 55 and fora["memoria_mb"] == 3880
+    assert fora["cpu_pct"] == 55 and fora["memoria_mb"] == 3900
     assert sum(i["cpu_pct"] for i in leitura["itens"]) == leitura["cpu_pct"] == 75
     assert sum(i["memoria_mb"] for i in leitura["itens"]) == leitura["memoria_mb"] == 4000
-    assert leitura["memoria_metrica"] == "anon+shmem"
+    assert leitura["memoria_metrica"] == "anon"
     assert fora["acao_rotulo"] is None
     falha(404, linux.m.fechar, fora["id"])
 

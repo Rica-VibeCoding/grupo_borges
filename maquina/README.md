@@ -43,18 +43,48 @@ serviços e containers. Configuração e limites: [maquina-vps](../docs/maquina-
   mostra parado após 60 s. No terminal agrupado, um membro ativo prevalece;
   sem ativo, um desconhecido mantém `null`. O histórico v3 descarta o cache
   v2, cuja semântica de atividade era outra, e sobrevive a restarts.
-- RAM dos itens: `memory.stat: anon + shmem`, residente, sem swap e sem cache
-  de arquivos recuperável. Não é `memory.current`, que inclui cache e kernel;
-  antes era PSS + SwapPss. O total continua `MemTotal - MemAvailable`.
-- “Fora da lista”, protegida e sem Fechar, completa CPU e RAM por diferença
-  entre total e itens efetivamente devolvidos. Inclui sessões SSH fora de
-  `user@`, sistema, kernel, diferenças de cache e unidades que desapareceram.
-  Pequeno residual negativo pode ocorrer por arredondamento/leituras não
-  atômicas; a diferença é exposta, sem normalizar ou alterar os itens.
-- Exceção da VPS (`frota_vps`): sessões podem atravessar e compartilhar cgroups.
-  Usa `utime + stime` de `/proc/<pid>/stat` (todas as threads) e RAM proporcional
-  `Pss_Anon + Pss_Shmem`, evitando duplicar o cgroup entre sessões. Trabalho de
-  processos inteiramente entre amostras fica no residual, sem dono inventado.
+- RAM dos itens: `memory.stat: anon` nas unidades inteiras, descontando filhas;
+  `Pss_Anon` nos recortes de processos da VPS/Chrome. Swap e cache de arquivos
+  ficam fora. Shmem tem linhas próprias, inclusive arquivos sem processo vivo:
+  somá-lo também nos apps duplicaria tmpfs. O cartão segue `MemTotal−MemAvailable`.
+- Serviços externos a `user@` entram em **Serviços do sistema**, uma linha com
+  total; só nomes com ≥20 MB aparecem no rótulo. Na VPS já estão no Protegido
+  (raiz inteira dos cgroups), portanto não reaparecem nessa soma.
+- `Sem dono` completa CPU/RAM por diferença dos itens realmente devolvidos;
+  negativo ou operando ausente é `null`. Não reescala medidas para fechar a conta.
+  CPU da VPS usa `utime+stime` de todas as threads nos recortes; processos que
+  nascem e morrem entre amostras ficam no residual.
+
+### Quebra da RAM física
+
+- **Cache que o kernel segura** = `(MemFree + Active(file) + Inactive(file) +
+  KReclaimable − MemAvailable)/1024`, em MB da tela (MiB). É a inversa de
+  [`si_mem_available`](https://github.com/torvalds/linux/blob/v6.17/mm/show_mem.c#L32):
+  inclui `totalreserve_pages` e as parcelas de cache/slab excluídas da estimativa.
+  Fórmula conferida também no [kernel 7.2 do Arsenal](https://github.com/torvalds/linux/blob/v7.2/mm/show_mem.c#L32).
+  A função saiu de `mm/page_alloc.c` e hoje está em `mm/show_mem.c`.
+  Não atribuir todo residual a cache: a [documentação de MemAvailable](https://docs.kernel.org/filesystems/proc.html#meminfo)
+  explica a estimativa e avisa que os contadores não recompõem toda a RAM.
+- **Kernel**: `SUnreclaim + KernelStack + PageTables + SecPageTables`.
+  Acrescenta `VmallocUsed` só com configuração de `VMAP_STACK` conhecida;
+  se habilitado, desconta `KernelStack`, pois as [pilhas já usam vmalloc](https://docs.kernel.org/mm/vmalloced-kernel-stacks.html#allocation).
+  Não soma `Slab`, `Percpu` ou `Unevictable` indiscriminadamente: há sobreposições.
+- **Swap comprimido**: terceiro campo (`mem_used_total`) de cada
+  [`zram*/mm_stat`](https://docs.kernel.org/admin-guide/blockdev/zram.html#stat),
+  não tamanho lógico nem apenas bytes comprimidos.
+- **Arquivos em /tmp, /dev/shm…**: montagens tmpfs de `mountinfo`, deduplicadas
+  por dispositivo; ocupação por `statvfs` (mesma base de `df`).
+  [Tmpfs pode ir para swap](https://docs.kernel.org/filesystems/tmpfs.html), logo
+  ocupação não vira RAM: [`mincore`](https://man7.org/linux/man-pages/man2/mincore.2.html)
+  mede páginas residentes sem lê-las. Deduplica inodes/links; não segue symlinks
+  nem cruza filesystems. Acesso incompleto, arquivos desvinculados ou prazo
+  de 100 ms por montagem deixam recorte **parcial**, explicitado no rótulo.
+  Shmem global menos os recortes residentes fica em **Memória compartilhada e
+  tmpfs sem recorte**. Ausência/divergência de fonte permanece desconhecida.
+- Fontes da mesma coleta: `memoria_meminfo_kb`, `memoria_fontes` por linha e
+  `kernel_vmap_stack`; ocupação lógica e RAM do tmpfs ficam discriminadas.
+  O pequeno `Sem dono` ainda pode conter alocações não discriminadas do kernel,
+  processos fora dos recortes e defasagem entre leituras. Não é prova de cache.
 
 Referências oficiais lidas antes da alteração:
 [cgroup v2 (CPU e memória)](https://docs.kernel.org/admin-guide/cgroup-v2.html),
@@ -84,9 +114,9 @@ Sinais avaliados para os agentes:
   elimina a necessidade de interpretar spinner visual ou adivinhar duração
   máxima de um turno pela CPU/mtime.
 
-Testes: `apps/api/.venv/bin/python -m pytest maquina/test_maquinas.py maquina/test_frota_codex.py -q`.
-Depois dos testes, instalar os módulos alterados em `~/.local/share/cockpit-maquina`
-na VPS, Arsenal e note, mantendo backup `*.bak-0611g`, e reiniciar apenas
-`cockpit-maquina.service`. Provar repouso de mais de 60 s e turno em voo em
-sessão própria, sem enviar teclas às sessões vivas. O front não exige rebuild
-quando apenas o painel muda.
+Testes: `apps/api/.venv/bin/python -m pytest maquina/test_maquinas.py maquina/test_frota_codex.py maquina/test_memoria_sistema.py maquina/test_memoria_tmpfs.py -q`;
+ponte: `apps/api/tests/test_maquinas*.py`; front: `node --test apps/cockpit/lib/maquinas.test.ts`.
+Instalar módulos alterados na VPS e Arsenal com backup `*.bak-0611i` e reiniciar
+só `cockpit-maquina.service`; note offline fica pendente. Prova operacional e
+scripts temporários ficam fora do repo. Mudou texto/contrato do front: rebuild
+isolado e publicação pelo roteiro da skill `abertos` (sem push quando solicitado).

@@ -10,7 +10,9 @@ def meminfo(linux, **campos):
     mem = {"MemTotal": 8192000, "MemAvailable": 4096000, "Slab": 999999,
            "SReclaimable": 700000, "SUnreclaim": 206 * 1024,
            "KernelStack": 15 * 1024, "PageTables": 58 * 1024,
-           "Shmem": 256 * 1024, **campos}
+           "Shmem": 256 * 1024, "MemFree": 2000 * 1024,
+           "Active(file)": 1000 * 1024, "Inactive(file)": 1000 * 1024,
+           "KReclaimable": 512 * 1024, **campos}
     (linux.m.proc / "meminfo").write_text("".join(f"{k}: {v} kB\n" for k, v in mem.items()))
 
 
@@ -53,9 +55,11 @@ def test_quebra_medida_sem_slab_cache_swap_logico_ou_shmem_duplicado(linux):
     itens = por_id(leitura)
     assert itens["memoria-kernel"]["memoria_mb"] == 279
     assert itens["memoria-zram"]["memoria_mb"] == 719
-    assert itens["sistema:system.slice/tailscaled.service"]["memoria_mb"] == 40
-    assert itens["sistema:system.slice/sshd.service"]["memoria_mb"] == 8
-    assert itens["fora-da-lista"]["memoria_mb"] == 2854
+    assert itens["memoria-servicos"]["memoria_mb"] == 48
+    assert itens["memoria-servicos"]["rotulo"] == "Serviços do sistema · tailscaled"
+    assert itens["memoria-cache-retido"]["memoria_mb"] == 512
+    assert itens["memoria-compartilhada"]["memoria_mb"] == 256
+    assert itens["fora-da-lista"]["memoria_mb"] == 2086
     assert sum(i["memoria_mb"] for i in leitura["itens"]) == leitura["memoria_mb"] == 4000
     assert leitura["memoria_meminfo_kb"]["Shmem"] == 256 * 1024
     for i in leitura["itens"][1:]:
@@ -110,9 +114,11 @@ def test_unidade_filha_descontada_do_pai_e_cache_ignorado(linux):
     unidade(raiz, "pai.service/filha.service", 30)
     unidade(raiz, "pai.service/filha.service/neta.scope", 10)
     itens = por_id(linux.m.abertos())
-    assert itens["sistema:pai.service"]["memoria_mb"] == 70
-    assert itens["sistema:pai.service/filha.service"]["memoria_mb"] == 20
-    assert itens["sistema:pai.service/filha.service/neta.scope"]["memoria_mb"] == 10
+    fontes = itens["memoria-servicos"]["memoria_fontes"]
+    assert fontes["sistema:pai.service"]["memoria_mb"] == 70
+    assert fontes["sistema:pai.service/filha.service"]["memoria_mb"] == 20
+    assert fontes["sistema:pai.service/filha.service/neta.scope"]["memoria_mb"] == 10
+    assert itens["memoria-servicos"]["memoria_mb"] == 100
     assert sum(i["memoria_mb"] for i in itens.values()) == 4000
 
 
@@ -132,9 +138,9 @@ def test_chrome_ja_cobra_filhos_externos_somente_restante_usa_pss(linux):
     p = linux.m.processo(10)
     scope = ScopePorProcessos(pasta, "chrome.scope", (p,), p)
     leitura = linux.m.contabilizar({"itens": [{"memoria_mb": 30, "cpu_pct": 1}]}, 10, [scope])
-    item = por_id({"itens": leitura["itens"][1:]})["sistema:session-2.scope"]
+    item = por_id({"itens": leitura["itens"][1:]})["memoria-servicos"]
     assert item["memoria_mb"] == 5
-    assert item["memoria_fontes"] == {"pss_pids": [20]}
+    assert item["memoria_fontes"]["sistema:session-2.scope"]["fontes"] == {"pss_pids": [20]}
     assert leitura["itens"][-1]["cpu_pct"] == 9
     assert sum(i["memoria_mb"] for i in leitura["itens"]) == 4000
 
@@ -142,9 +148,9 @@ def test_chrome_ja_cobra_filhos_externos_somente_restante_usa_pss(linux):
 def test_servico_sem_fonte_nao_e_ram_zero(linux):
     raiz = sistema(linux)
     pasta = unidade(raiz, "sshd.service", 8)
-    (pasta / "memory.stat").write_text("anon 8388608\n")
+    (pasta / "memory.stat").write_text("shmem 8388608\n")
     itens = por_id(linux.m.abertos())
-    assert itens["sistema:sshd.service"]["memoria_mb"] is None
+    assert itens["memoria-servicos"]["memoria_mb"] is None
     assert itens["fora-da-lista"]["memoria_mb"] is None
 
 
@@ -153,3 +159,39 @@ def test_arredondamento_fecha_no_centavo_mb(linux):
     zram(linux, texto="999999 555555 666666\n")
     leitura = linux.m.contabilizar({"itens": [{"cpu_pct": 3, "memoria_mb": 12.34}]}, 8)
     assert round(sum(i["memoria_mb"] for i in leitura["itens"]), 2) == leitura["memoria_mb"]
+
+
+def test_margem_de_memavailable_independe_do_residual_e_do_slab_total(linux):
+    meminfo(linux, MemFree=600 * 1024, Active=99999999,
+            **{"Active(file)": 1900 * 1024, "Inactive(file)": 1700 * 1024},
+            KReclaimable=300 * 1024, MemAvailable=4000 * 1024)
+    itens = por_id(linux.m.abertos())
+    assert itens["memoria-cache-retido"]["memoria_mb"] == 500
+    mem = linux.m._estatisticas_memoria()
+    mem.pop("KReclaimable")
+    from memoria_sistema import cache_retido
+    assert cache_retido(mem)["memoria_mb"] is None
+
+
+def test_shmem_sai_dos_cgroups_e_dos_recortes_sem_sumir_da_lista(linux):
+    meminfo(linux, Shmem=80 * 1024)
+    linux.processo(10, pss=100 * 1024)
+    (linux.m.proc / "10/smaps_rollup").write_text("Pss_Anon: 102400 kB\nPss_Shmem: 81920 kB\n")
+    pasta = linux.scope("a.scope", 10)
+    (pasta / "memory.stat").write_text(f"anon {100 * 2**20}\nshmem {80 * 2**20}\n")
+    scope = linux.m.scopes()[0]
+    assert linux.m.memoria(scope) == 100
+    assert linux.m.memoria(ScopePorProcessos(pasta, "recorte", scope.processos, scope.principal)) == 100
+    itens = por_id(linux.m.abertos())
+    assert itens["memoria-compartilhada"]["memoria_mb"] == 80
+    assert sum(i["memoria_mb"] for i in itens.values()) == 4000
+
+
+@pytest.mark.parametrize('config,esperado', [('CONFIG_VMAP_STACK=y', 334),
+                                            ('# CONFIG_VMAP_STACK is not set', 349),
+                                            ('', 279)])
+def test_vmalloc_somente_com_config_conhecida_e_sem_duplicar_pilhas(linux, config, esperado):
+    import gzip
+    (linux.m.proc / 'config.gz').write_bytes(gzip.compress(config.encode()))
+    meminfo(linux, VmallocUsed=70 * 1024)
+    assert por_id(linux.m.abertos())['memoria-kernel']['memoria_mb'] == esperado

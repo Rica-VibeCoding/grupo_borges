@@ -436,14 +436,13 @@ class Maquinas:
     def memoria(self, scope):
         if isinstance(scope, ScopePorProcessos):
             return memoria_mb(self.proc, scope.processos)
-        # RAM residente: não mistura swap ou todo o cache de memory.current
-        # com o total MemTotal - MemAvailable. Kernel/cache ficam no residual.
+        # Shmem/tmpfs têm linhas físicas próprias, inclusive arquivos sem processo.
         try:
             mem = self._estatisticas(scope.caminho / "memory.stat")
-            uso = mem["anon"] + mem["shmem"]
+            uso = mem["anon"]
             for filha in self._unidades_filhas(scope):
                 mem = self._estatisticas(filha / "memory.stat")
-                uso -= mem["anon"] + mem["shmem"]
+                uso -= mem["anon"]
             return round(max(0, uso) / 2**20, 2)
         except (OSError, ValueError, KeyError):
             return None
@@ -664,11 +663,12 @@ class Maquinas:
         cpu_resto = None if cpu_total is None or cpu_listada is None else round(cpu_total - cpu_listada, 1)
         ram_resto = None if ram_listada is None else round(ram - ram_listada, 2)
         resto = item_memoria("fora-da-lista", "Sem dono",
-                             ram_resto if ram_resto is not None and ram_resto >= 0 else None)
+                             ram_resto if ram_resto is not None and ram_resto >= 0 else None,
+                             {"cartao_mb": ram, "demais_itens_mb": ram_listada})
         resto["cpu_pct"] = cpu_resto if cpu_resto is not None and cpu_resto >= 0 else None
         itens.append(resto)
         return {**leitura, "cpu_pct": cpu_total, "memoria_mb": ram,
-                "memoria_metrica": "anon+shmem", "memoria_meminfo_kb": mem,
+                "memoria_metrica": "anon", "memoria_meminfo_kb": mem,
                 "medido_em": int(self.relogio())}
 
     def _estatisticas_memoria(self):

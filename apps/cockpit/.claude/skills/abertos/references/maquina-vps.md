@@ -39,9 +39,10 @@ servidor de Canário: **não é uma unidade segura para fechar Pavan**.
 Cada sessão agrega os descendentes de seus panes através desses cgroups.
 Não inclui outro servidor tmux, seus descendentes, processos de serviços,
 painel, API, Next, Docker, SSH, Tailscale ou cron. CPU e parado usam deltas dos processos (todas as threads), amostrados a cada
-3 segundos. RAM dos recortes = `Pss_Anon + Pss_Shmem`; serviços/containers
-inteiros = `anon + shmem` do cgroup legível, inclusive para root. Falha de
-medição = `null`, nunca zero. Tela é nula.
+3 segundos. RAM dos recortes = `Pss_Anon`; serviços/containers inteiros =
+`anon` do cgroup legível, inclusive para root. Shmem/tmpfs são contabilizados
+à parte, sem duplicar arquivos mapeados; fórmulas no `maquina/README.md`.
+Falha de medição = `null`, nunca zero. Tela é nula.
 O resumo mantém o critério do Arsenal para `parados_30min` (não conta terminais).
 
 Fechar revalida a sessão e fixa cada processo com pidfd antes de executar

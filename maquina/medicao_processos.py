@@ -1,4 +1,4 @@
-"""Recortes de processos que atravessam unidades systemd, sem contar cache/swap."""
+"""Recortes de processos; shmem é contado à parte, sem duplicar tmpfs."""
 
 import os
 
@@ -67,8 +67,8 @@ def memoria_mb(proc, processos):
                 continue  # PID reaproveitado: o processo listado já saiu.
             mem = {linha.split(':', 1)[0]: int(linha.split()[1])
                    for linha in (pasta / "smaps_rollup").read_text().splitlines()
-                   if linha.startswith(("Pss_Anon:", "Pss_Shmem:"))}
-            kb += mem["Pss_Anon"] + mem["Pss_Shmem"]
+                   if linha.startswith("Pss_Anon:")}
+            kb += mem["Pss_Anon"]
         except (OSError, ValueError, KeyError, IndexError):
             return None
     return round(kb / 1024, 2)
