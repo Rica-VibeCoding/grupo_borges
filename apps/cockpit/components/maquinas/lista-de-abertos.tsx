@@ -16,8 +16,7 @@
 import { useState, type ReactNode } from 'react';
 
 import { IconeCadeado } from '@/components/shell/icones';
-import { formataTamanho } from '@/components/shell/recursos-da-vps';
-import { agrupa, textoDaFalhaDosAbertos, type Abertos, type GrupoDeItens, type ItemAberto } from '@/lib/maquinas';
+import { agrupa, textoDaFalhaDosAbertos, textoDoGrupo, type Abertos, type GrupoDeItens, type ItemAberto } from '@/lib/maquinas';
 
 import { CabecalhoDasColunas, LinhaAberta, LinhaProtegida, PilulaDaMaquina } from './linha-aberta';
 import type { Liberados, LeituraDosAbertos } from './painel-da-maquina';
@@ -69,12 +68,12 @@ function Grupos({
   const agora = Math.floor(Date.now() / 1000);
   return grupos.map((grupo) => (
     <CartaoDoGrupo key={grupo.grupo} grupo={grupo}>
-      {grupo.grupo === 'protegido' ? (
+      {grupo.grupo === 'protegido' || grupo.grupo === 'residual' ? (
         <>
           <CabecalhoDasColunas comAtividade={false} />
           <ul className="flex flex-col">
             {grupo.itens.map((item) => (
-              <LinhaProtegida key={item.id} item={item} />
+              <LinhaProtegida key={item.id} item={item} comCadeado={grupo.grupo === 'protegido'} />
             ))}
           </ul>
         </>
@@ -104,7 +103,6 @@ function Grupos({
 function CartaoDoGrupo({ grupo, children }: { grupo: GrupoDeItens; children: ReactNode }) {
   const [aberto, setAberto] = useState(false);
   const protegido = grupo.grupo === 'protegido';
-  const n = grupo.itens.length;
   const idDaLista = `maquina-grupo-${grupo.grupo}`;
   return (
     <section
@@ -129,7 +127,7 @@ function CartaoDoGrupo({ grupo, children }: { grupo: GrupoDeItens; children: Rea
           {aberto ? 'Esconder' : 'Mostrar'}
         </PilulaDaMaquina>
         <span className="ck-tabular ml-auto" style={SECUNDARIO_XS}>
-          {n} {n === 1 ? 'aberto' : 'abertos'} · {formataTamanho(grupo.memoria_mb)}
+          {textoDoGrupo(grupo)}
         </span>
       </div>
       <div id={idDaLista} hidden={!aberto}>

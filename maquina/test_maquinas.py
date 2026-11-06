@@ -553,7 +553,7 @@ def test_fora_da_lista_fecha_cpu_e_ram_e_nao_e_fechavel(linux, monkeypatch):
     leitura = linux.m.abertos()
     item, fora = leitura["itens"]
     assert item["cpu_pct"] == 20 and item["memoria_mb"] == 120
-    assert fora["rotulo"] == "Fora da lista" and fora["grupo"] == "protegido"
+    assert fora["rotulo"] == "Fora da lista" and fora["grupo"] == "residual"
     assert fora["cpu_pct"] == 55 and fora["memoria_mb"] == 3880
     assert sum(i["cpu_pct"] for i in leitura["itens"]) == leitura["cpu_pct"] == 75
     assert sum(i["memoria_mb"] for i in leitura["itens"]) == leitura["memoria_mb"] == 4000
@@ -1292,7 +1292,7 @@ def test_http_vps_lista_e_recusa_protegido_sem_sinal(http_painel, linux, frota, 
     assert http_painel("GET", "/api/maquina/abertos", chave=False)[0] == 401
     status, corpo = http_painel("GET", "/api/maquina/abertos")
     assert status == 200
-    assert {i["grupo"] for i in corpo["itens"]} == {"terminal", "protegido"}
+    assert {i["grupo"] for i in corpo["itens"]} == {"terminal", "protegido", "residual"}
     protegido = next(i for i in corpo["itens"] if i["grupo"] == "protegido")
     assert http_painel("POST", "/api/maquina/fechar", json.dumps({"id": protegido["id"]}))[0] == 403
     headers = {"Origin": "http://" + http_painel.autoridade,
@@ -1464,3 +1464,13 @@ def test_chrome_fechar_so_confirma_depois_dos_filhos_e_libera_ram_inteira(linux,
     else:
         falha(409, linux.m.fechar, item_id)
         assert (linux.m.proc / '110').exists()
+
+
+def test_residual_negativo_ou_com_medida_ausente_e_desconhecido(linux):
+    item = {'id': 'teste', 'cpu_pct': 20, 'memoria_mb': 4300}
+    leitura = linux.m.contabilizar({'itens': [item]}, 10)
+    assert leitura['itens'][-1]['cpu_pct'] is None
+    assert leitura['itens'][-1]['memoria_mb'] is None
+    leitura = linux.m.contabilizar({'itens': [{'cpu_pct': None, 'memoria_mb': None}]}, 50)
+    assert leitura['itens'][-1]['cpu_pct'] is None
+    assert leitura['itens'][-1]['memoria_mb'] is None

@@ -25,7 +25,7 @@ export type ResumoOffline = { online: false; motivo: string };
 
 export type Resumo = ResumoOnline | ResumoOffline;
 
-export type Grupo = 'seus' | 'terminal' | 'agente' | 'protegido';
+export type Grupo = 'seus' | 'terminal' | 'agente' | 'protegido' | 'residual';
 
 export type ItemAberto = {
   id: string;
@@ -33,7 +33,7 @@ export type ItemAberto = {
   rotulo: string;
   dono: string | null;
   memoria_mb: number | null;
-  /** Fatia da máquina inteira no último minuto; null até a 2ª amostra do painel. */
+  /** Fatia da máquina inteira entre amostras de 3 s; null sem delta válido. */
   cpu_pct?: number | null;
   parado_s: number | null;
   abas: string[];
@@ -131,20 +131,29 @@ const NOME_DO_GRUPO: Record<Grupo, string> = {
   terminal: 'Agentes',
   agente: 'Chrome de agente',
   protegido: 'Protegido',
+  residual: 'Fora da lista',
 };
 
-const ORDEM_DOS_GRUPOS: Grupo[] = ['seus', 'terminal', 'agente', 'protegido'];
+const ORDEM_DOS_GRUPOS: Grupo[] = ['seus', 'terminal', 'agente', 'protegido', 'residual'];
 
 export type GrupoDeItens = { grupo: Grupo; nome: string; itens: ItemAberto[]; memoria_mb: number | null };
 
 /** Os grupos na ordem da tela, cada um do que mais come ao que menos. Grupo vazio não vem. */
 export function agrupa(itens: ItemAberto[]): GrupoDeItens[] {
+  // Compatível com painéis antigos durante a instalação: o residual nunca é app.
+  itens = itens.map((i) => i.id === 'fora-da-lista' ? { ...i, grupo: 'residual' } : i);
   return ORDEM_DOS_GRUPOS.flatMap((grupo) => {
     const doGrupo = itens.filter((i) => i.grupo === grupo).sort((a, b) => (b.memoria_mb ?? -1) - (a.memoria_mb ?? -1));
     if (doGrupo.length === 0) return [];
     const memoria_mb = doGrupo.some((i) => i.memoria_mb === null) ? null : doGrupo.reduce((soma, i) => soma + i.memoria_mb!, 0);
     return [{ grupo, nome: NOME_DO_GRUPO[grupo], itens: doGrupo, memoria_mb }];
   });
+}
+
+export function textoDoGrupo(grupo: GrupoDeItens): string {
+  const memoria = formataTamanho(grupo.memoria_mb);
+  const n = grupo.itens.length;
+  return grupo.grupo === 'residual' ? memoria : `${n} ${n === 1 ? 'aberto' : 'abertos'} · ${memoria}`;
 }
 
 /**
@@ -166,7 +175,7 @@ export function duracao(segundos: number): string {
   return `${Math.floor(horas / 24)} d`;
 }
 
-/** Abaixo disto o item conta como em uso: o painel amostra a CPU a cada 60 s. */
+/** Abaixo de um minuto a tela diz em uso; o painel amostra a CPU a cada 3 s. */
 const PARADO_MINIMO_S = 60;
 
 /**
@@ -195,7 +204,7 @@ export function atividade(parado_s: number | null, observado_desde: number, agor
 
 /** "3%", "<1%" ou "—" enquanto o painel não tem duas amostras. */
 export function textoDaCpu(cpu_pct: number | null | undefined): string {
-  if (cpu_pct == null) return '—';
+  if (cpu_pct == null || !Number.isFinite(cpu_pct) || cpu_pct < 0) return '—';
   if (cpu_pct > 0 && cpu_pct < 1) return '<1%';
   return `${Math.round(cpu_pct)}%`;
 }

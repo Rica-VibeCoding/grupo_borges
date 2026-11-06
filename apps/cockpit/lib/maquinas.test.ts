@@ -184,3 +184,22 @@ test('fechar sem medida confirma fechamento sem inventar RAM liberada', async ()
   assert.equal(textoDoFechado(null), 'Fechado · RAM sem leitura');
   assert.equal(textoDoFechado(10), 'Liberou 10 MB');
 });
+
+test('Fora da lista tem grupo próprio sem somar abertos ou RAM em Protegido, inclusive painel antigo', async () => {
+  const { textoDoGrupo } = await import('./maquinas.ts');
+  for (const grupoAntigoOuNovo of ['protegido', 'residual'] as const) {
+    const grupos = agrupa([
+      item({ id: 'sshd', grupo: 'protegido', memoria_mb: 8 }),
+      item({ id: 'fora-da-lista', grupo: grupoAntigoOuNovo, memoria_mb: 4700 }),
+    ]);
+    assert.equal(grupos[0].memoria_mb, 8);
+    assert.equal(textoDoGrupo(grupos[0]), '1 aberto · 8 MB');
+    assert.equal(grupos[1].grupo, 'residual');
+    assert.equal(textoDoGrupo(grupos[1]), '4,6 GB');
+    assert.doesNotMatch(textoDoGrupo(grupos[1]), /aberto/);
+  }
+});
+
+test('CPU negativa ou não finita nunca aparece como consumo', () => {
+  for (const cpu of [-2, -0.1, NaN, Infinity]) assert.equal(textoDaCpu(cpu), '—');
+});

@@ -38,7 +38,7 @@ async def maquina_conhecida(maquina: str) -> str:
 
 
 MaquinaConhecida = Annotated[str, Depends(maquina_conhecida)]
-ERROS_PAINEL = {status: {"model": maquinas.Mensagem} for status in (403, 404, 409, 502)}
+ERROS_PAINEL = {status: {"model": maquinas.Mensagem} for status in (403, 404, 409, 501, 502)}
 
 
 @router.get("", response_model=list[Maquina])

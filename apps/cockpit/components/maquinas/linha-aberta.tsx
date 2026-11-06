@@ -93,7 +93,7 @@ export function CabecalhoDasColunas({ comAtividade = true }: { comAtividade?: bo
 }
 
 /** Serviço do sistema: mesmas colunas, sem botão. O cadeado ocupa o lugar do Fechar. */
-export function LinhaProtegida({ item }: { item: ItemAberto }) {
+export function LinhaProtegida({ item, comCadeado = true }: { item: ItemAberto; comCadeado?: boolean }) {
   const cor = 'var(--ck-text-secondary)';
   return (
     <li className="ck-abertos-grade" style={{ minHeight: '32px' }}>
@@ -102,7 +102,7 @@ export function LinhaProtegida({ item }: { item: ItemAberto }) {
       </span>
       <Medida rotulo="CPU" valor={textoDaCpu(item.cpu_pct)} cor={cor} />
       <Medida rotulo="RAM" valor={formataTamanho(item.memoria_mb)} cor={cor} />
-      <IconeCadeado tamanho={14} className="justify-self-end" style={{ color: cor }} />
+      {comCadeado ? <IconeCadeado tamanho={14} className="justify-self-end" style={{ color: cor }} /> : null}
     </li>
   );
 }

@@ -583,13 +583,15 @@ class Maquinas:
         mem = self._estatisticas_memoria()
         ram = round((mem["MemTotal"] - mem["MemAvailable"]) / 1024, 2)
         itens = leitura["itens"]
-        cpu_listada = sum(i["cpu_pct"] or 0 for i in itens)
+        cpu_listada = soma_medidas(i["cpu_pct"] for i in itens)
         ram_listada = soma_medidas(i["memoria_mb"] for i in itens)
-        # Não esconde diferenças negativas: expõe desvio em vez de alterar itens
-        # ou inventar um residual zero (contadores não são leituras atômicas).
-        itens.append({"id": "fora-da-lista", "grupo": "protegido", "rotulo": "Fora da lista",
-                      "dono": None, "cpu_pct": None if cpu_total is None else round(cpu_total - cpu_listada, 1),
-                      "memoria_mb": None if ram_listada is None else round(ram - ram_listada, 2), "parado_s": None,
+        # Leituras não atômicas podem divergir; residual impossível é desconhecido,
+        # nunca consumo negativo nem zero inventado para fechar a conta.
+        cpu_resto = None if cpu_total is None or cpu_listada is None else round(cpu_total - cpu_listada, 1)
+        ram_resto = None if ram_listada is None else round(ram - ram_listada, 2)
+        itens.append({"id": "fora-da-lista", "grupo": "residual", "rotulo": "Fora da lista",
+                      "dono": None, "cpu_pct": cpu_resto if cpu_resto is not None and cpu_resto >= 0 else None,
+                      "memoria_mb": ram_resto if ram_resto is not None and ram_resto >= 0 else None, "parado_s": None,
                       "abas": [], "pede_confirmacao": False, "acao_rotulo": None})
         return {**leitura, "cpu_pct": cpu_total, "memoria_mb": ram,
                 "memoria_metrica": "anon+shmem", "medido_em": int(self.relogio())}

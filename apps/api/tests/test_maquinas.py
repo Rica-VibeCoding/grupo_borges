@@ -329,3 +329,9 @@ async def test_ram_e_liberacao_desconhecidas_atravessam_ponte(cliente, painel):
     painel[0](lambda r: httpx.Response(200, json={'liberou_mb': None} if r.method == 'POST' else corpo))
     assert (await cliente.get('/api/maquinas/note/abertos')).json() == corpo
     assert (await cliente.post('/api/maquinas/note/fechar', json={'id': 'teste'})).json() == {'liberou_mb': None}
+
+
+async def test_residual_tem_grupo_proprio_e_nao_pode_fechar(cliente, painel):
+    corpo = {**ABERTOS, 'itens': [{**ABERTOS['itens'][0], 'id': 'fora-da-lista', 'grupo': 'residual', 'acao_rotulo': None}]}
+    painel[0](lambda _: httpx.Response(200, json=corpo))
+    assert (await cliente.get('/api/maquinas/vps/abertos')).json() == corpo
