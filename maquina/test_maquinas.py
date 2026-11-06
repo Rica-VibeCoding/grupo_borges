@@ -553,7 +553,7 @@ def test_fora_da_lista_fecha_cpu_e_ram_e_nao_e_fechavel(linux, monkeypatch):
     leitura = linux.m.abertos()
     item, fora = leitura["itens"]
     assert item["cpu_pct"] == 20 and item["memoria_mb"] == 120
-    assert fora["rotulo"] == "Fora da lista" and fora["grupo"] == "protegido"
+    assert fora["rotulo"] == "Fora da lista" and fora["grupo"] == "residual"
     assert fora["cpu_pct"] == 55 and fora["memoria_mb"] == 3880
     assert sum(i["cpu_pct"] for i in leitura["itens"]) == leitura["cpu_pct"] == 75
     assert sum(i["memoria_mb"] for i in leitura["itens"]) == leitura["memoria_mb"] == 4000
@@ -1140,6 +1140,33 @@ def test_frota_cpu_compartilhada_nao_duplica_e_conta_threads(linux, frota, monke
     assert leitura["itens"][-1]["cpu_pct"] == 7.5
 
 
+def test_frota_pid_que_muda_de_dono_nao_transfere_cpu_da_vida(linux, frota, monkeypatch):
+    monkeypatch.setattr(os, "cpu_count", lambda: 4)
+    sessao = frota.sessao()
+    linux.processo(500, args=("worker",))
+    linux.scope("app.slice/worker.scope", 500)
+    arquivo = linux.m.proc / "500/stat"
+    prefixo, dados = arquivo.read_text().rsplit(")", 1)
+    campos = dados.split()
+    campos[11] = str(3600 * os.sysconf("SC_CLK_TCK"))
+    arquivo.write_text(prefixo + ") " + " ".join(campos))
+    frota.m.amostrar()
+    # O mesmo PID/starttime passa a ser descendente do pane.
+    campos[1] = "101"
+    arquivo.write_text(prefixo + ") " + " ".join(campos))
+    linux.agora[1] = 3
+    total(linux, ocupado=0, ocioso=1120)
+    frota.m.amostrar()
+    assert frota.m.cpu(sessao.id) is None
+    assert frota.m.parado(sessao.id) is None
+    linux.agora[1] = 6
+    total(linux, ocupado=0, ocioso=1240)
+    frota.m.amostrar()
+    assert frota.m.cpu(sessao.id) == 0
+    assert frota.m.parado(sessao.id) == 3
+    assert frota.m.abertos()["itens"][-1]["cpu_pct"] == 0
+
+
 @pytest.mark.parametrize("ident,nome", [("pavan", "Pavan"), ("daniel", "Daniel"), ("sobral", "Sobral"),
     ("vinicius", "Vinicius"), ("barsi", "Barsi"), ("felipe", "Felipe"), ("caseiro", "Caseiro"),
     ("miga", "Miga"), ("canario", "Canário")])
@@ -1265,7 +1292,7 @@ def test_http_vps_lista_e_recusa_protegido_sem_sinal(http_painel, linux, frota, 
     assert http_painel("GET", "/api/maquina/abertos", chave=False)[0] == 401
     status, corpo = http_painel("GET", "/api/maquina/abertos")
     assert status == 200
-    assert {i["grupo"] for i in corpo["itens"]} == {"terminal", "protegido"}
+    assert {i["grupo"] for i in corpo["itens"]} == {"terminal", "protegido", "residual"}
     protegido = next(i for i in corpo["itens"] if i["grupo"] == "protegido")
     assert http_painel("POST", "/api/maquina/fechar", json.dumps({"id": protegido["id"]}))[0] == 403
     headers = {"Origin": "http://" + http_painel.autoridade,
@@ -1322,3 +1349,128 @@ def test_frota_rotulo_container_usa_nome_sem_ler_env(linux, frota):
         item = frota.m.abertos()["itens"][:-1][0]
         assert (item["rotulo"], item["grupo"], item["acao_rotulo"]) == ("Container supabase-db", "protegido", None)
     assert len(chamadas) == 1
+
+
+def test_frota_root_e_container_medidos_por_cgroup_sem_smaps(linux, frota):
+    for pid, nome, mb in ((700, 'system.slice/docker-abc.scope', 276), (800, 'system.slice/root.service', 133)):
+        linux.processo(pid, args=('root-worker',))
+        pasta = linux.scope(nome, pid)
+        (pasta / 'memory.stat').write_text(f'anon {mb * 2**20}\nshmem 0\nfile 900000000\n')
+        (linux.m.proc / str(pid) / 'smaps_rollup').unlink()
+    leitura = frota.m.abertos()
+    assert [i['memoria_mb'] for i in leitura['itens']] == [276, 133, 3591]
+    assert sum(i['memoria_mb'] for i in leitura['itens']) == leitura['memoria_mb'] == 4000
+
+
+def test_frota_recorte_nao_reconta_ram_de_sessao_no_protegido(linux, frota):
+    frota.sessao()
+    linux.processo(500, args=('worker',), pss=3072)
+    linux.scope('borges.slice/borges-frota.slice/run-u5465.scope', 102, 103, 500)
+    itens = frota.m.abertos()['itens']
+    protegido = next(i for i in itens if i['rotulo'] == 'Run u5465')
+    sessao = next(i for i in itens if i['grupo'] == 'terminal')
+    assert protegido['memoria_mb'] == 3
+    assert sessao['memoria_mb'] == 7
+
+
+@pytest.mark.parametrize('recorte', [False, True])
+def test_memoria_indisponivel_e_null_sem_soma_parcial(linux, frota, recorte):
+    if recorte:
+        frota.sessao()
+        (linux.m.proc / '102/smaps_rollup').unlink()
+        leitura = frota.m.abertos()
+        item = next(i for i in leitura['itens'] if i['grupo'] == 'terminal')
+    else:
+        linux.processo(10)
+        pasta = linux.scope('app.slice/a.scope', 10)
+        (pasta / 'memory.stat').unlink()
+        leitura = linux.m.abertos()
+        item = leitura['itens'][0]
+    assert item['memoria_mb'] is None
+    assert leitura['itens'][-1]['memoria_mb'] is None
+
+
+@pytest.mark.parametrize('fora_de_user', [False, True])
+def test_chrome_agrega_filhos_por_parentesco_ram_cpu_atividade_e_residual(linux, monkeypatch, fora_de_user):
+    monkeypatch.setattr(os, 'cpu_count', lambda: 4)
+    pasta = linux.chrome(100, 'teste', porta=0)
+    linux.processo(110, ppid=100, args=('chrome', '--type=zygote'), pss=20 * 1024)
+    linux.processo(120, ppid=110, args=('chrome', '--type=renderer'), pss=100 * 1024)
+    linux.processo(130, ppid=100, args=('chrome', '--type=gpu-process'), pss=30 * 1024)
+    # Um Chrome alheio com o mesmo texto de perfil NÃO é filho.
+    linux.processo(900, args=('chrome', '--type=renderer', f'--user-data-dir={linux.m.home}/.config/ze-chrome-teste'), pss=10 * 1024)
+    if not fora_de_user:
+        linux.processo(800, args=('sleep',), pss=5 * 1024)
+        linux.scope('app.slice/lancador.scope', 110, 120, 130, 800)
+    linux.m.amostrar()
+    linux.agora[1] = 1800
+    linux.m.amostrar()
+    browser = next(s for s in linux.m.scopes() if s.principal.pid == 100)
+    assert {p.pid for p in browser.processos} == {100, 110, 120, 130}
+    assert linux.m.parado(browser.id) == 1800
+    monkeypatch.setattr(maquinas.shutil, 'disk_usage', lambda _: shutil._ntuple_diskusage(100, 50, 50))
+    assert linux.m.resumo(0, None)['parados_30min'] == 1
+    # Só o renderer trabalha: a atividade do principal sozinho diria parado.
+    arq = linux.m.proc / '120/stat'
+    prefixo, dados = arq.read_text().rsplit(')', 1)
+    campos = dados.split()
+    campos[11] = str(round(1.2 * os.sysconf('SC_CLK_TCK')))
+    arq.write_text(prefixo + ') ' + ' '.join(campos))
+    linux.agora[1] = 1803
+    total(linux, ocupado=48, ocioso=1072)
+    linux.m.amostrar()
+    leitura = linux.m.abertos()
+    item = next(i for i in leitura['itens'] if i['grupo'] == 'agente')
+    assert item['memoria_mb'] == 151
+    assert item['cpu_pct'] == 10
+    assert item['parado_s'] == 0
+    assert item['acao_rotulo'] == 'Fechar Chrome do Teste'
+    assert linux.m.resumo(40, None)['parados_30min'] == 0
+    assert leitura['itens'][-1]['memoria_mb'] == (3849 if fora_de_user else 3844)
+    assert leitura['itens'][-1]['cpu_pct'] == 30
+    if not fora_de_user:
+        protegido = next(i for i in leitura['itens'] if i['rotulo'] == 'Lancador')
+        assert protegido['memoria_mb'] == 5 and protegido['cpu_pct'] == 0
+
+
+def test_chrome_nao_desprotege_unidade_de_infra_ou_captura_outro_browser(linux):
+    linux.chrome(100, 'teste', porta=0)
+    linux.processo(110, ppid=100, args=('chrome', '--user-data-dir=~/.config/ze-chrome-outro'))
+    linux.scope('app.slice/outro.scope', 110)
+    assert len(linux.m.scopes()) == 2
+    linux.chrome(200, 'teste', porta=0, nome='app.slice/cockpit-protegido.scope')
+    linux.processo(210, ppid=200, args=('chrome', '--type=renderer'))
+    assert all(210 not in {p.pid for p in s.processos} for s in linux.m.scopes())
+
+
+@pytest.mark.parametrize('filho_fecha', [False, True])
+def test_chrome_fechar_so_confirma_depois_dos_filhos_e_libera_ram_inteira(linux, sinal_simulado, monkeypatch, filho_fecha):
+    pasta = linux.chrome(100, 'teste', porta=0)
+    linux.processo(110, ppid=100, args=('chrome', '--type=renderer'), pss=20 * 1024)
+    item_id = linux.m.scopes()[0].id
+    assert linux.m.resumo(0, None)['parados_30min'] is None
+
+    def sinal(fd, sig):
+        assert sig == signal.SIGTERM
+        shutil.rmtree(pasta)
+        shutil.rmtree(linux.m.proc / '100')
+        if filho_fecha:
+            shutil.rmtree(linux.m.proc / '110')
+
+    monkeypatch.setattr(signal, 'pidfd_send_signal', sinal)
+    monkeypatch.setattr(maquinas.time, 'sleep', lambda n: linux.agora.__setitem__(1, linux.agora[1] + n))
+    if filho_fecha:
+        assert linux.m.fechar(item_id) == {'liberou_mb': 21}
+    else:
+        falha(409, linux.m.fechar, item_id)
+        assert (linux.m.proc / '110').exists()
+
+
+def test_residual_negativo_ou_com_medida_ausente_e_desconhecido(linux):
+    item = {'id': 'teste', 'cpu_pct': 20, 'memoria_mb': 4300}
+    leitura = linux.m.contabilizar({'itens': [item]}, 10)
+    assert leitura['itens'][-1]['cpu_pct'] is None
+    assert leitura['itens'][-1]['memoria_mb'] is None
+    leitura = linux.m.contabilizar({'itens': [{'cpu_pct': None, 'memoria_mb': None}]}, 50)
+    assert leitura['itens'][-1]['cpu_pct'] is None
+    assert leitura['itens'][-1]['memoria_mb'] is None

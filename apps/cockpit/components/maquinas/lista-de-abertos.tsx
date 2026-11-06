@@ -16,8 +16,7 @@
 import { useState, type ReactNode } from 'react';
 
 import { IconeCadeado } from '@/components/shell/icones';
-import { formataTamanho } from '@/components/shell/recursos-da-vps';
-import { agrupa, type Abertos, type GrupoDeItens, type ItemAberto } from '@/lib/maquinas';
+import { agrupa, textoDaFalhaDosAbertos, textoDoGrupo, type Abertos, type GrupoDeItens, type ItemAberto } from '@/lib/maquinas';
 
 import { CabecalhoDasColunas, LinhaAberta, LinhaProtegida, PilulaDaMaquina } from './linha-aberta';
 import type { Liberados, LeituraDosAbertos } from './painel-da-maquina';
@@ -33,13 +32,13 @@ export function ListaDeAbertos({
   maquina: string;
   leitura: LeituraDosAbertos;
   liberados: Liberados;
-  aoFechar: (item: ItemAberto, mb: number) => void;
+  aoFechar: (item: ItemAberto, mb: number | null) => void;
 }) {
   return (
     <section aria-label="Aberto agora" className="flex flex-col" style={{ gap: 'var(--ck-space-2)', minHeight: '240px' }}>
       {leitura && 'falha' in leitura ? (
         <p style={{ ...SECUNDARIO_XS, padding: '0 var(--ck-space-3)' }}>
-          Não consegui listar o que está aberto: {leitura.falha}. Tento de novo sozinho.
+          {textoDaFalhaDosAbertos(leitura.falha, leitura.status)}
         </p>
       ) : null}
       {leitura && 'abertos' in leitura ? <Grupos maquina={maquina} leitura={leitura.abertos} liberados={liberados} aoFechar={aoFechar} /> : null}
@@ -56,7 +55,7 @@ function Grupos({
   maquina: string;
   leitura: Abertos;
   liberados: Liberados;
-  aoFechar: (item: ItemAberto, mb: number) => void;
+  aoFechar: (item: ItemAberto, mb: number | null) => void;
 }) {
   // O recém-fechado segue na lista até o prazo dele, venha ou não na leitura.
   const agoraMs = Date.now();
@@ -69,12 +68,12 @@ function Grupos({
   const agora = Math.floor(Date.now() / 1000);
   return grupos.map((grupo) => (
     <CartaoDoGrupo key={grupo.grupo} grupo={grupo}>
-      {grupo.grupo === 'protegido' ? (
+      {grupo.grupo === 'protegido' || grupo.grupo === 'residual' ? (
         <>
           <CabecalhoDasColunas comAtividade={false} />
           <ul className="flex flex-col">
             {grupo.itens.map((item) => (
-              <LinhaProtegida key={item.id} item={item} />
+              <LinhaProtegida key={item.id} item={item} comCadeado={grupo.grupo === 'protegido'} />
             ))}
           </ul>
         </>
@@ -90,7 +89,7 @@ function Grupos({
                 observadoDesde={leitura.observado_desde}
                 agora={agora}
                 primeira={i === 0}
-                liberouMb={idsVivos.has(item.id) ? liberados[item.id].mb : null}
+                liberouMb={idsVivos.has(item.id) ? liberados[item.id].mb : undefined}
                 aoFechar={aoFechar}
               />
             ))}
@@ -104,7 +103,6 @@ function Grupos({
 function CartaoDoGrupo({ grupo, children }: { grupo: GrupoDeItens; children: ReactNode }) {
   const [aberto, setAberto] = useState(false);
   const protegido = grupo.grupo === 'protegido';
-  const n = grupo.itens.length;
   const idDaLista = `maquina-grupo-${grupo.grupo}`;
   return (
     <section
@@ -129,7 +127,7 @@ function CartaoDoGrupo({ grupo, children }: { grupo: GrupoDeItens; children: Rea
           {aberto ? 'Esconder' : 'Mostrar'}
         </PilulaDaMaquina>
         <span className="ck-tabular ml-auto" style={SECUNDARIO_XS}>
-          {n} {n === 1 ? 'aberto' : 'abertos'} · {formataTamanho(grupo.memoria_mb)}
+          {textoDoGrupo(grupo)}
         </span>
       </div>
       <div id={idDaLista} hidden={!aberto}>

@@ -21,6 +21,9 @@ import threading
 import time
 from urllib.parse import urlsplit
 
+from chrome_processos import agrupar_chromes
+from medicao_processos import contadores_cpu, memoria_mb, soma_medidas
+
 
 IDENT = re.compile(r"[A-Za-z0-9_-]{1,64}\Z")
 PROTEGIDOS = {
@@ -61,6 +64,10 @@ class Scope:
     def id(self):
         bruto = f"{self.nome}\0{self.principal.inicio}".encode()
         return base64.urlsafe_b64encode(hashlib.sha256(bruto).digest()[:12]).decode()
+
+
+class ScopePorProcessos(Scope):
+    """Uma parte da unidade: seus contadores de cgroup não pertencem ao item."""
 
 
 @dataclass
@@ -255,6 +262,9 @@ class Maquinas:
             return None
 
     def scopes(self):
+        return agrupar_chromes(self, self._scopes_unidades())
+
+    def _scopes_unidades(self):
         # Um item por unidade; sub-cgroups sem unidade pertencem à unidade mais próxima.
         unidades = {}
         for arquivo in sorted(self.cgroup.rglob("cgroup.procs")):
@@ -412,6 +422,8 @@ class Maquinas:
         return {k: int(v) for k, v in (linha.split() for linha in arquivo.read_text().splitlines())}
 
     def memoria(self, scope):
+        if isinstance(scope, ScopePorProcessos):
+            return memoria_mb(self.proc, scope.processos)
         # RAM residente: não mistura swap ou todo o cache de memory.current
         # com o total MemTotal - MemAvailable. Kernel/cache ficam no residual.
         try:
@@ -422,7 +434,7 @@ class Maquinas:
                 uso -= mem["anon"] + mem["shmem"]
             return round(max(0, uso) / 2**20, 2)
         except (OSError, ValueError, KeyError):
-            return 0.0  # O total ainda contabiliza a memória em Fora da lista.
+            return None
 
     @staticmethod
     def _unidades_filhas(scope):
@@ -436,6 +448,8 @@ class Maquinas:
                 yield filha
 
     def _contadores_cpu(self, scope):
+        if isinstance(scope, ScopePorProcessos):
+            return contadores_cpu(self.proc, scope.processos)
         # Inode + boot distinguem uma unidade recriada e um reboot. O contador
         # sobrevive à saída de workers e inclui threads e cgroups descendentes.
         try:
@@ -557,7 +571,7 @@ class Maquinas:
                 parado = 0 if 0 in parados else None if None in parados else min(parados)
                 itens.append({"id": alvo.id, "grupo": "terminal",
                               "rotulo": rotulo + " · cadeira" if cadeira else rotulo, "dono": dono,
-                              "memoria_mb": round(sum(self.memoria(s) for s in scopes_item), 2),
+                              "memoria_mb": soma_medidas(self.memoria(s) for s in scopes_item),
                               "cpu_pct": round(sum(cpus), 1) if None not in cpus else None,
                               "parado_s": parado,
                               "abas": [], "pede_confirmacao": False,
@@ -569,13 +583,15 @@ class Maquinas:
         mem = self._estatisticas_memoria()
         ram = round((mem["MemTotal"] - mem["MemAvailable"]) / 1024, 2)
         itens = leitura["itens"]
-        cpu_listada = sum(i["cpu_pct"] or 0 for i in itens)
-        ram_listada = sum(i["memoria_mb"] for i in itens)
-        # Não esconde diferenças negativas: expõe desvio em vez de alterar itens
-        # ou inventar um residual zero (contadores não são leituras atômicas).
-        itens.append({"id": "fora-da-lista", "grupo": "protegido", "rotulo": "Fora da lista",
-                      "dono": None, "cpu_pct": None if cpu_total is None else round(cpu_total - cpu_listada, 1),
-                      "memoria_mb": round(ram - ram_listada, 2), "parado_s": None,
+        cpu_listada = soma_medidas(i["cpu_pct"] for i in itens)
+        ram_listada = soma_medidas(i["memoria_mb"] for i in itens)
+        # Leituras não atômicas podem divergir; residual impossível é desconhecido,
+        # nunca consumo negativo nem zero inventado para fechar a conta.
+        cpu_resto = None if cpu_total is None or cpu_listada is None else round(cpu_total - cpu_listada, 1)
+        ram_resto = None if ram_listada is None else round(ram - ram_listada, 2)
+        itens.append({"id": "fora-da-lista", "grupo": "residual", "rotulo": "Fora da lista",
+                      "dono": None, "cpu_pct": cpu_resto if cpu_resto is not None and cpu_resto >= 0 else None,
+                      "memoria_mb": ram_resto if ram_resto is not None and ram_resto >= 0 else None, "parado_s": None,
                       "abas": [], "pede_confirmacao": False, "acao_rotulo": None})
         return {**leitura, "cpu_pct": cpu_total, "memoria_mb": ram,
                 "memoria_metrica": "anon+shmem", "medido_em": int(self.relogio())}
@@ -614,8 +630,9 @@ class Maquinas:
 
         janelas = self.janelas()
         scopes = self.scopes()
-        parados = sum(self.classificar(s, janelas, scopes) in {"agente", "seus"}
-                      and (self.parado(s.id) or 0) >= 1800 for s in scopes)
+        tempos = [self.parado(s.id) for s in scopes
+                  if self.classificar(s, janelas, scopes) in {"agente", "seus"}]
+        parados = None if None in tempos else sum(t >= 1800 for t in tempos)
         return {"cpu_pct": cpu_pct, "ram": recurso(mem["MemTotal"] / 1024, mem["MemAvailable"] / 1024),
                 "disco": recurso(disco.total / 2**20, disco.free / 2**20),
                 "temperatura_c": temperatura_c, "parados_30min": parados,
@@ -662,7 +679,13 @@ class Maquinas:
                     except OSError:
                         raise Falha(409, "Não foi possível enviar SIGTERM.") from None
                 limite = self.monotono() + 8
-                while scope.caminho.exists():
+                def ainda_vivo():
+                    if isinstance(scope, ScopePorProcessos):
+                        return any((p := self.processo(antigo.pid)) is not None and p.inicio == antigo.inicio
+                                   for antigo in scope.processos)
+                    return scope.caminho.exists()
+
+                while ainda_vivo():
                     if self.monotono() >= limite:
                         raise Falha(409, "O item não fechou em 8 segundos.")
                     time.sleep(0.1)

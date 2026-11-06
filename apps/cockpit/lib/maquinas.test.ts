@@ -151,3 +151,55 @@ test('nome na linha: tira só o prefixo que o grupo já diz', () => {
   assert.equal(nomeNaLinha({ grupo: 'agente', rotulo: 'Chrome do Fluyt Com' }), 'Fluyt Com');
   assert.equal(nomeNaLinha({ grupo: 'seus', rotulo: 'Chrome do Rica' }), 'Chrome do Rica');
 });
+
+test('PC sem suporte diz o motivo sem prometer nova tentativa', async () => {
+  const { fetchAbertos, FalhaDaMaquina, textoDaFalhaDosAbertos } = await import('./maquinas.ts');
+  const anterior = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ mensagem: 'o PC ainda não lista o que está aberto' }), { status: 501 });
+  try {
+    await assert.rejects(fetchAbertos('pc'), (erro: Error) => {
+      assert.ok(erro instanceof FalhaDaMaquina);
+      assert.equal(erro.status, 501);
+      assert.equal(textoDaFalhaDosAbertos(erro.message, erro.status), 'o PC ainda não lista o que está aberto');
+      return true;
+    });
+    assert.match(textoDaFalhaDosAbertos('não responde', 502), /Tento de novo sozinho/);
+  } finally { globalThis.fetch = anterior; }
+});
+
+test('resumo sem primeira amostra não inventa selo de parados', () => {
+  assert.deepEqual(seloDaMaquina(resumo({ cpu_pct: null, parados_30min: null }), 'PC'), {
+    texto: null, vermelho: false, descricao: '',
+  });
+});
+
+test('RAM desconhecida deixa a soma desconhecida e vem depois das medidas conhecidas', () => {
+  const [grupo] = agrupa([item({ id: 'incerto', grupo: 'agente', memoria_mb: null }), item({ id: 'medido', grupo: 'agente', memoria_mb: 20 })]);
+  assert.equal(grupo.memoria_mb, null);
+  assert.deepEqual(grupo.itens.map(i => i.id), ['medido', 'incerto']);
+});
+
+test('fechar sem medida confirma fechamento sem inventar RAM liberada', async () => {
+  const { textoDoFechado } = await import('./maquinas.ts');
+  assert.equal(textoDoFechado(null), 'Fechado · RAM sem leitura');
+  assert.equal(textoDoFechado(10), 'Liberou 10 MB');
+});
+
+test('Fora da lista tem grupo próprio sem somar abertos ou RAM em Protegido, inclusive painel antigo', async () => {
+  const { textoDoGrupo } = await import('./maquinas.ts');
+  for (const grupoAntigoOuNovo of ['protegido', 'residual'] as const) {
+    const grupos = agrupa([
+      item({ id: 'sshd', grupo: 'protegido', memoria_mb: 8 }),
+      item({ id: 'fora-da-lista', grupo: grupoAntigoOuNovo, memoria_mb: 4700 }),
+    ]);
+    assert.equal(grupos[0].memoria_mb, 8);
+    assert.equal(textoDoGrupo(grupos[0]), '1 aberto · 8 MB');
+    assert.equal(grupos[1].grupo, 'residual');
+    assert.equal(textoDoGrupo(grupos[1]), '4,6 GB');
+    assert.doesNotMatch(textoDoGrupo(grupos[1]), /aberto/);
+  }
+});
+
+test('CPU negativa ou não finita nunca aparece como consumo', () => {
+  for (const cpu of [-2, -0.1, NaN, Infinity]) assert.equal(textoDaCpu(cpu), '—');
+});

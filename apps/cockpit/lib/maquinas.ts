@@ -4,7 +4,7 @@
 // estado mostra. Sem React: a lógica que decide o que a tela diz é testável em
 // `node --test`.
 
-import type { Recurso } from '../components/shell/recursos-da-vps.ts';
+import { formataTamanho, type Recurso } from '../components/shell/recursos-da-vps.ts';
 
 export type Maquina = { id: string; nome: string };
 
@@ -12,11 +12,11 @@ export type Tela = { em_uso: boolean | null; ultimo_uso_s: number | null };
 
 export type ResumoOnline = {
   online: true;
-  cpu_pct: number;
+  cpu_pct: number | null;
   ram: Recurso;
   disco: Recurso;
   temperatura_c: number | null;
-  parados_30min: number;
+  parados_30min: number | null;
   tela: Tela;
   medido_em: number;
 };
@@ -25,15 +25,15 @@ export type ResumoOffline = { online: false; motivo: string };
 
 export type Resumo = ResumoOnline | ResumoOffline;
 
-export type Grupo = 'seus' | 'terminal' | 'agente' | 'protegido';
+export type Grupo = 'seus' | 'terminal' | 'agente' | 'protegido' | 'residual';
 
 export type ItemAberto = {
   id: string;
   grupo: Grupo;
   rotulo: string;
   dono: string | null;
-  memoria_mb: number;
-  /** Fatia da máquina inteira no último minuto; null até a 2ª amostra do painel. */
+  memoria_mb: number | null;
+  /** Fatia da máquina inteira entre amostras de 3 s; null sem delta válido. */
   cpu_pct?: number | null;
   parado_s: number | null;
   abas: string[];
@@ -44,7 +44,21 @@ export type ItemAberto = {
 export type Abertos = { observado_desde: number; itens: ItemAberto[] };
 
 /** Falha que o painel explicou (403/404/409/502 com `{mensagem}`). */
-export class FalhaDaMaquina extends Error {}
+export class FalhaDaMaquina extends Error {
+  status?: number;
+  constructor(mensagem: string, status?: number) {
+    super(mensagem);
+    this.status = status;
+  }
+}
+
+export function textoDaFalhaDosAbertos(mensagem: string, status?: number): string {
+  return status === 501 ? mensagem : `Não consegui listar o que está aberto: ${mensagem}. Tento de novo sozinho.`;
+}
+
+export function textoDoFechado(mb: number | null): string {
+  return mb === null ? 'Fechado · RAM sem leitura' : `Liberou ${formataTamanho(mb)}`;
+}
 
 // No servidor o fetch precisa de URL absoluta; no cliente o rewrite do
 // `next.config` resolve o caminho relativo — mesma divisão da `faxina.ts`.
@@ -78,23 +92,23 @@ export async function fetchNomeLocal(): Promise<string> {
 
 export async function fetchResumo(id: string): Promise<Resumo> {
   const res = await fetch(`/api/maquinas/${id}/resumo`, { cache: 'no-store' });
-  if (!res.ok) throw new FalhaDaMaquina(await mensagemDe(res));
+  if (!res.ok) throw new FalhaDaMaquina(await mensagemDe(res), res.status);
   return res.json();
 }
 
 export async function fetchAbertos(id: string): Promise<Abertos> {
   const res = await fetch(`/api/maquinas/${id}/abertos`, { cache: 'no-store' });
-  if (!res.ok) throw new FalhaDaMaquina(await mensagemDe(res));
+  if (!res.ok) throw new FalhaDaMaquina(await mensagemDe(res), res.status);
   return res.json();
 }
 
-export async function postFechar(maquina: string, item: string): Promise<{ liberou_mb: number }> {
+export async function postFechar(maquina: string, item: string): Promise<{ liberou_mb: number | null }> {
   const res = await fetch(`/api/maquinas/${maquina}/fechar`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ id: item }),
   });
-  if (!res.ok) throw new FalhaDaMaquina(await mensagemDe(res));
+  if (!res.ok) throw new FalhaDaMaquina(await mensagemDe(res), res.status);
   return res.json();
 }
 
@@ -117,20 +131,29 @@ const NOME_DO_GRUPO: Record<Grupo, string> = {
   terminal: 'Agentes',
   agente: 'Chrome de agente',
   protegido: 'Protegido',
+  residual: 'Fora da lista',
 };
 
-const ORDEM_DOS_GRUPOS: Grupo[] = ['seus', 'terminal', 'agente', 'protegido'];
+const ORDEM_DOS_GRUPOS: Grupo[] = ['seus', 'terminal', 'agente', 'protegido', 'residual'];
 
-export type GrupoDeItens = { grupo: Grupo; nome: string; itens: ItemAberto[]; memoria_mb: number };
+export type GrupoDeItens = { grupo: Grupo; nome: string; itens: ItemAberto[]; memoria_mb: number | null };
 
 /** Os grupos na ordem da tela, cada um do que mais come ao que menos. Grupo vazio não vem. */
 export function agrupa(itens: ItemAberto[]): GrupoDeItens[] {
+  // Compatível com painéis antigos durante a instalação: o residual nunca é app.
+  itens = itens.map((i) => i.id === 'fora-da-lista' ? { ...i, grupo: 'residual' } : i);
   return ORDEM_DOS_GRUPOS.flatMap((grupo) => {
-    const doGrupo = itens.filter((i) => i.grupo === grupo).sort((a, b) => b.memoria_mb - a.memoria_mb);
+    const doGrupo = itens.filter((i) => i.grupo === grupo).sort((a, b) => (b.memoria_mb ?? -1) - (a.memoria_mb ?? -1));
     if (doGrupo.length === 0) return [];
-    const memoria_mb = doGrupo.reduce((soma, i) => soma + i.memoria_mb, 0);
+    const memoria_mb = doGrupo.some((i) => i.memoria_mb === null) ? null : doGrupo.reduce((soma, i) => soma + i.memoria_mb!, 0);
     return [{ grupo, nome: NOME_DO_GRUPO[grupo], itens: doGrupo, memoria_mb }];
   });
+}
+
+export function textoDoGrupo(grupo: GrupoDeItens): string {
+  const memoria = formataTamanho(grupo.memoria_mb);
+  const n = grupo.itens.length;
+  return grupo.grupo === 'residual' ? memoria : `${n} ${n === 1 ? 'aberto' : 'abertos'} · ${memoria}`;
 }
 
 /**
@@ -152,7 +175,7 @@ export function duracao(segundos: number): string {
   return `${Math.floor(horas / 24)} d`;
 }
 
-/** Abaixo disto o item conta como em uso: o painel amostra a CPU a cada 60 s. */
+/** Abaixo de um minuto a tela diz em uso; o painel amostra a CPU a cada 3 s. */
 const PARADO_MINIMO_S = 60;
 
 /**
@@ -181,7 +204,7 @@ export function atividade(parado_s: number | null, observado_desde: number, agor
 
 /** "3%", "<1%" ou "—" enquanto o painel não tem duas amostras. */
 export function textoDaCpu(cpu_pct: number | null | undefined): string {
-  if (cpu_pct == null) return '—';
+  if (cpu_pct == null || !Number.isFinite(cpu_pct) || cpu_pct < 0) return '—';
   if (cpu_pct > 0 && cpu_pct < 1) return '<1%';
   return `${Math.round(cpu_pct)}%`;
 }
@@ -228,10 +251,10 @@ export function seloDaMaquina(resumo: Resumo | null, nome: string): Selo {
   const parados = resumo.parados_30min;
   const ramAlta = resumo.ram.pct > TETO_RAM_DO_SELO;
   const partes: string[] = [];
-  if (parados > 0) partes.push(`${parados} ${parados === 1 ? 'parado' : 'parados'} há mais de 30 min`);
+  if (parados !== null && parados > 0) partes.push(`${parados} ${parados === 1 ? 'parado' : 'parados'} há mais de 30 min`);
   if (ramAlta) partes.push(`RAM em ${Math.round(resumo.ram.pct)}%`);
   return {
-    texto: parados > 0 ? String(parados) : ramAlta ? '!' : null,
+    texto: parados !== null && parados > 0 ? String(parados) : ramAlta ? '!' : null,
     vermelho: ramAlta,
     descricao: partes.length ? `${nome}: ${partes.join(', ')}` : '',
   };

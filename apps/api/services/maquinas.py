@@ -38,7 +38,7 @@ MAQUINAS = {
         "chave_env": "MAQUINA_VPS_CHAVE",
     },
 }
-CACHE_SEGUNDOS = 30
+CACHE_SEGUNDOS = 3
 # O motivo aparece na tela do Rica: frase, não código HTTP.
 ERRO_POR_STATUS = {401: "a chave não confere", 503: "falta a chave no painel"}
 
@@ -60,21 +60,21 @@ class Tela(RespostaPainel):
 
 
 class ResumoPainel(RespostaPainel):
-    cpu_pct: float
+    cpu_pct: float | None
     ram: Recurso
     disco: Recurso
     temperatura_c: float | None
-    parados_30min: int
+    parados_30min: int | None
     tela: Tela
     medido_em: int
 
 
 class ItemAberto(RespostaPainel):
     id: str
-    grupo: Literal["seus", "agente", "terminal", "protegido"]
+    grupo: Literal["seus", "agente", "terminal", "protegido", "residual"]
     rotulo: str
     dono: str | None
-    memoria_mb: float
+    memoria_mb: float | None
     cpu_pct: float | None
     parado_s: int | None
     abas: list[str]
@@ -88,7 +88,7 @@ class Abertos(RespostaPainel):
 
 
 class Fechado(RespostaPainel):
-    liberou_mb: float
+    liberou_mb: float | None
 
 
 class Mensagem(RespostaPainel):
@@ -156,7 +156,7 @@ class ServicoMaquinas:
                     headers={"Authorization": f"Bearer {config.chave}"},
                     json=corpo,
                 )
-            if resposta.status_code in (403, 404, 409):
+            if resposta.status_code in (403, 404, 409, 501):
                 mensagem = Mensagem.model_validate(resposta.json())
                 raise FalhaPainel(mensagem.mensagem, resposta.status_code)
             resposta.raise_for_status()
@@ -189,9 +189,11 @@ class ServicoMaquinas:
         return await self._pedir(self._configuracao(maquina), "abertos", 6.0, Abertos)
 
     async def fechar(self, maquina: str, item_id: str) -> Fechado:
-        return await self._pedir(
+        fechado = await self._pedir(
             self._configuracao(maquina), "fechar", 12.0, Fechado, corpo={"id": item_id}
         )
+        self._cache.pop(maquina, None)
+        return fechado
 
 
 servico = ServicoMaquinas()
