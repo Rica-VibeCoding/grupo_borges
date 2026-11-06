@@ -62,8 +62,9 @@ ABERTOS = {
 
 @pytest.fixture
 def painel(monkeypatch):
-    monkeypatch.setenv("MAQUINA_ARSENAL_CHAVE", "chave-de-teste")
-    monkeypatch.delenv("MAQUINA_ARSENAL_URL", raising=False)
+    for entrada in maquinas.MAQUINAS.values():
+        monkeypatch.setenv(entrada["chave_env"], "chave-de-teste")
+        monkeypatch.delenv(entrada["url_env"], raising=False)
     agora = [100.0]
     pedidos = []
 
@@ -100,7 +101,11 @@ async def cliente(painel):
 async def test_lista_nao_consulta_o_painel(cliente, painel):
     resposta = await cliente.get("/api/maquinas")
     assert resposta.status_code == 200
-    assert resposta.json() == [{"id": "arsenal", "nome": "Arsenal"}]
+    assert resposta.json() == [
+        {"id": "arsenal", "nome": "Arsenal"},
+        {"id": "note", "nome": "Note"},
+        {"id": "pc", "nome": "PC"},
+    ]
     assert painel[2] == []
 
 
@@ -140,7 +145,8 @@ async def test_cache_e_trava_sao_por_maquina(cliente, painel, monkeypatch):
 
 
 @pytest.mark.parametrize("falha", ["conexao", "timeout", "http", "json", "contrato", "nan"])
-async def test_resumo_offline_tambem_tem_cache(cliente, painel, falha):
+@pytest.mark.parametrize("maquina", ["arsenal", "note", "pc"])
+async def test_resumo_offline_tambem_tem_cache(cliente, painel, falha, maquina):
     instalar, agora, pedidos = painel
 
     def responder(request):
@@ -158,28 +164,50 @@ async def test_resumo_offline_tambem_tem_cache(cliente, painel, falha):
 
     instalar(responder)
     for _ in range(2):
-        resposta = await cliente.get("/api/maquinas/arsenal/resumo")
+        resposta = await cliente.get(f"/api/maquinas/{maquina}/resumo")
         assert resposta.status_code == 200
         assert resposta.json()["online"] is False
         assert resposta.json()["motivo"]
     assert len(pedidos) == 1
     agora[0] += 30
-    await cliente.get("/api/maquinas/arsenal/resumo")
+    await cliente.get(f"/api/maquinas/{maquina}/resumo")
     assert len(pedidos) == 2
 
 
-async def test_sem_chave_nao_faz_pedido_e_env_e_lido_na_chamada(cliente, painel, monkeypatch):
-    monkeypatch.delenv("MAQUINA_ARSENAL_CHAVE")
+@pytest.mark.parametrize("maquina", ["arsenal", "note", "pc"])
+async def test_sem_chave_nao_faz_pedido_e_env_e_lido_na_chamada(cliente, painel, monkeypatch, maquina):
+    entrada = maquinas.MAQUINAS[maquina]
+    monkeypatch.delenv(entrada["chave_env"])
     for _ in range(2):
-        resposta = await cliente.get("/api/maquinas/arsenal/resumo")
+        resposta = await cliente.get(f"/api/maquinas/{maquina}/resumo")
         assert resposta.status_code == 200
         assert resposta.json() == {"online": False, "motivo": "falta configurar a chave no cockpit"}
     assert painel[2] == []
-    monkeypatch.setenv("MAQUINA_ARSENAL_CHAVE", "nova-chave")
-    monkeypatch.setenv("MAQUINA_ARSENAL_URL", "http://arsenal.test:8787/")
-    assert (await cliente.get("/api/maquinas/arsenal/resumo")).json()["online"] is True
-    assert painel[2][0].url.host == "arsenal.test"
+    monkeypatch.setenv(entrada["chave_env"], "nova-chave")
+    monkeypatch.setenv(entrada["url_env"], f"http://{maquina}.test:8787/")
+    assert (await cliente.get(f"/api/maquinas/{maquina}/resumo")).json()["online"] is True
+    assert painel[2][0].url.host == f"{maquina}.test"
     assert painel[2][0].headers["Authorization"] == "Bearer nova-chave"
+
+
+@pytest.mark.parametrize("maquina,ip", [("note", "100.116.209.95"), ("pc", "100.118.54.91")])
+async def test_novas_maquinas_url_padrao_e_recuperacao_apos_desligar(cliente, painel, maquina, ip):
+    online = [False]
+
+    def responder(request):
+        assert request.url == f"http://{ip}:8787/api/maquina/resumo"
+        assert request.headers["Authorization"] == "Bearer chave-de-teste"
+        if not online[0]:
+            raise httpx.ConnectError("desligada", request=request)
+        return httpx.Response(200, json=RESUMO)
+
+    painel[0](responder)
+    assert (await cliente.get(f"/api/maquinas/{maquina}/resumo")).json() == {
+        "online": False, "motivo": "não responde"}
+    online[0] = True
+    painel[1][0] += 30
+    assert (await cliente.get(f"/api/maquinas/{maquina}/resumo")).json() == {**RESUMO, "online": True}
+    assert len(painel[2]) == 2
 
 
 @pytest.mark.parametrize("rota,limite_s", [("resumo", 3), ("abertos", 6), ("fechar", 12)])

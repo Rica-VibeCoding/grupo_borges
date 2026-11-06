@@ -15,7 +15,7 @@ Medida (espaço, largura, toque, raio, ritmo) é da §B do `globals.css`; aqui s
    de luz de 1px no topo da superfície elevada. Fundo escuro não tem sombra.
 4. **Acromático onde não há significado.** Superfície, texto e borda têm croma zero. Matiz é
    reservado a estado e tons de estado (§2), diff, link, seleção, ouro do pulso, verde dos atalhos
-   de tela, acentos da gaveta (§8) e a pílula Mostrar/Esconder da tela Abertos (§8). Foco não tem cor (§9.17).
+   de tela, acentos da gaveta (§8), a pílula Mostrar/Esconder e o tom do cartão de medidas da tela Abertos (§8). Foco não tem cor (§9.17).
 5. **A temperatura sobe quando a máquina precisa de você:** violeta (pensando) → dourado do pulso
    (executando, no feed; ciano só fora dele) → **âmbar (espera humano)** → verde (feito) / coral
    (falhou). Âmbar é o único estado que chama o Rica; dourado e âmbar são vizinhos (1,1:1 entre si),
@@ -325,15 +325,21 @@ também esmaece foto e nome (a palavra fica no nome acessível). Nada aparece a 
 Selecionado = pílula, o vidro escuro da `PilulaDoAgente` sem desfoque; hover é meia pílula. Nada pulsa;
 só a cor troca, em `--ck-dur-calm`. O pulso de 24h mora na gaveta. O topo do chat é a própria pílula
 (`lugar="topo"`, foto 36). No pé da tropa, uma linha por máquina (05/11, `maquinas/linhas-das-maquinas.tsx`):
-nome · RAM · temperatura (Swap onde não há sensor) · parados, num cartão `composer` + fio de luz; cor só no
-trecho acima do teto de `recursos-da-vps.ts` — a swap acende por troca ativa, > 256 páginas/s, nunca por
-ocupação. O toque abre `/abertos` na aba da máquina; a grade 2×2 e os processos moram lá.
+numa linha só de 44 px, ícone · nome à esquerda e CPU · RAM · temperatura à direita, em colunas iguais entre as máquinas
+(`.ck-maquina-medidas`; sem sensor a coluna fica vazia), num cartão `composer` + fio de luz; cor e "!" só no trecho acima
+do teto de `recursos-da-vps.ts`. Na tropa estreita (cartão < 20rem, container query) os rótulos saem dos números e sobem
+para um cabeçalho discreto; nunca dois andares. Disco cheio e swap em troca (> 256 páginas/s, nunca por ocupação) aparecem
+entre o nome e os números, só em alerta ("disco!", "swap!"; no estreito, só "!"; número e palavra vão na voz). Parados saíram da linha: na raiz o selo do atalho Abertos conta; no chat, só a tela Abertos. Abaixo de 15rem (fonte ≥ 150% na tropa) a temperatura sai da vista e fica no nome acessível. O toque abre `/abertos` na aba da máquina; a grade 2×2 e os processos moram lá.
 
 **Tela Abertos** (`maquinas/lista-de-abertos.tsx`, 05/11) — uma linha por item, em colunas fixas: nome · parado · CPU ·
 RAM · Fechar, com o título das colunas uma vez por grupo. Confirmar é em linha: o nome fica, aviso e botões entram no
 lugar das medidas. O Protegido nasce fechado e afunda um degrau abaixo da mesa (`.ck-vps-poco`: `canvas`, contorno, sem fio
 de luz), com texto `secondary` e cadeado no lugar do Fechar: o que não se alcança fica mais longe. A pílula Mostrar/Esconder
 leva a cor do link, sem sublinhado (`--ck-pilula-mostrar-*`): exceção do Rica (05/11), para não se confundir com o Fechar.
+O cartão de medidas (CPU, RAM, disco, temperatura) veste `--ck-maquina-tom` (`.ck-vps-tom`), uma ardósia que separa as
+medidas da máquina dos grupos abaixo (Rica, 05/11). Quem separa é o matiz do link, em croma ≈ 0.014; a luz quase não muda
+(1.08:1 do `composer`). Só esse cartão leva o tom: "Quem mais consome", na aba local, fica neutro. Pílula ou botão dentro
+dele não usa o matiz do link.
 
 **Medidores:** contexto neutro → âmbar ≥ 25% → `state-fail` > 30% (`corDoContexto`); cota âmbar ≥ 80% → `state-fail` ≥ 95% (`corDaCota`).
 

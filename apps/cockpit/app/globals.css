@@ -178,6 +178,14 @@
   --ck-pilula-mostrar-bg: color-mix(in oklab, var(--ck-link) 18%, var(--ck-surface-composer));
   --ck-pilula-mostrar-bg-hover: color-mix(in oklab, var(--ck-link) 24%, var(--ck-surface-composer));
   --ck-pilula-mostrar-bg-pressed: color-mix(in oklab, var(--ck-link) 28%, var(--ck-surface-composer));
+  /* -- cartão de medidas da tela Abertos (CPU, RAM, disco, temperatura): um
+   * tonzinho ardósia, pedido do Rica (05/11) para separar as medidas da máquina
+   * das listas de baixo, que seguem no `composer` neutro. Quem separa é o
+   * matiz (o do link, croma ≈ 0.014), não a luz: 1.08:1 do `composer`. Sai do
+   * link, como a pílula Mostrar: se ele mudar, o tom acompanha. Sobre ele:
+   * primary 11.88:1, secondary 6.21:1, attention 7.53:1, fail 5.38:1. Botão ou
+   * pílula dentro deste cartão não pode usar o matiz do link. */
+  --ck-maquina-tom: color-mix(in oklab, var(--ck-link) 15%, var(--ck-surface-canvas));
 
   /* -- seleção ------------------------------------------------------------
    * Força fundo E cor: sem forçar, selecionar texto em state-fail ou diff-add
@@ -1902,6 +1910,9 @@ html[data-troca-agente] .ck-palco {
   background: var(--ck-surface-canvas);
   box-shadow: inset 0 0 0 1px var(--ck-edge-hairline);
 }
+/* O cartão de medidas da máquina na tela Abertos: o mesmo cartão, com o tom
+ * que o separa dos grupos abaixo. */
+.ck-vps-tom { background: var(--ck-maquina-tom); }
 .ck-vps-trilho { background: var(--ck-surface-canvas); }
 .ck-vps-preenche {
   background: var(--ck-text-secondary);
@@ -1920,6 +1931,47 @@ html[data-troca-agente] .ck-palco {
  * material do cartão da VPS; o toque responde pelo véu, como a pílula dela. */
 .ck-maquina-mini:hover { background-image: linear-gradient(var(--ck-overlay-hover), var(--ck-overlay-hover)); }
 .ck-maquina-mini:active { background-image: linear-gradient(var(--ck-overlay-pressed), var(--ck-overlay-pressed)); }
+/* Uma linha por máquina: nome à esquerda, CPU · RAM · temperatura à direita,
+ * em colunas alinhadas entre as máquinas. Trecho único (desligado, ligando…)
+ * ocupa as três colunas. A tropa tem largura fixa em px e as colunas são em
+ * rem: com a fonte do navegador maior, o contêiner fica "estreito" mais cedo e
+ * a linha encolhe em degraus, nunca em dois andares:
+ * - < 20rem (tropa do chat, 244 px): os rótulos sobem para um cabeçalho, o
+ *   aviso (disco, swap) vira só "!", o ícone sai e o respiro lateral diminui;
+ * - < 15rem (fonte ≥ 150% na tropa): a coluna de temperatura sai da vista e
+ *   continua no nome acessível. */
+.ck-maquinas-lista { container-type: inline-size; }
+.ck-maquina-medidas {
+  display: grid;
+  grid-template-columns: minmax(0, 4rem) minmax(0, 4rem) minmax(0, 2.5rem);
+  column-gap: var(--ck-space-2);
+  text-align: right;
+  white-space: nowrap;
+}
+.ck-maquina-medidas > :only-child { grid-column: 1 / -1; }
+.ck-maquinas-lista .ck-maquina-mini,
+.ck-maquinas-lista .ck-maquina-cabecalho { padding-inline: var(--ck-space-4); }
+.ck-maquina-curto,
+.ck-maquina-cabecalho { display: none; }
+/* Sem nenhuma temperatura na lista, o °C do cabeçalho não fica sobre o vazio. */
+.ck-maquinas-lista:not(:has(.ck-maquina-temp)) .ck-maquina-cab-temp { visibility: hidden; }
+@container (width < 20rem) {
+  .ck-maquina-medidas {
+    grid-template-columns: minmax(0, 2.5rem) minmax(0, 2.5rem) minmax(0, 1.75rem);
+    column-gap: var(--ck-space-1);
+  }
+  .ck-maquina-longo,
+  .ck-maquina-icone { display: none; }
+  .ck-maquina-curto { display: inline; }
+  .ck-maquina-cabecalho { display: flex; }
+  .ck-maquinas-lista .ck-maquina-mini,
+  .ck-maquinas-lista .ck-maquina-cabecalho { padding-inline: var(--ck-space-3); }
+}
+@container (width < 15rem) {
+  .ck-maquina-medidas { grid-template-columns: minmax(0, 2.5rem) minmax(0, 2.5rem); }
+  .ck-maquina-temp,
+  .ck-maquina-cab-temp { display: none; }
+}
 .ck-vps-botao:disabled { cursor: default; }
 .ck-vps-botao:disabled:hover .ck-vps-pilula { background-image: none; }
 /* As colunas da tela Abertos: nome · parado · CPU · RAM · ação. Em rem, para
