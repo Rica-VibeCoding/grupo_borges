@@ -19,6 +19,18 @@ MAQUINAS = {
         "url_padrao": "http://100.91.105.22:8787",
         "chave_env": "MAQUINA_ARSENAL_CHAVE",
     },
+    "note": {
+        "nome": "Note",
+        "url_env": "MAQUINA_NOTE_URL",
+        "url_padrao": "http://100.116.209.95:8787",
+        "chave_env": "MAQUINA_NOTE_CHAVE",
+    },
+    "pc": {
+        "nome": "PC",
+        "url_env": "MAQUINA_PC_URL",
+        "url_padrao": "http://100.118.54.91:8787",
+        "chave_env": "MAQUINA_PC_CHAVE",
+    },
 }
 CACHE_SEGUNDOS = 30
 # O motivo aparece na tela do Rica: frase, não código HTTP.

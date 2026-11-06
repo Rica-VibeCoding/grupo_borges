@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import type { RecursosDaVps } from '../components/shell/recursos-da-vps.ts';
-import { idDoNome, maquinasDaCasa, trechosDaLocal, trechosDaRemota } from './linhas-das-maquinas.ts';
+import { idDoNome, leituraDaLocal, leituraDaRemota, maquinasDaCasa } from './linhas-das-maquinas.ts';
 import type { ResumoOnline } from './maquinas.ts';
 
 const VPS: RecursosDaVps = {
@@ -56,39 +56,57 @@ test('sem leitura da local, só as remotas; sem nada, lista vazia', () => {
   assert.deepEqual(maquinasDaCasa(null, []), []);
 });
 
-test('linha da local sem sensor: RAM e Swap; com sensor: RAM e temperatura', () => {
-  assert.deepEqual(textos(trechosDaLocal(VPS, false)), ['RAM 55%', 'Swap 29%']);
-  assert.deepEqual(textos(trechosDaLocal({ ...VPS, temperatura_c: 34 }, true)), ['RAM 55%', '34 °C']);
-  assert.deepEqual(textos(trechosDaLocal(VPS, true)), ['RAM 55%', '— °C']);
+test('local: CPU, RAM e temperatura nessa ordem; sem sensor a temperatura some, sem Swap no lugar', () => {
+  assert.deepEqual(textos(leituraDaLocal(VPS, false).medidas), ['CPU 23%', 'RAM 55%']);
+  assert.deepEqual(textos(leituraDaLocal({ ...VPS, temperatura_c: 34 }, true).medidas), ['CPU 23%', 'RAM 55%', '34 °C']);
 });
 
-test('linha da local acende como o cartão: RAM > 85%, swap em troca, CPU e disco só em alerta', () => {
-  const quente = {
-    ...VPS,
-    cpu_pct: 95,
-    ram: { ...VPS.ram, pct: 91 },
-    swap_troca_paginas_s: 900,
-    disco: { ...VPS.disco, pct: 90 },
-  };
-  assert.deepEqual(trechosDaLocal(quente, false), [
-    { texto: 'RAM 91% alta', alerta: true },
-    { texto: 'Swap 29% em troca', alerta: true },
-    { texto: 'CPU 95% alta', alerta: true },
-    { texto: 'disco 90% cheio', alerta: true },
+test('local: sensor que falha numa rodada e CPU sem leitura guardam o lugar', () => {
+  assert.deepEqual(textos(leituraDaLocal(VPS, true).medidas), ['CPU 23%', 'RAM 55%', '— °C']);
+  assert.deepEqual(textos(leituraDaLocal({ ...VPS, cpu_pct: null }, false).medidas), ['CPU —', 'RAM 55%']);
+  assert.deepEqual(leituraDaLocal(VPS, true).medidas.map((t) => t.curto), ['23%', '55%', '—']);
+});
+
+test('local em alerta: a ordem não muda; disco cheio e swap em troca viram aviso', () => {
+  const quente = leituraDaLocal(
+    { ...VPS, cpu_pct: 95, ram: { ...VPS.ram, pct: 91 }, swap_troca_paginas_s: 900, disco: { ...VPS.disco, pct: 90 } },
+    false,
+  );
+  assert.deepEqual(quente.medidas, [
+    { texto: 'CPU 95%!', curto: '95%!', alerta: true, falado: 'CPU 95% alta' },
+    { texto: 'RAM 91%!', curto: '91%!', alerta: true, falado: 'RAM 91% alta' },
+  ]);
+  assert.deepEqual(quente.avisos, [
+    { texto: 'disco!', curto: '!', alerta: true, falado: 'disco 90% cheio' },
+    { texto: 'swap!', curto: '!', alerta: true, falado: 'swap em troca' },
   ]);
 });
 
-test('linha da remota: RAM, temperatura e parados; acende acima do teto', () => {
-  assert.deepEqual(textos(trechosDaRemota(ARSENAL)), ['RAM 23%', '34 °C', '3 parados']);
-  const quente = trechosDaRemota({ ...ARSENAL, ram: { ...ARSENAL.ram, pct: 89 }, temperatura_c: 90, parados_30min: 1 });
-  assert.deepEqual(quente, [
-    { texto: 'RAM 89% alta', alerta: true },
-    { texto: '90 °C quente', alerta: true },
-    { texto: '1 parado', alerta: false },
-  ]);
+test('swap ocupada sem troca não aparece', () => {
+  assert.deepEqual(leituraDaLocal(VPS, false).avisos, []);
 });
 
-test('alerta vem primeiro: com a linha cortada, some o neutro', () => {
-  const soQuente = trechosDaRemota({ ...ARSENAL, temperatura_c: 90 });
-  assert.deepEqual(textos(soQuente), ['90 °C quente', 'RAM 23%', '3 parados']);
+test('remota: mesmo formato da local, sem parados', () => {
+  assert.deepEqual(leituraDaRemota(ARSENAL), {
+    medidas: [
+      { texto: 'CPU 4%', curto: '4%', alerta: false },
+      { texto: 'RAM 23%', curto: '23%', alerta: false },
+      { texto: '34 °C', curto: '34°', alerta: false },
+    ],
+    avisos: [],
+  });
+});
+
+test('remota sem temperatura: a medida some', () => {
+  assert.deepEqual(textos(leituraDaRemota({ ...ARSENAL, temperatura_c: null }).medidas), ['CPU 4%', 'RAM 23%']);
+});
+
+test('remota acende só o trecho acima do teto: CPU > 90%, RAM > 85%, > 85 °C', () => {
+  const noTeto = leituraDaRemota({ ...ARSENAL, cpu_pct: 90, ram: { ...ARSENAL.ram, pct: 85 }, temperatura_c: 85 });
+  assert.deepEqual(noTeto.medidas.map((t) => t.alerta), [false, false, false]);
+  const quente = leituraDaRemota({ ...ARSENAL, cpu_pct: 91, temperatura_c: 90, disco: { ...ARSENAL.disco, pct: 90 } });
+  assert.deepEqual(textos(quente.medidas), ['CPU 91%!', 'RAM 23%', '90 °C!']);
+  assert.equal(quente.medidas[2].falado, '90 °C quente');
+  assert.deepEqual(quente.medidas.map((t) => t.curto), ['91%!', '23%', '90°!']);
+  assert.deepEqual(textos(quente.avisos), ['disco!']);
 });

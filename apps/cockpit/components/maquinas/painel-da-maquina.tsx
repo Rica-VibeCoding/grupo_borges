@@ -91,7 +91,7 @@ export function PainelDaMaquina({
     <>
       <section
         aria-label={`Desempenho: ${nome}`}
-        className="ck-vps flex flex-col"
+        className="ck-vps ck-vps-tom flex flex-col"
         style={{ gap: 'var(--ck-space-3)', padding: 'var(--ck-space-3) var(--ck-space-4)' }}
       >
         {nomeNoCartao ? (

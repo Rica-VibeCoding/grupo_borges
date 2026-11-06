@@ -36,49 +36,79 @@ export function maquinasDaCasa(nomeLocal: string | null, remotas: Maquina[]): Ma
   return [...lista, { id, nome: nomeLocal, local: true }];
 }
 
-export type Trecho = { texto: string; alerta: boolean };
+/**
+ * `curto`: o que a coluna estreita escreve (tropa do chat), sem o rótulo, que
+ * lá vira cabeçalho. `falado`: o que o leitor de tela diz, quando difere.
+ */
+export type Trecho = { texto: string; alerta: boolean; curto?: string; falado?: string };
+
+/**
+ * O que a linha da máquina mostra. `medidas` é CPU, RAM e temperatura, sempre
+ * nessa ordem, ou um trecho só com o estado (desligado, ligando…). `avisos` só
+ * existe em alerta: o que não é medida fixa, mas não pode passar em branco.
+ */
+export type Leitura = { medidas: Trecho[]; avisos: Trecho[] };
+
+/** A linha que só diz um estado: "desligado", "fora do ar". */
+export function leituraDeEstado(medidas: Trecho[]): Leitura {
+  return { medidas, avisos: [] };
+}
 
 function pct(n: number): string {
   return `${Math.round(n)}%`;
 }
 
-/** Um trecho; em alerta ganha a palavra (a cor nunca vai sozinha, §3). */
-function trecho(texto: string, alerta: boolean, palavra: string): Trecho {
-  return { texto: alerta ? `${texto} ${palavra}` : texto, alerta };
+/**
+ * Uma medida. Em alerta ganha "!" (a cor nunca vai sozinha, §3) e a palavra só
+ * na voz: "CPU 95% alta" não cabe três vezes na coluna da tropa.
+ */
+function medida(texto: string, curto: string, alerta: boolean, palavra: string): Trecho {
+  return alerta
+    ? { texto: `${texto}!`, curto: `${curto}!`, alerta, falado: `${texto} ${palavra}` }
+    : { texto, curto, alerta };
 }
 
-/** Alerta primeiro: com a linha cortada no celular, o que some é o neutro. */
-function alertaPrimeiro(trechos: Trecho[]): Trecho[] {
-  return [...trechos.filter((t) => t.alerta), ...trechos.filter((t) => !t.alerta)];
+function cpu(valor: number | null): Trecho {
+  if (valor === null) return { texto: 'CPU —', curto: '—', alerta: false, falado: 'CPU sem leitura' };
+  return medida(`CPU ${pct(valor)}`, pct(valor), emAlerta('cpu', valor), 'alta');
+}
+
+function ram(valor: number): Trecho {
+  return medida(`RAM ${pct(valor)}`, pct(valor), emAlerta('ram', valor), 'alta');
+}
+
+function temperatura(c: number): Trecho {
+  return medida(`${Math.round(c)} °C`, `${Math.round(c)}°`, temperaturaEmAlerta(c), 'quente');
+}
+
+/** Disco e swap entram só em alerta, com a mesma regra das medidas. */
+function discoCheio(valor: number): Trecho[] {
+  // O número fica só na voz: no vão entre o nome e as colunas, cabe "disco!".
+  return emAlerta('disco', valor) ? [{ texto: 'disco!', curto: '!', alerta: true, falado: `disco ${pct(valor)} cheio` }] : [];
 }
 
 /**
- * A linha da máquina local: RAM e, no lugar da temperatura, a Swap onde não há
- * sensor. CPU e disco só entram em alerta — o resto do tempo moram na aba.
- * `comSensor` vem do componente: uma leitura com temperatura basta, e a linha
- * não volta à Swap se o sensor falhar numa rodada ("— °C").
+ * A linha da máquina local. Sem sensor a temperatura some, sem nada no lugar.
+ * `comSensor` vem do componente: uma leitura com temperatura basta, e a coluna
+ * não some se o sensor falhar numa rodada ("— °C").
  */
-export function trechosDaLocal(dados: RecursosDaVps, comSensor: boolean): Trecho[] {
-  const trechos: Trecho[] = [trecho(`RAM ${pct(dados.ram.pct)}`, emAlerta('ram', dados.ram.pct), 'alta')];
+export function leituraDaLocal(dados: RecursosDaVps, comSensor: boolean): Leitura {
+  const medidas = [cpu(dados.cpu_pct), ram(dados.ram.pct)];
   if (comSensor) {
     const c = dados.temperatura_c;
-    trechos.push(trecho(c === null ? '— °C' : `${Math.round(c)} °C`, temperaturaEmAlerta(c), 'quente'));
-  } else if (dados.swap) {
-    trechos.push(trecho(`Swap ${pct(dados.swap.pct)}`, swapEmTroca(dados), 'em troca'));
+    medidas.push(c === null ? { texto: '— °C', curto: '—', alerta: false, falado: 'temperatura sem leitura' } : temperatura(c));
   }
-  if (dados.cpu_pct !== null && emAlerta('cpu', dados.cpu_pct)) trechos.push(trecho(`CPU ${pct(dados.cpu_pct)}`, true, 'alta'));
-  if (emAlerta('disco', dados.disco.pct)) trechos.push(trecho(`disco ${pct(dados.disco.pct)}`, true, 'cheio'));
-  return alertaPrimeiro(trechos);
+  const avisos = discoCheio(dados.disco.pct);
+  if (swapEmTroca(dados)) avisos.push({ texto: 'swap!', curto: '!', alerta: true, falado: 'swap em troca' });
+  return { medidas, avisos };
 }
 
-/** A linha de uma remota: RAM, temperatura e quantos estão parados há 30 min. */
-export function trechosDaRemota(resumo: ResumoOnline): Trecho[] {
-  const trechos: Trecho[] = [trecho(`RAM ${pct(resumo.ram.pct)}`, emAlerta('ram', resumo.ram.pct), 'alta')];
-  const c = resumo.temperatura_c;
-  if (c !== null) trechos.push(trecho(`${Math.round(c)} °C`, temperaturaEmAlerta(c), 'quente'));
-  if (emAlerta('cpu', resumo.cpu_pct)) trechos.push(trecho(`CPU ${pct(resumo.cpu_pct)}`, true, 'alta'));
-  if (emAlerta('disco', resumo.disco.pct)) trechos.push(trecho(`disco ${pct(resumo.disco.pct)}`, true, 'cheio'));
-  const parados = resumo.parados_30min;
-  if (parados > 0) trechos.push({ texto: `${parados} ${parados === 1 ? 'parado' : 'parados'}`, alerta: false });
-  return alertaPrimeiro(trechos);
+/**
+ * A linha de uma remota. Os parados não entram (não cabem com as três medidas):
+ * na raiz o selo do atalho Abertos conta; no chat, só a tela Abertos mostra.
+ */
+export function leituraDaRemota(resumo: ResumoOnline): Leitura {
+  const medidas = [cpu(resumo.cpu_pct), ram(resumo.ram.pct)];
+  if (resumo.temperatura_c !== null) medidas.push(temperatura(resumo.temperatura_c));
+  return { medidas, avisos: discoCheio(resumo.disco.pct) };
 }
