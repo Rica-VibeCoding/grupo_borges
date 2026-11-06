@@ -46,9 +46,9 @@ class MaquinasFrota(Maquinas):
 
     @staticmethod
     def _delta_cpu(cpus, anterior):
-        if anterior is None or any(cpu < anterior.cpus.get(k, 0) for k, cpu in cpus.items()):
-            return None
-        return sum(cpu - anterior.cpus.get(k, 0) for k, cpu in cpus.items())
+        # Um PID que chegou de outro item já pode ter horas de CPU acumulada.
+        # Mudou o conjunto, precisamos de outra amostra para saber o delta.
+        return Maquinas._delta_cpu(cpus, anterior)
 
     def memoria(self, scope):
         # Mesmo recorte residente anon+shmem, proporcional entre processos.

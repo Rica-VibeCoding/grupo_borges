@@ -1140,6 +1140,33 @@ def test_frota_cpu_compartilhada_nao_duplica_e_conta_threads(linux, frota, monke
     assert leitura["itens"][-1]["cpu_pct"] == 7.5
 
 
+def test_frota_pid_que_muda_de_dono_nao_transfere_cpu_da_vida(linux, frota, monkeypatch):
+    monkeypatch.setattr(os, "cpu_count", lambda: 4)
+    sessao = frota.sessao()
+    linux.processo(500, args=("worker",))
+    linux.scope("app.slice/worker.scope", 500)
+    arquivo = linux.m.proc / "500/stat"
+    prefixo, dados = arquivo.read_text().rsplit(")", 1)
+    campos = dados.split()
+    campos[11] = str(3600 * os.sysconf("SC_CLK_TCK"))
+    arquivo.write_text(prefixo + ") " + " ".join(campos))
+    frota.m.amostrar()
+    # O mesmo PID/starttime passa a ser descendente do pane.
+    campos[1] = "101"
+    arquivo.write_text(prefixo + ") " + " ".join(campos))
+    linux.agora[1] = 3
+    total(linux, ocupado=0, ocioso=1120)
+    frota.m.amostrar()
+    assert frota.m.cpu(sessao.id) is None
+    assert frota.m.parado(sessao.id) is None
+    linux.agora[1] = 6
+    total(linux, ocupado=0, ocioso=1240)
+    frota.m.amostrar()
+    assert frota.m.cpu(sessao.id) == 0
+    assert frota.m.parado(sessao.id) == 3
+    assert frota.m.abertos()["itens"][-1]["cpu_pct"] == 0
+
+
 @pytest.mark.parametrize("ident,nome", [("pavan", "Pavan"), ("daniel", "Daniel"), ("sobral", "Sobral"),
     ("vinicius", "Vinicius"), ("barsi", "Barsi"), ("felipe", "Felipe"), ("caseiro", "Caseiro"),
     ("miga", "Miga"), ("canario", "Canário")])
