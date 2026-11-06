@@ -39,6 +39,9 @@ def linux(tmp_path, monkeypatch):
     home, proc, cg, runtime = [tmp_path / n for n in ("home", "proc", "cgroup", "run")]
     for p in (home, proc, cg, runtime):
         p.mkdir()
+    (proc / "sys/kernel/random").mkdir(parents=True)
+    (proc / "sys/kernel/random/boot_id").write_text("boot-teste")
+    (proc / "stat").write_text("cpu 0 0 0 1000 0 0 0 0 0 0\n")
     (proc / "meminfo").write_text("MemTotal: 8192000 kB\nMemAvailable: 4096000 kB\n")
     agora = [10_000.0, 0.0]
     m = Maquinas(home=home, proc=proc, cgroup=cg, runtime=runtime,
@@ -75,7 +78,7 @@ def linux(tmp_path, monkeypatch):
         texto = " ".join(args) if titulo_unico else "\0".join(args)
         (pasta / "cmdline").write_text(texto + "\0")
         (pasta / "smaps_rollup").write_text(
-            f"Rss: 999999 kB\nPss: {pss} kB\nPss_Anon: 999999 kB\nSwapPss: {swap} kB\n")
+            f"Rss: 999999 kB\nPss: {pss} kB\nPss_Anon: {pss} kB\nPss_Shmem: 0 kB\nSwapPss: {swap} kB\n")
         (pasta / "schedstat").write_text(f"{cpu} 0 1\n")
         return pasta
 
@@ -83,6 +86,10 @@ def linux(tmp_path, monkeypatch):
         pasta = cg / nome
         pasta.mkdir(parents=True, exist_ok=True)
         (pasta / "cgroup.procs").write_text("\n".join(str(p) for p in pids))
+        (pasta / "cpu.stat").write_text("usage_usec 0\n")
+        anon = sum(int((proc / str(pid) / "smaps_rollup").read_text().split("Pss_Anon: ")[1].split()[0])
+                   for pid in pids)
+        (pasta / "memory.stat").write_text(f"anon {anon * 1024}\nshmem 0\nfile 999999999\n")
         return pasta
 
     def chrome(pid=100, perfil="fluytcom", porta=9225, headless=False, nome=None):
@@ -139,7 +146,7 @@ def test_chave_indisponivel_503(linux, problema):
     falha(503, linux.m.autorizar, [])
 
 
-def test_abertos_scope_pss_swap_cdp_headless_e_nomes(linux, monkeypatch):
+def test_abertos_scope_ram_residente_sem_swap_cdp_headless_e_nomes(linux, monkeypatch):
     linux.chrome()
     linux.processo(101, ppid=100, args=("chrome", "--type=renderer"), pss=2048, swap=1024)
     # Crashpad reparentado, mas no mesmo cgroup: entra na soma.
@@ -156,10 +163,10 @@ def test_abertos_scope_pss_swap_cdp_headless_e_nomes(linux, monkeypatch):
     monkeypatch.setattr(maquinas, "json_cdp", cdp)
     resultado = linux.m.abertos()
     assert resultado["observado_desde"] == 10000
-    com, fin = resultado["itens"]
+    com, fin = resultado["itens"][:-1]
     assert com["rotulo"] == "Chrome do Fluyt Com"
     assert com["dono"] == "Fluyt"
-    assert com["memoria_mb"] == 5.0
+    assert com["memoria_mb"] == 3.5
     assert fin["grupo"] == com["grupo"] == "agente"
     assert fin["rotulo"] == "Chrome do Fluyt Fin"
     assert len(com["abas"]) == 1 and len(com["abas"][0]) == 40
@@ -186,7 +193,7 @@ def test_chrome_pessoal_com_cdp_tambem_lista_abas(linux, monkeypatch):
     linux.scope("app.slice/chrome.scope", 10)
     linux.janelas.append({"pid": 10, "class": "google-chrome"})
     monkeypatch.setattr(maquinas, "json_cdp", lambda *a: [{"type": "page", "title": "Pessoal"}])
-    item = linux.m.abertos()["itens"][0]
+    item = linux.m.abertos()["itens"][:-1][0]
     assert item["grupo"] == "seus" and item["abas"] == ["Pessoal"]
     assert item["rotulo"] == "Chrome pessoal"
 
@@ -195,15 +202,15 @@ def test_janela_exige_app_slice_e_env_hyprland(linux):
     linux.processo(10)
     linux.scope("app.slice/terminal.scope", 10)
     linux.janelas.append({"pid": 10, "class": "foot"})
-    item = linux.m.abertos()["itens"][0]
+    item = linux.m.abertos()["itens"][:-1][0]
     assert item["grupo"] == "seus" and item["rotulo"] == "Terminal"
     assert linux.chamadas[0][1]["env"]["HYPRLAND_INSTANCE_SIGNATURE"] == "sessao-teste"
     linux.janelas.clear()
-    assert linux.m.abertos()["itens"][0]["grupo"] == "protegido"
+    assert linux.m.abertos()["itens"][:-1][0]["grupo"] == "protegido"
     shutil.rmtree(linux.m.cgroup / "app.slice")
     linux.scope("background.slice/terminal.scope", 10)
     linux.janelas.append({"pid": 10})
-    assert linux.m.abertos()["itens"][0]["grupo"] == "protegido"
+    assert linux.m.abertos()["itens"][:-1][0]["grupo"] == "protegido"
 
 
 @pytest.mark.parametrize("agente,nome,esperado", [
@@ -219,9 +226,9 @@ def test_rotulo_scope_agente_usa_config_antes_do_processo_e_perfil(linux, agente
     scope = linux.m.scopes()[0]
     assert linux.m.rotulo(scope, {}) == (esperado, esperado)
     assert linux.m.classificar(scope, {}) == "terminal"
-    assert linux.m.abertos()["itens"] == [{
+    assert linux.m.abertos()["itens"][:-1] == [{
         "id": scope.id, "grupo": "terminal", "rotulo": esperado,
-        "dono": esperado, "memoria_mb": 3.0, "cpu_pct": None, "parado_s": None, "abas": [],
+        "dono": esperado, "memoria_mb": 2.0, "cpu_pct": None, "parado_s": None, "abas": [],
         "pede_confirmacao": False, "acao_rotulo": "Fechar " + esperado,
     }]
     assert linux.m._achar(scope.id) == scope
@@ -243,7 +250,7 @@ def test_terminal_junta_so_spawn_mais_antigo_e_separa_cadeira(linux, monkeypatch
     tempos = {s.id: tempo for s, tempo in zip(scopes, parados)}
     monkeypatch.setattr(linux.m, "parado", tempos.get)
     assert all(linux.m.classificar(s, {}) == "terminal" for s in scopes)
-    assert linux.m.abertos()["itens"] == [{
+    assert linux.m.abertos()["itens"][:-1] == [{
         "id": scopes[0].id, "grupo": "terminal", "rotulo": "Fluyt", "dono": "Fluyt",
         "memoria_mb": 52.0, "cpu_pct": None, "parado_s": esperado, "abas": [],
         "pede_confirmacao": False, "acao_rotulo": "Fechar Fluyt",
@@ -263,9 +270,9 @@ def test_terminais_separam_agentes_e_casam_pid_no_scope_do_servidor(linux):
         linux.scope(f"app.slice/cockpit-tmux-{ident}-a1b2.scope", pid, pid + 1)
         linux.processo(pid + 100, ppid=pid + 1, args=("claude",))
         linux.scope(f"app.slice/tmux-spawn-{pid}.scope", pid + 100)
-    itens = linux.m.abertos()["itens"]
+    itens = linux.m.abertos()["itens"][:-1]
     assert [(i["rotulo"], i["dono"], i["memoria_mb"]) for i in itens] == [
-        ("Fluyt", "Fluyt", 4.5), ("Novo Agente", "Novo Agente", 4.5)]
+        ("Fluyt", "Fluyt", 3), ("Novo Agente", "Novo Agente", 3)]
 
 
 @pytest.mark.parametrize("args", [("claude",), ("chrome", "--user-data-dir=~/.config/ze-chrome")])
@@ -280,9 +287,9 @@ def test_tmux_spawn_orfao_fechavel_sem_casar_parentesco_de_filho(linux, args):
     linux.janelas.append({"pid": 100, "class": "foot"})
     scope = next(s for s in linux.m.scopes() if s.principal.pid == 100)
     assert linux.m.classificar(scope, linux.m.janelas()) == "terminal"
-    item = next(i for i in linux.m.abertos()["itens"] if i["id"] == scope.id)
+    item = next(i for i in linux.m.abertos()["itens"][:-1] if i["id"] == scope.id)
     assert item["grupo"] == "terminal" and item["dono"] is None
-    assert item["rotulo"] == "Terminal" and item["memoria_mb"] == 3.0
+    assert item["rotulo"] == "Terminal" and item["memoria_mb"] == 2.0
     assert item["acao_rotulo"] == "Fechar Terminal" and not item["pede_confirmacao"]
     assert linux.m._achar(scope.id) == scope
 
@@ -374,7 +381,7 @@ def test_protegido_prevalece_sobre_janela(linux, nome, args):
     linux.processo(10, args=args)
     linux.scope(nome, 10)
     linux.janelas.append({"pid": 10, "class": "foot"})
-    item = linux.m.abertos()["itens"][0]
+    item = linux.m.abertos()["itens"][:-1][0]
     assert item["grupo"] == "protegido" and item["acao_rotulo"] is None
     falha(403, linux.m.fechar, item["id"])
 
@@ -382,7 +389,7 @@ def test_protegido_prevalece_sobre_janela(linux, nome, args):
 def test_chrome_em_scope_cockpit_ou_com_bun_e_protegido(linux, monkeypatch):
     linux.chrome(nome="app.slice/cockpit-outro.scope")
     monkeypatch.setattr(maquinas, "json_cdp", lambda *a: [])
-    item = linux.m.abertos()["itens"][0]
+    item = linux.m.abertos()["itens"][:-1][0]
     assert item["grupo"] == "protegido"
     falha(403, linux.m.fechar, item["id"])
 
@@ -393,7 +400,7 @@ def test_editor_fecha_sem_confirmacao(linux, exe, classe):
     linux.processo(10, args=(exe,))
     linux.scope("app.slice/editor.scope", 10)
     linux.janelas.append({"pid": 10, "class": classe})
-    assert linux.m.abertos()["itens"][0]["pede_confirmacao"] is False
+    assert linux.m.abertos()["itens"][:-1][0]["pede_confirmacao"] is False
 
 
 def test_id_muda_com_starttime_e_nao_com_pid_ou_ordem(linux):
@@ -413,203 +420,244 @@ def test_subcgroup_sem_duplicar_e_principal_por_parentesco(linux):
     linux.processo(50, ppid=100, inicio=100)  # PID menor não significa principal.
     linux.scope("app.slice/a.scope", 100)
     filho = linux.scope("app.slice/a.scope/subgrupo", 50)
+    # Como no kernel: memory.stat do pai já inclui o subgrupo.
+    (linux.m.cgroup / "app.slice/a.scope/memory.stat").write_text("anon 2097152\nshmem 0\n")
     scopes = linux.m.scopes()
     assert len(scopes) == 1 and scopes[0].principal.pid == 100
-    assert linux.m.memoria(scopes[0]) == 3
+    assert linux.m.memoria(scopes[0]) == 2
     (linux.m.proc / "50/smaps_rollup").unlink()
-    assert linux.m.memoria(scopes[0]) == 1.5
+    assert linux.m.memoria(scopes[0]) == 2  # Não depende mais de smaps nem de PIDs vivos.
     (filho / "cgroup.procs").write_text("")
     shutil.rmtree(linux.m.proc / "50")
     assert len(linux.m.scopes()) == 1
 
 
-def test_amostras_60s_limiar_parados_30min_sem_pss_cdp(linux, monkeypatch):
+def uso(pasta, usec):
+    (pasta / "cpu.stat").write_text(f"usage_usec {usec}\nuser_usec 0\nsystem_usec 0\n")
+
+
+def total(linux, *, ocupado, ocioso):
+    (linux.m.proc / "stat").write_text(f"cpu {ocupado} 0 0 {ocioso} 0 0 0 0 0 0\n")
+
+
+def test_amostras_3s_limiar_parados_30min_sem_pss_cdp(linux, monkeypatch):
     linux.processo(10)
-    linux.scope("app.slice/a.scope", 10)
+    pasta = linux.scope("app.slice/a.scope", 10)
     linux.janelas.append({"pid": 10})
     item_id = linux.m.scopes()[0].id
     linux.m.amostrar()
     assert linux.m.parado(item_id) is None
-    for segundo in range(60, 1801, 60):
+    for segundo in range(3, 1801, 3):
         linux.agora[1] = segundo
-        (linux.m.proc / "10/schedstat").write_text(f"{1000 + segundo * 1000} 0 0")
+        uso(pasta, segundo)  # 1 microssegundo por segundo.
         linux.m.amostrar()
     assert linux.m.parado(item_id) == 1800
-    assert not linux.chamadas  # Nem hyprctl é necessário na amostra.
+    assert not linux.chamadas
     monkeypatch.setattr(maquinas.shutil, "disk_usage", lambda _: shutil._ntuple_diskusage(100 * 2**20, 25 * 2**20, 75 * 2**20))
     resumo = linux.m.resumo(12.5, 51)
     assert resumo["parados_30min"] == 1
     assert resumo["cpu_pct"] == 12.5 and resumo["temperatura_c"] == 51
     assert resumo["ram"] == {"usado_mb": 4000, "livre_mb": 4000, "total_mb": 8000, "pct": 50}
     assert resumo["disco"] == {"usado_mb": 25, "livre_mb": 75, "total_mb": 100, "pct": 25}
-    assert resumo["medido_em"] == 10000
-    linux.agora[1] = 1830
-    (linux.m.proc / "10/schedstat").write_text("99999999999 0 0")
-    linux.m.amostrar()  # Menos de 60s: não amostra nem extrapola.
+    linux.agora[1] = 1802
+    uso(pasta, 99_999_999)
+    linux.m.amostrar()
     assert linux.m.parado(item_id) == 1800
-    linux.agora[1] = 1860
+    linux.agora[1] = 1803
     linux.m.amostrar()
     assert linux.m.parado(item_id) is None
     assert linux.m.resumo(0, None)["parados_30min"] == 0
 
 
-@pytest.mark.parametrize("cpus,esperado", [(1, 50.1), (4, 12.5), (None, 50.1)])
+@pytest.mark.parametrize("cpus,esperado", [(1, 50), (4, 12.5), (None, 50)])
 def test_cpu_pct_por_item_usa_delta_intervalo_e_maquina_inteira(linux, monkeypatch, cpus, esperado):
     monkeypatch.setattr(os, "cpu_count", lambda: cpus)
-    linux.processo(10, cpu=10_000_000_000)
-    linux.processo(11, ppid=10, cpu=20_000_000_000)
-    linux.scope("app.slice/a.scope", 10, 11)
-    assert linux.m.abertos()["itens"][0]["cpu_pct"] is None
+    linux.processo(10)
+    pasta = linux.scope("app.slice/a.scope", 10)
+    uso(pasta, 30_000_000)
     linux.m.amostrar()
     assert linux.m.abertos()["itens"][0]["cpu_pct"] is None
-    linux.agora[1] = 120  # Intervalo real, não os 60s mínimos entre amostras.
-    (linux.m.proc / "10/schedstat").write_text("40060000000 0 0")
-    (linux.m.proc / "11/schedstat").write_text("50060000000 0 0")
+    linux.agora[:] = [10006, 6]  # Intervalo real, não o mínimo de 3s.
+    uso(pasta, 33_000_000)
     linux.m.amostrar()
     assert linux.m.abertos()["itens"][0]["cpu_pct"] == esperado
-    novo = Maquinas(home=linux.m.home, proc=linux.m.proc, cgroup=linux.m.cgroup,
-                    relogio=lambda: linux.agora[0], monotono=lambda: linux.agora[1])
-    assert novo.abertos()["itens"][0]["cpu_pct"] == esperado
 
 
-@pytest.mark.parametrize("ausentes,esperado", [((), 3.3), ((10,), 2.2), ((10, 100), None)])
-def test_cpu_terminal_soma_so_principal_e_servidor_cadeira_tem_cpu_propria(linux, monkeypatch,
-                                                                        ausentes, esperado):
+@pytest.mark.parametrize("tipo", ["processo-curto", "thread", "sub-cgroup"])
+def test_cpu_conta_worker_ausente_do_proc_na_segunda_leitura(linux, monkeypatch, tipo):
     monkeypatch.setattr(os, "cpu_count", lambda: 4)
-    linux.processo(10, args=("tmux",), cpu=0)
-    linux.scope("app.slice/cockpit-tmux-fluytcom-a1b2.scope", 10)
+    principal = linux.processo(10, cpu=0)
+    pasta = linux.scope("app.slice/a.scope", 10)
+    item_id = linux.m.scopes()[0].id
+    linux.m.amostrar()
+    if tipo == "processo-curto":
+        filho = linux.processo(11, ppid=10, cpu=2_400_000_000)
+        shutil.rmtree(filho)  # Nasceu e morreu ENTRE as duas amostras.
+    elif tipo == "thread":
+        thread = principal / "task/11"
+        thread.mkdir(parents=True)
+        (thread / "schedstat").write_text("2400000000 0 0")
+    else:
+        filho = pasta / "workers"
+        filho.mkdir()
+        (filho / "cgroup.procs").write_text("")
+        uso(filho, 2_400_000)
+    uso(pasta, 2_400_000)  # Kernel já agregou trabalho dos workers.
+    linux.agora[1] = 3
+    total(linux, ocupado=90, ocioso=1030)
+    linux.m.amostrar()
+    item = linux.m.abertos()["itens"][0]
+    assert (principal / "schedstat").read_text() == "0 0 1\n"
+    assert item["cpu_pct"] == 20 and item["parado_s"] is None
+    assert linux.m._observacoes[item_id].confirmado is False
+    linux.agora[1] = 6
+    total(linux, ocupado=90, ocioso=1150)
+    linux.m.amostrar()
+    item = linux.m.abertos()["itens"][0]
+    assert item["cpu_pct"] == 0 and item["parado_s"] == 3
+
+
+@pytest.mark.parametrize("ausentes,esperado", [((), 3.3), ((10,), None), ((10, 100), None)])
+def test_cpu_terminal_soma_principal_servidor_e_separa_cadeira(linux, monkeypatch, ausentes, esperado):
+    monkeypatch.setattr(os, "cpu_count", lambda: 4)
+    pastas = {}
+    linux.processo(10, args=("tmux",))
+    pastas[10] = linux.scope("app.slice/cockpit-tmux-fluytcom-a1b2.scope", 10)
     for pid in (100, 200):
-        linux.processo(pid, ppid=10, args=("claude",), cpu=0)
-        linux.scope(f"app.slice/tmux-spawn-{pid}.scope", pid)
+        linux.processo(pid, ppid=10, args=("claude",))
+        pastas[pid] = linux.scope(f"app.slice/tmux-spawn-{pid}.scope", pid)
     for pid in ausentes:
-        (linux.m.proc / str(pid) / "schedstat").unlink()
+        (pastas[pid] / "cpu.stat").unlink()
     linux.m.amostrar()
-    assert all(i["cpu_pct"] is None for i in linux.m.abertos()["itens"])
-    linux.agora[1] = 60
-    for pid, cpu in ((10, 2_640_000_000), (100, 5_280_000_000), (200, 10_560_000_000)):
+    linux.agora[1] = 3
+    for pid, cpu in ((10, 132_000), (100, 264_000), (200, 528_000)):
         if pid not in ausentes:
-            (linux.m.proc / str(pid) / "schedstat").write_text(f"{cpu} 0 0")
+            uso(pastas[pid], cpu)
     linux.m.amostrar()
-    agente, cadeira = linux.m.abertos()["itens"]
+    agente, cadeira = linux.m.abertos()["itens"][:-1]
     assert agente["cpu_pct"] == esperado
     assert cadeira["cpu_pct"] == 4.4
 
 
-def test_observacoes_antigas_sem_cpu_pct_preservam_historico(linux):
-    linux.processo(10, cpu=0)
-    linux.scope("app.slice/a.scope", 10)
+def test_fora_da_lista_fecha_cpu_e_ram_e_nao_e_fechavel(linux, monkeypatch):
+    monkeypatch.setattr(os, "cpu_count", lambda: 4)
+    linux.processo(10)
+    pasta = linux.scope("app.slice/a.scope", 10)
+    (pasta / "memory.stat").write_text(f"anon {100 * 2**20}\nshmem {20 * 2**20}\nfile {9000 * 2**20}\n")
+    (pasta / "memory.current").write_text(str(9120 * 2**20))
     linux.m.amostrar()
-    linux.agora[:] = [10060, 60]
+    linux.agora[1] = 3
+    uso(pasta, 2_400_000)
+    total(linux, ocupado=90, ocioso=1030)  # 75% da máquina, item = 20%.
     linux.m.amostrar()
-    arquivo = linux.m._arquivo_observacoes
-    dados = json.loads(arquivo.read_text())
-    for obs in dados["observacoes"].values():
-        del obs["cpu_pct"]
-    arquivo.write_text(json.dumps(dados))
-    novo = Maquinas(home=linux.m.home, proc=linux.m.proc, cgroup=linux.m.cgroup,
-                    relogio=lambda: linux.agora[0], monotono=lambda: linux.agora[1])
-    item = novo.abertos()["itens"][0]
-    assert novo.observado_desde == 10000
-    assert item["cpu_pct"] is None and item["parado_s"] == 60
-    linux.agora[:] = [10120, 120]
-    novo.amostrar()
-    assert novo.abertos()["itens"][0]["cpu_pct"] == 0.0
+    leitura = linux.m.abertos()
+    item, fora = leitura["itens"]
+    assert item["cpu_pct"] == 20 and item["memoria_mb"] == 120
+    assert fora["rotulo"] == "Fora da lista" and fora["grupo"] == "protegido"
+    assert fora["cpu_pct"] == 55 and fora["memoria_mb"] == 3880
+    assert sum(i["cpu_pct"] for i in leitura["itens"]) == leitura["cpu_pct"] == 75
+    assert sum(i["memoria_mb"] for i in leitura["itens"]) == leitura["memoria_mb"] == 4000
+    assert leitura["memoria_metrica"] == "anon+shmem"
+    assert fora["acao_rotulo"] is None
+    falha(404, linux.m.fechar, fora["id"])
+
+
+def test_unidade_descendente_nao_duplica_cpu_e_ram(linux, monkeypatch):
+    monkeypatch.setattr(os, "cpu_count", lambda: 4)
+    linux.processo(10)
+    linux.processo(11, ppid=10)
+    pai = linux.scope("app.slice/a.scope", 10)
+    filha = linux.scope("app.slice/a.scope/b.service", 11)
+    (pai / "memory.stat").write_text(f"anon {3 * 2**20}\nshmem 0\n")
+    linux.m.amostrar()
+    linux.agora[1] = 3
+    uso(pai, 3_600_000)
+    uso(filha, 2_400_000)
+    total(linux, ocupado=48, ocioso=1072)
+    linux.m.amostrar()
+    filha_item, pai_item, fora = linux.m.abertos()["itens"]
+    assert filha_item["cpu_pct"] == 20 and filha_item["memoria_mb"] == 1
+    assert pai_item["cpu_pct"] == 10 and pai_item["memoria_mb"] == 2
+    assert fora["cpu_pct"] == 10 and fora["memoria_mb"] == 3997
+
+
+@pytest.mark.parametrize("delta,dormindo", [(29_999, True), (30_000, False), (30_001, False)])
+def test_limiar_exato_1pct_de_um_core(linux, delta, dormindo):
+    linux.processo(10)
+    pasta = linux.scope("app.slice/a.scope", 10)
+    item_id = linux.m.scopes()[0].id
+    linux.m.amostrar()
+    linux.agora[1] = 3
+    uso(pasta, delta)
+    linux.m.amostrar()
+    assert linux.m.parado(item_id) == (3 if dormindo else None)
 
 
 @pytest.mark.parametrize("intervalo,mono", [(10, 2410), (300, 2700), (10, 5), (300, 5)])
-def test_observacoes_preservam_40min_e_observado_desde_apos_reinicio(linux, intervalo, mono):
-    linux.processo(10, cpu=30_000_000_000)
-    linux.scope("app.slice/a.scope", 10)
+def test_observacoes_preservam_40min_apos_reinicio(linux, intervalo, mono):
+    linux.processo(10)
+    pasta = linux.scope("app.slice/a.scope", 10)
     item_id = linux.m.scopes()[0].id
     linux.m.amostrar()
-    for segundo in range(60, 2401, 60):
-        linux.agora[:] = [10000 + segundo, segundo]
-        (linux.m.proc / "10/schedstat").write_text(f"{30_000_000_000 + segundo * 1000} 0 0")
-        linux.m.amostrar()
-    assert linux.m.parado(item_id) == 2400
-    arquivo = linux.m.home / ".cache/cockpit-maquina/observacoes.json"
+    linux.agora[:] = [12400, 2400]
+    linux.m.amostrar()
+    arquivo = linux.m._arquivo_observacoes
     dados = json.loads(arquivo.read_text())
     assert arquivo.stat().st_mode & 0o777 == 0o600
-    assert dados["observado_desde"] == 10000
-    assert dados["observacoes"][item_id] == {
-        "cpus": {"10:100": 30_002_400_000}, "amostrado": 12400,
-        "desde": 10000, "confirmado": True, "cpu_pct": 0.0}
-    assert list(arquivo.parent.iterdir()) == [arquivo]
-
-    # Inclui reinício do serviço (<60s) e monotônico reiniciado após reboot.
+    assert dados["versao"] == 2 and dados["observado_desde"] == 10000
+    assert dados["observacoes"][item_id]["desde"] == 10000
     linux.agora[:] = [12400 + intervalo, mono]
     novo = Maquinas(home=linux.m.home, proc=linux.m.proc, cgroup=linux.m.cgroup,
-                    runtime=linux.m.runtime,
                     relogio=lambda: linux.agora[0], monotono=lambda: linux.agora[1])
-    assert novo.observado_desde == 10000
     assert novo.parado(item_id) == 2400
-    assert novo._ultima_amostra is None
-    cpu = 30_002_400_000 + intervalo * 5_000_000
-    (linux.m.proc / "10/schedstat").write_text(f"{cpu} 0 0")
+    uso(pasta, intervalo * 1000)
     novo.amostrar()
     assert novo.parado(item_id) == 2400 + intervalo
     assert novo.abertos()["observado_desde"] == 10000
-    assert json.loads(arquivo.read_text())["observacoes"][item_id]["amostrado"] == 12400 + intervalo
+
+
+@pytest.mark.parametrize("mudanca", ["contador", "inode", "boot"])
+def test_recriar_cgroup_ou_reboot_nao_produz_cpu_ou_idle_falso(linux, mudanca):
+    linux.processo(10)
+    pasta = linux.scope("app.slice/a.scope", 10)
+    uso(pasta, 90_000_000)
+    linux.m.amostrar()
+    linux.agora[1] = 3
+    linux.m.amostrar()
+    assert linux.m.parado(linux.m.scopes()[0].id) == 3
+    if mudanca == "contador":
+        uso(pasta, 0)
+    elif mudanca == "inode":
+        pasta.rename(pasta.with_suffix(".antiga"))  # Mantém inode antigo ocupado.
+        linux.scope("app.slice/a.scope", 10)
+        uso(pasta, 90_000_000)
+    else:
+        (linux.m.proc / "sys/kernel/random/boot_id").write_text("outro-boot")
+    linux.agora[1] = 6
+    linux.m.amostrar()
+    item = linux.m.abertos()["itens"][0]
+    assert item["cpu_pct"] is None and item["parado_s"] is None
 
 
 @pytest.mark.parametrize("conteudo", [
     b"{corrompido", b"\xff", b"[]", b"{}",
-    b'{"observado_desde": 9000, "observacoes": {"scope": {"cpus": []}}}',
-    b'{"observado_desde": 9000, "observacoes": {"scope": {"cpus": {}, '
-    b'"amostrado": 10000, "desde": NaN, "confirmado": true}}}',
+    b'{"versao":2,"observado_desde":9000,"observacoes":{"scope":{"cpus":[]}}}',
+    b'{"versao":2,"observado_desde":9000,"observacoes":{"scope":{"cpus":{},"amostrado":10000,"desde":NaN,"confirmado":true}}}',
+    b'{"observado_desde":9000,"observacoes":{"antigo":{"cpus":{"10:100":0},"amostrado":10000,"desde":9000,"confirmado":true}}}',
 ])
-def test_observacoes_corrompidas_comecam_do_zero(linux, conteudo):
+def test_cache_corrompido_ou_schedstat_antigo_comeca_do_zero(linux, conteudo):
     linux.processo(10)
     linux.scope("app.slice/a.scope", 10)
-    item_id = linux.m.scopes()[0].id
-    arquivo = linux.m.home / ".cache/cockpit-maquina/observacoes.json"
+    arquivo = linux.m._arquivo_observacoes
     arquivo.parent.mkdir(parents=True)
     arquivo.write_bytes(conteudo)
     linux.agora[:] = [12000, 2000]
     novo = Maquinas(home=linux.m.home, proc=linux.m.proc, cgroup=linux.m.cgroup,
                     relogio=lambda: linux.agora[0], monotono=lambda: linux.agora[1])
-    assert novo.observado_desde == 12000
-    assert novo._observacoes == {} and novo._ultima_amostra is None
-    assert novo.parado(item_id) is None
+    assert novo.observado_desde == 12000 and novo._observacoes == {}
     novo.amostrar()
-    assert novo.parado(item_id) is None
-    assert json.loads(arquivo.read_text())["observado_desde"] == 12000
+    assert novo.parado(novo.scopes()[0].id) is None
 
-
-@pytest.mark.parametrize("delta,dormindo", [(599999999, True), (600000000, False), (600000001, False)])
-def test_limiar_exato_e_soma_cpu_do_scope(linux, delta, dormindo):
-    linux.processo(10, cpu=0)
-    linux.processo(11, ppid=10, cpu=0)
-    linux.scope("app.slice/a.scope", 10, 11)
-    item_id = linux.m.scopes()[0].id
-    linux.m.amostrar()
-    linux.agora[1] = 60
-    (linux.m.proc / "10/schedstat").write_text(f"{delta // 2} 0 0")
-    (linux.m.proc / "11/schedstat").write_text(f"{delta - delta // 2} 0 0")
-    linux.m.amostrar()
-    assert linux.m.parado(item_id) == (60 if dormindo else None)
-
-
-def test_amostra_some_reinicio_e_novo_pid_nao_produzem_idle_falso(linux):
-    linux.processo(10, cpu=0)
-    pasta = linux.scope("app.slice/a.scope", 10)
-    item_id = linux.m.scopes()[0].id
-    linux.m.amostrar()
-    linux.agora[1] = 60
-    linux.m.amostrar()
-    assert linux.m.parado(item_id) == 60
-    linux.processo(11, ppid=10, cpu=700000000)
-    linux.scope("app.slice/a.scope", 10, 11)
-    linux.agora[1] = 120
-    linux.m.amostrar()
-    assert linux.m.parado(item_id) is None
-    shutil.rmtree(pasta)
-    linux.agora[1] = 180
-    linux.m.amostrar()
-    assert linux.m.parado(item_id) is None and not linux.m._observacoes
-    novo = Maquinas(home=linux.m.home, proc=linux.m.proc, cgroup=linux.m.cgroup,
-                    relogio=lambda: 20000)
-    assert novo.observado_desde == 10000 and novo.parado(item_id) is None
 
 
 def test_tela_arquivo_e_servico(linux):
@@ -647,7 +695,7 @@ def test_fechar_seus_sigterm_e_memoria_antes(linux, sinal_simulado, monkeypatch)
         shutil.rmtree(pasta)
 
     monkeypatch.setattr(signal, "pidfd_send_signal", sinal)
-    assert linux.m.fechar(item_id) == {"liberou_mb": 1.5}
+    assert linux.m.fechar(item_id) == {"liberou_mb": 1.0}
     assert sinal_simulado == [signal.SIGTERM]
 
 
@@ -662,7 +710,7 @@ def test_fechar_terminal_agente_cadeira_e_orfao_sinaliza_principal(linux, sinal_
         linux.processo(pid, ppid=ppid, args=("claude",))
         pastas[pid] = linux.scope(f"app.slice/tmux-spawn-{pid}.scope", pid)
     item_id = next(s.id for s in linux.m.scopes() if s.principal.pid == alvo_pid)
-    item = next(i for i in linux.m.abertos()["itens"] if i["id"] == item_id)
+    item = next(i for i in linux.m.abertos()["itens"][:-1] if i["id"] == item_id)
     assert not item["pede_confirmacao"]
     assert item["acao_rotulo"] == {10: "Fechar Fluyt", 200: "Fechar cadeira",
                                    300: "Fechar Terminal"}[alvo_pid]
@@ -679,7 +727,7 @@ def test_fechar_terminal_agente_cadeira_e_orfao_sinaliza_principal(linux, sinal_
 
     monkeypatch.setattr(os, "pidfd_open", pidfd)
     monkeypatch.setattr(signal, "pidfd_send_signal", sinal)
-    assert linux.m.fechar(item_id) == {"liberou_mb": 3.0 if alvo_pid == 10 else 1.5}
+    assert linux.m.fechar(item_id) == {"liberou_mb": 2.0 if alvo_pid == 10 else 1.0}
     assert pids == [alvo_pid] and sinal_simulado == [signal.SIGTERM]
     assert pastas[100].exists()
     assert pastas[200 if alvo_pid == 10 else 10].exists()
@@ -701,7 +749,7 @@ def test_fechar_agente_cdp_browser_version(linux, sinal_simulado, monkeypatch):
 
     monkeypatch.setattr(maquinas, "json_cdp", cdp)
     monkeypatch.setattr(maquinas, "fechar_browser", fechar)
-    assert linux.m.fechar(item_id) == {"liberou_mb": 1.5}
+    assert linux.m.fechar(item_id) == {"liberou_mb": 1.0}
     assert chamadas == [(9225, "/json/version")] and not sinal_simulado
 
 
@@ -725,7 +773,7 @@ def test_cdp_falha_fallback_sigterm(linux, sinal_simulado, monkeypatch, falha_em
     monkeypatch.setattr(maquinas, "json_cdp", cdp)
     monkeypatch.setattr(maquinas, "fechar_browser", ws)
     monkeypatch.setattr(signal, "pidfd_send_signal", sinal)
-    assert linux.m.fechar(item_id)["liberou_mb"] == 1.5
+    assert linux.m.fechar(item_id)["liberou_mb"] == 1.0
     assert sinal_simulado == [signal.SIGTERM]
 
 
@@ -1003,12 +1051,36 @@ def test_frota_soma_sessao_atraves_de_scopes_e_separa_cadeira(linux, frota):
     frota.m.amostrar()
     linux.agora[1] = 1800
     frota.m.amostrar()
-    terminais = [i for i in frota.m.abertos()["itens"] if i["grupo"] == "terminal"]
+    terminais = [i for i in frota.m.abertos()["itens"][:-1] if i["grupo"] == "terminal"]
     assert [(i["rotulo"], i["dono"], i["memoria_mb"], i["parado_s"], i["cpu_pct"])
             for i in terminais] == [("Pavan", "Pavan", 7, 1800, 0), ("Pavan · cadeira", "Pavan", 7, 1800, 0)]
     assert {i["id"] for i in terminais} == {principal.id, cadeira.id}
     assert all(i["acao_rotulo"] and not i["pede_confirmacao"] for i in terminais)
     assert frota.m.tela() == {"em_uso": None, "ultimo_uso_s": None}
+
+
+def test_frota_cpu_compartilhada_nao_duplica_e_conta_threads(linux, frota, monkeypatch):
+    monkeypatch.setattr(os, "cpu_count", lambda: 4)
+    frota.sessao()
+    frota.sessao("pavan-alerta", 200, cadeira=True, scope="app.slice/tmux-spawn-b.scope")
+    frota.m.amostrar()
+    # stat do processo agrega threads; schedstat da principal continua zero.
+    ticks = os.sysconf("SC_CLK_TCK")
+    for pid, segundos in ((100, 0.3), (102, 1.2), (202, 2.4)):
+        arquivo = linux.m.proc / str(pid) / "stat"
+        prefixo, dados = arquivo.read_text().rsplit(")", 1)
+        campos = dados.split()
+        campos[11] = str(round(segundos * ticks))
+        arquivo.write_text(prefixo + ") " + " ".join(campos))
+    total(linux, ocupado=48, ocioso=1072)
+    linux.agora[1] = 3
+    frota.m.amostrar()
+    leitura = frota.m.abertos()
+    terminais = [i for i in leitura["itens"] if i["grupo"] == "terminal"]
+    assert [i["cpu_pct"] for i in terminais] == [10, 20]
+    assert all(i["parado_s"] is None for i in terminais)
+    assert sum(i["cpu_pct"] for i in leitura["itens"]) == 40
+    assert leitura["itens"][-1]["cpu_pct"] == 7.5
 
 
 @pytest.mark.parametrize("ident,nome", [("pavan", "Pavan"), ("daniel", "Daniel"), ("sobral", "Sobral"),
@@ -1038,7 +1110,7 @@ def test_frota_rotula_cada_agente_pelo_cadastro(frota, ident, nome):
 def test_frota_protege_infra_e_orfaos_sem_executor(linux, frota, nome, args):
     linux.processo(10, args=args)
     linux.scope(nome, 10)
-    item = frota.m.abertos()["itens"][0]
+    item = frota.m.abertos()["itens"][:-1][0]
     assert item["grupo"] == "protegido" and item["acao_rotulo"] is None
     falha(403, frota.m.fechar, item["id"])
 
@@ -1100,7 +1172,7 @@ def test_frota_revalida_pid_e_sessao_antes_de_efeito(linux, frota, monkeypatch):
 def test_frota_falha_de_inventario_so_deixa_protegidos(linux, frota):
     frota.sessao()
     frota.inventario.clear()
-    assert all(i["grupo"] == "protegido" for i in frota.m.abertos()["itens"])
+    assert all(i["grupo"] == "protegido" for i in frota.m.abertos()["itens"][:-1])
 
 
 def test_frota_inventario_exige_socket_cadastro_e_alvo_exato(linux, frota, monkeypatch, tmp_path):
@@ -1148,7 +1220,7 @@ def test_frota_supervisor_ativo_nao_e_parado(linux, frota):
     frota.sessao()
     shutil.rmtree(linux.m.cgroup / "app.slice/servico-100.service")
     linux.scope("system.slice/borges-clawd@pavan.service", 100)
-    assert all(i["grupo"] == "protegido" for i in frota.m.abertos()["itens"])
+    assert all(i["grupo"] == "protegido" for i in frota.m.abertos()["itens"][:-1])
 
 
 def test_frota_sessao_desaparece_entre_validacoes_sem_efeito(linux, frota, monkeypatch):
@@ -1166,7 +1238,7 @@ def test_frota_sessao_desaparece_entre_validacoes_sem_efeito(linux, frota, monke
 def test_frota_nao_fecha_sessao_com_parentesco_incorreto(linux, frota):
     frota.sessao()
     linux.processo(101, ppid=999, args=("bash",))
-    assert all(i["grupo"] == "protegido" for i in frota.m.abertos()["itens"])
+    assert all(i["grupo"] == "protegido" for i in frota.m.abertos()["itens"][:-1])
 
 
 def test_frota_fechar_timeout_nao_escala_para_kill(linux, frota, monkeypatch):
@@ -1190,6 +1262,6 @@ def test_frota_rotulo_container_usa_nome_sem_ler_env(linux, frota):
         return subprocess.CompletedProcess(cmd, 0, "abc123\tsupabase-db\n", "")
     frota.m.executar = executar
     for _ in range(2):
-        item = frota.m.abertos()["itens"][0]
+        item = frota.m.abertos()["itens"][:-1][0]
         assert (item["rotulo"], item["grupo"], item["acao_rotulo"]) == ("Container supabase-db", "protegido", None)
     assert len(chamadas) == 1

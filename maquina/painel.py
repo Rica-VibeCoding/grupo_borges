@@ -21,7 +21,6 @@ if CONFIG.get("frota_vps", False):
     MAQUINAS = MaquinasFrota(agentes=AGENTES.values())
 else:
     MAQUINAS = Maquinas(agentes=AGENTES.values())
-CPU_PCT = 0.0
 
 
 def ip_tailscale():
@@ -43,12 +42,6 @@ def tempo(segundos):
     horas, s = divmod(s, 3600)
     minutos = s // 60
     return (f"{dias}d " if dias else "") + f"{horas}h {minutos}min"
-
-
-def cpu_ler():
-    valores = [int(v) for v in Path("/proc/stat").read_text().splitlines()[0].split()[1:]]
-    # guest já está incluído em user/nice: não soma duas vezes.
-    return valores[3] + valores[4], sum(valores[:8])
 
 
 def temperatura():
@@ -115,25 +108,23 @@ def maquina(cpu_pct):
     return campos
 
 
-def coletar():
-    global CPU_PCT
-    anterior = None
+def amostrar_recursos():
+    # Consulta de agentes pode demorar: não atrasa os deltas de CPU.
     while True:
         inicio = time.monotonic()
         try:
-            MAQUINAS.amostrar()  # Internamente limitado a uma amostra por 60 s.
+            MAQUINAS.amostrar()
         except (OSError, ValueError) as exc:
             print(f"Coleta dos scopes: {exc}", flush=True)
+        time.sleep(max(0.2, INTERVALO - (time.monotonic() - inicio)))
+
+
+def coletar():
+    while True:
+        inicio = time.monotonic()
         agentes, erro = [], None
         try:
-            atual = cpu_ler()
-            pct = None
-            if anterior and atual[1] > anterior[1]:
-                pct = max(0, min(100, 100 * (1 - (atual[0] - anterior[0]) / (atual[1] - anterior[1]))))
-            anterior = atual
-            campos = maquina(pct)
-            with TRAVA:
-                CPU_PCT = pct if pct is not None else 0.0
+            campos = maquina(MAQUINAS.cpu_total())
         except (OSError, ValueError, KeyError) as exc:
             campos, erro = [], "Não foi possível ler o estado da máquina."
             print(f"Coleta da máquina: {exc}", flush=True)
@@ -191,9 +182,7 @@ class H(BaseHTTPRequestHandler):
             MAQUINAS.autorizar(self.headers.get_all("Authorization", []))
             if self.command == "GET":
                 if self.path.endswith("/resumo"):
-                    with TRAVA:
-                        cpu = CPU_PCT
-                    return self.responder(200, MAQUINAS.resumo(cpu, temperatura()))
+                    return self.responder(200, MAQUINAS.resumo(MAQUINAS.cpu_total(), temperatura()))
                 return self.responder(200, MAQUINAS.abertos())
             if self.headers.get_content_type() != "application/json":
                 return self.responder(415, {"mensagem": "Formato de pedido inválido."})
@@ -294,6 +283,7 @@ if __name__ == "__main__":
     host, porta = ip_tailscale(), CONFIG["porta"]
     servidor = Servidor((host, porta), H)
     servidor.autoridade = f"{host}:{porta}"
+    threading.Thread(target=amostrar_recursos, name="recursos", daemon=True).start()
     threading.Thread(target=coletar, name="coleta", daemon=True).start()
     print(f"Cockpit em http://{host}:{porta}", flush=True)
     servidor.serve_forever()

@@ -150,8 +150,10 @@ class Maquinas:
         self.relogio, self.monotono = relogio, monotono
         self.observado_desde = int(relogio())
         self._ultima_amostra = None
+        self._cpu_anterior = None
+        self._cpu_total = None
         self._observacoes = {}
-        self._trava = threading.Lock()
+        self._trava = threading.RLock()
         self._fechamento = threading.Lock()
         self._arquivo_observacoes = self.home / ".cache/cockpit-maquina/observacoes.json"
         self._restaurar_observacoes()
@@ -159,6 +161,9 @@ class Maquinas:
     def _restaurar_observacoes(self):
         try:
             dados = json.loads(self._arquivo_observacoes.read_text(encoding="utf-8"))
+            # O cache antigo media apenas a thread principal em nanossegundos.
+            if not isinstance(dados, dict) or dados.get("versao") != 2:
+                return
             if not isinstance(dados, dict) or type(dados["observado_desde"]) is not int:
                 raise ValueError("observações inválidas")
             if not isinstance(dados["observacoes"], dict):
@@ -177,10 +182,9 @@ class Maquinas:
                     raise ValueError("observação inválida")
                 cpus = {}
                 for chave, cpu in obs["cpus"].items():
-                    pid, inicio = map(int, chave.split(":"))
-                    if type(cpu) is not int or cpu < 0:
+                    if not isinstance(chave, str) or type(cpu) is not int or cpu < 0:
                         raise ValueError("CPU inválida")
-                    cpus[pid, inicio] = cpu
+                    cpus[chave] = cpu
                 cpu_pct = obs.get("cpu_pct")
                 if cpu_pct is not None and (type(cpu_pct) not in (int, float)
                                            or not math.isfinite(cpu_pct) or cpu_pct < 0):
@@ -195,8 +199,8 @@ class Maquinas:
     def _salvar_observacoes(self):
         # Só o relógio de parede é transportável entre reinícios da máquina.
         deslocamento = self.relogio() - self.monotono()
-        dados = {"observado_desde": self.observado_desde, "observacoes": {
-            item_id: {"cpus": {f"{pid}:{inicio}": cpu for (pid, inicio), cpu in obs.cpus.items()},
+        dados = {"versao": 2, "observado_desde": self.observado_desde, "observacoes": {
+            item_id: {"cpus": obs.cpus,
                       "amostrado": obs.amostrado + deslocamento,
                       "desde": obs.desde + deslocamento, "confirmado": obs.confirmado,
                       "cpu_pct": obs.cpu_pct}
@@ -403,42 +407,88 @@ class Maquinas:
         except ValueError:
             return None
 
+    @staticmethod
+    def _estatisticas(arquivo):
+        return {k: int(v) for k, v in (linha.split() for linha in arquivo.read_text().splitlines())}
+
     def memoria(self, scope):
-        kb = 0
-        for processo in scope.processos:
-            try:
-                for linha in (self.proc / str(processo.pid) / "smaps_rollup").read_text().splitlines():
-                    if linha.startswith(("Pss:", "SwapPss:")):
-                        kb += int(linha.split()[1])
-            except (OSError, ValueError, IndexError):
+        # RAM residente: não mistura swap ou todo o cache de memory.current
+        # com o total MemTotal - MemAvailable. Kernel/cache ficam no residual.
+        try:
+            mem = self._estatisticas(scope.caminho / "memory.stat")
+            uso = mem["anon"] + mem["shmem"]
+            for filha in self._unidades_filhas(scope):
+                mem = self._estatisticas(filha / "memory.stat")
+                uso -= mem["anon"] + mem["shmem"]
+            return round(max(0, uso) / 2**20, 2)
+        except (OSError, ValueError, KeyError):
+            return 0.0  # O total ainda contabiliza a memória em Fora da lista.
+
+    @staticmethod
+    def _unidades_filhas(scope):
+        # Sub-cgroups comuns pertencem ao item; outra unidade tem linha própria.
+        for arquivo in scope.caminho.rglob("cgroup.procs"):
+            filha = arquivo.parent
+            if filha == scope.caminho or filha.suffix not in {".scope", ".service"}:
                 continue
-        return round(kb / 1024, 2)
+            if not any(p.suffix in {".scope", ".service"}
+                       for p in filha.relative_to(scope.caminho).parents if p != Path(".")):
+                yield filha
+
+    def _contadores_cpu(self, scope):
+        # Inode + boot distinguem uma unidade recriada e um reboot. O contador
+        # sobrevive à saída de workers e inclui threads e cgroups descendentes.
+        try:
+            boot = (self.proc / "sys/kernel/random/boot_id").read_text().strip()
+            contadores = {}
+            for caminho in (scope.caminho, *self._unidades_filhas(scope)):
+                inode = caminho.stat().st_ino
+                uso = self._estatisticas(caminho / "cpu.stat")["usage_usec"]
+                sinal = "-" if caminho != scope.caminho else "+"
+                contadores[f"{sinal}cgroup:{boot}:{caminho}:{inode}"] = uso
+            return contadores
+        except (OSError, ValueError, KeyError):
+            return {}
+
+    def cpu_total(self):
+        with self._trava:
+            return self._cpu_total
+
+    @staticmethod
+    def _delta_cpu(cpus, anterior):
+        if (anterior is None or cpus.keys() != anterior.cpus.keys()
+                or any(cpu < anterior.cpus[k] for k, cpu in cpus.items())):
+            return None
+        return max(0, sum((cpu - anterior.cpus[k]) * (-1 if k.startswith("-") else 1)
+                          for k, cpu in cpus.items()))
 
     def amostrar(self):
-        """Chamado pela coleta existente; nunca lê PSS nem consulta CDP."""
+        """A cada 3 s; sem PSS, CDP ou consulta de estado dos agentes."""
         with self._trava:
             agora = self.monotono()
-            if self._ultima_amostra is not None and agora - self._ultima_amostra < 60:
+            if self._ultima_amostra is not None and agora - self._ultima_amostra < 3:
                 return
+            valores = [int(v) for v in (self.proc / "stat").read_text().splitlines()[0].split()[1:]]
+            atual = valores[3] + valores[4], sum(valores[:8])  # guest já está em user/nice.
+            self._cpu_total = None
+            if self._cpu_anterior and atual[1] > self._cpu_anterior[1]:
+                idle = atual[0] - self._cpu_anterior[0]
+                self._cpu_total = round(max(0, min(100, 100 * (1 - idle / (atual[1] - self._cpu_anterior[1])))), 1)
+            self._cpu_anterior = atual
             novas = {}
             for scope in self.scopes():
-                cpus = {}
-                for p in scope.processos:
-                    try:
-                        cpus[(p.pid, p.inicio)] = int((self.proc / str(p.pid) / "schedstat").read_text().split()[0])
-                    except (OSError, ValueError, IndexError):
-                        pass
+                cpus = self._contadores_cpu(scope)
                 anterior = self._observacoes.get(scope.id)
                 if not cpus:
                     continue
-                if anterior is None:
+                delta = self._delta_cpu(cpus, anterior)
+                if delta is None:
                     novas[scope.id] = Observacao(cpus, agora, agora)
                     continue
-                delta = sum(max(0, cpu - anterior.cpus.get(pid, 0)) for pid, cpu in cpus.items())
                 intervalo = agora - anterior.amostrado
                 # 0,1 s / 10 s = 1% de um core, escalado ao intervalo real.
-                dormindo = intervalo > 0 and delta < intervalo * 10_000_000
-                cpu_pct = (round(delta / (intervalo * 1e9 * (os.cpu_count() or 1)) * 100, 1)
+                dormindo = intervalo > 0 and delta < intervalo * 10_000
+                cpu_pct = (round(delta / (intervalo * 1e6 * (os.cpu_count() or 1)) * 100, 1)
                            if intervalo > 0 else None)
                 novas[scope.id] = Observacao(
                     cpus, agora, anterior.desde if dormindo else agora, dormindo, cpu_pct)
@@ -463,6 +513,10 @@ class Maquinas:
         janelas = self.janelas()
         itens = []
         scopes = self.scopes()
+        with self._trava:
+            cpu_total = self._cpu_total
+            cpu_scopes = {s.id: self.cpu(s.id) for s in scopes}
+            parados_scopes = {s.id: self.parado(s.id) for s in scopes}
         terminais = {}
         for scope in scopes:
             terminal = self._terminal(scope, scopes)
@@ -482,8 +536,8 @@ class Maquinas:
                 except (OSError, ValueError, http.client.HTTPException):
                     pass
             itens.append({"id": scope.id, "grupo": grupo, "rotulo": rotulo, "dono": dono,
-                          "memoria_mb": self.memoria(scope), "cpu_pct": self.cpu(scope.id),
-                          "parado_s": self.parado(scope.id),
+                          "memoria_mb": self.memoria(scope), "cpu_pct": cpu_scopes[scope.id],
+                          "parado_s": parados_scopes[scope.id],
                           "abas": abas, "pede_confirmacao": False,
                           "acao_rotulo": None if grupo == "protegido" else "Fechar " + rotulo})
         for terminal, membros in terminais.values():
@@ -494,16 +548,36 @@ class Maquinas:
             grupos = [(terminal, [terminal] + spawns[:1], False)]
             grupos.extend((s, [s], True) for s in spawns[1:])
             for alvo, scopes_item, cadeira in grupos:
-                parados = [self.parado(s.id) for s in scopes_item]
-                cpus = [cpu for s in scopes_item if (cpu := self.cpu(s.id)) is not None]
+                parados = [parados_scopes[s.id] for s in scopes_item]
+                cpus = [cpu_scopes[s.id] for s in scopes_item]
                 itens.append({"id": alvo.id, "grupo": "terminal",
                               "rotulo": rotulo + " · cadeira" if cadeira else rotulo, "dono": dono,
                               "memoria_mb": round(sum(self.memoria(s) for s in scopes_item), 2),
-                              "cpu_pct": round(sum(cpus), 1) if cpus else None,
+                              "cpu_pct": round(sum(cpus), 1) if None not in cpus else None,
                               "parado_s": None if None in parados else min(parados),
                               "abas": [], "pede_confirmacao": False,
                               "acao_rotulo": "Fechar cadeira" if cadeira else "Fechar " + rotulo})
-        return {"observado_desde": self.observado_desde, "itens": itens}
+        return self.contabilizar({"observado_desde": self.observado_desde, "itens": itens}, cpu_total)
+
+    def contabilizar(self, leitura, cpu_total):
+        """Completa a mesma lista que o cliente renderiza, inclusive fora de user@."""
+        mem = self._estatisticas_memoria()
+        ram = round((mem["MemTotal"] - mem["MemAvailable"]) / 1024, 2)
+        itens = leitura["itens"]
+        cpu_listada = sum(i["cpu_pct"] or 0 for i in itens)
+        ram_listada = sum(i["memoria_mb"] for i in itens)
+        # Não esconde diferenças negativas: expõe desvio em vez de alterar itens
+        # ou inventar um residual zero (contadores não são leituras atômicas).
+        itens.append({"id": "fora-da-lista", "grupo": "protegido", "rotulo": "Fora da lista",
+                      "dono": None, "cpu_pct": None if cpu_total is None else round(cpu_total - cpu_listada, 1),
+                      "memoria_mb": round(ram - ram_listada, 2), "parado_s": None,
+                      "abas": [], "pede_confirmacao": False, "acao_rotulo": None})
+        return {**leitura, "cpu_pct": cpu_total, "memoria_mb": ram,
+                "memoria_metrica": "anon+shmem", "medido_em": int(self.relogio())}
+
+    def _estatisticas_memoria(self):
+        return {nome: int(valor.split()[0]) for nome, valor in
+                (linha.split(":", 1) for linha in (self.proc / "meminfo").read_text().splitlines())}
 
     def tela(self):
         try:
