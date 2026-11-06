@@ -49,6 +49,7 @@ def linux(tmp_path, monkeypatch):
     agora = [10_000.0, 0.0]
     m = Maquinas(home=home, proc=proc, cgroup=cg, cgroup_sistema=cg,
                  sys_block=tmp_path / "sys-block", runtime=runtime,
+                 sockets=runtime / "tmux",
                  agentes=[{"id": "fluytcom", "nome": "Fluyt"}],
                  relogio=lambda: agora[0], monotono=lambda: agora[1])
     m.chave.parent.mkdir(parents=True)
@@ -277,6 +278,134 @@ def test_terminais_separam_agentes_e_casam_pid_no_scope_do_servidor(linux):
     itens = linux.m.abertos()["itens"][:-1]
     assert [(i["rotulo"], i["dono"], i["memoria_mb"]) for i in itens] == [
         ("Fluyt", "Fluyt", 3), ("Novo Agente", "Novo Agente", 3)]
+
+
+@pytest.fixture
+def cadeiras_tmux(linux, monkeypatch):
+    linux.m.sockets.mkdir()
+    sockets = []
+    saidas, consultas = {}, []
+    original = maquinas.subprocess.run
+
+    def cadastrar(sufixo, linhas):
+        caminho = linux.m.sockets / ("cadeiras-" + sufixo)
+        servidor = socket.socket(socket.AF_UNIX)
+        servidor.bind(str(caminho))
+        sockets.append(servidor)
+        saidas[str(caminho)] = subprocess.CompletedProcess([], 0, "\n".join(
+            f"{caminho}\t{sessao}\t{pid}" for sessao, pid in linhas), "")
+        return caminho
+
+    def rodar(cmd, **kwargs):
+        if cmd[0] != "tmux":
+            return original(cmd, **kwargs)
+        assert cmd == ["tmux", "-S", cmd[2], "list-panes", "-a", "-F",
+                       "#{socket_path}\t#{session_name}\t#{pane_pid}"]
+        assert kwargs["timeout"] == 1
+        assert kwargs["env"]["XDG_RUNTIME_DIR"] == str(linux.m.runtime)
+        consultas.append(cmd[2])
+        resultado = saidas[cmd[2]]
+        if isinstance(resultado, Exception):
+            raise resultado
+        return resultado
+
+    monkeypatch.setattr(maquinas.subprocess, "run", rodar)
+    yield types.SimpleNamespace(cadastrar=cadastrar, saidas=saidas, consultas=consultas)
+    for servidor in sockets:
+        servidor.close()
+
+
+@pytest.mark.parametrize("sufixo,ident,nome,esperado", [
+    ("pos", "fluytpos", "Fluyt Pós", "Fluyt Pós · cadeira pos-prova41"),
+    ("com", "fluytcom", "Fluyt renomeado", "Fluyt renomeado · cadeira pos-prova41"),
+    ("fin", "fluytfin", "Fluyt Fin", "Fluyt Fin · cadeira pos-prova41"),
+    ("pos", "fluytpos", None, "Cadeira pos-prova41"),
+    # Sufixo parecido/com id cadastrado não é uma regra de propriedade.
+    ("pos-extra", "fluytpos", "Fluyt Pós", "Cadeira pos-prova41"),
+    ("estudio", "estudio", "Estúdio", "Cadeira pos-prova41"),
+])
+def test_cadeira_socket_explicito_nome_cadastrado_e_sessao_real(
+        linux, cadeiras_tmux, sufixo, ident, nome, esperado):
+    linux.m.agentes = {ident: nome} if nome else {}
+    # Como no Arsenal: servidor da cadeira no scope do agente, CLI em outro.
+    linux.processo(10, args=("tmux",))
+    linux.scope("app.slice/cockpit-tmux-fluytcom-abc.scope", 10)
+    linux.processo(100, ppid=10, args=("claude",))
+    linux.processo(110, args=("tmux", "-L", "socket-enganoso"))
+    linux.scope("app.slice/tmux-spawn-principal.scope", 100, 110)
+    linux.processo(200, ppid=110, args=("claude",), pss=2048)
+    linux.processo(201, ppid=200, args=("next-server",), pss=4096)
+    linux.scope("app.slice/tmux-spawn-cadeira.scope", 200, 201)
+    caminho = cadeiras_tmux.cadastrar(sufixo, [("pos-prova41", 200)])
+    itens = linux.m.abertos()["itens"][:-1]
+    cadeira = next(i for i in itens if i["rotulo"] == esperado)
+    assert cadeira["dono"] == (nome if sufixo in {"pos", "com", "fin"} else None)
+    assert cadeira["grupo"] == "terminal" and cadeira["memoria_mb"] == 6
+    assert cadeira["acao_rotulo"] == "Fechar cadeira"
+    assert linux.m._achar(cadeira["id"]).principal.pid == 200
+    assert len(itens) == 2 and cadeiras_tmux.consultas == [str(caminho)]
+
+
+def test_cadeiras_sessoes_distintas_nao_se_agregam_ao_agente(linux, cadeiras_tmux):
+    linux.processo(10, args=("tmux",))
+    linux.scope("app.slice/cockpit-tmux-fluytcom-abc.scope", 10)
+    # Mesmo que a cadeira seja mais antiga, não vira a sessão principal agrupada.
+    for pid in (100, 200, 300):
+        linux.processo(pid, ppid=10, args=("claude",))
+        linux.scope(f"app.slice/tmux-spawn-{pid}.scope", pid)
+    cadeiras_tmux.cadastrar("com", [("com-back1", 100), ("com-prova2", 200)])
+    itens = linux.m.abertos()["itens"][:-1]
+    assert [(i["rotulo"], i["memoria_mb"]) for i in itens] == [
+        ("Fluyt", 2), ("Fluyt · cadeira com-back1", 1), ("Fluyt · cadeira com-prova2", 1)]
+    assert len(cadeiras_tmux.consultas) == 1
+
+
+@pytest.mark.parametrize("falha", ["timeout", "erro", "invalido", "outro-socket",
+                                   "pid-filho", "pid-reutilizado", "sessao-ambigua"])
+def test_cadeira_sem_vinculo_confiavel_preserva_terminal(linux, cadeiras_tmux, falha):
+    linux.processo(100, args=("claude",))
+    linux.processo(101, ppid=100, args=("bun",))
+    linux.scope("app.slice/tmux-spawn-cadeira.scope", 100, 101)
+    caminho = cadeiras_tmux.cadastrar("pos", [("pos-back1", 100)])
+    saida = cadeiras_tmux.saidas[str(caminho)]
+    if falha == "timeout":
+        cadeiras_tmux.saidas[str(caminho)] = subprocess.TimeoutExpired("tmux", 1)
+    elif falha == "erro":
+        saida.returncode = 1
+    elif falha == "invalido":
+        saida.stdout = "formato inesperado"
+    elif falha == "outro-socket":
+        saida.stdout = f"{caminho}-outro\tpos-back1\t100"
+    elif falha == "pid-filho":
+        saida.stdout = f"{caminho}\tpos-back1\t101"
+    elif falha == "pid-reutilizado":
+        original = linux.m.scopes
+
+        def scopes():
+            resultado = original()
+            linux.processo(100, inicio=9999, args=("claude",))
+            return resultado
+
+        linux.m.scopes = scopes
+    else:
+        saida.stdout += f"\n{caminho}\tpos-outra\t100"
+    item = linux.m.abertos()["itens"][0]
+    assert item["rotulo"] == "Terminal" and item["dono"] is None
+    assert item["acao_rotulo"] == "Fechar Terminal"
+
+
+def test_cadeira_nao_segue_symlink_arquivo_ou_reclassifica_protegido(linux, cadeiras_tmux):
+    linux.processo(100, args=("claude",))
+    linux.scope("app.slice/tmux-spawn-cadeira.scope", 100)
+    linux.processo(200, args=("claude",))
+    linux.scope("session.slice/infra.service", 200)
+    caminho = cadeiras_tmux.cadastrar("pos", [("pos-back1", 200)])
+    (linux.m.sockets / "cadeiras-com").symlink_to(caminho)
+    (linux.m.sockets / "cadeiras-fin").write_text("não é socket")
+    itens = linux.m.abertos()["itens"][:-1]
+    assert {i["rotulo"] for i in itens} == {"Terminal", "Infra"}
+    assert next(i for i in itens if i["rotulo"] == "Infra")["grupo"] == "protegido"
+    assert cadeiras_tmux.consultas == [str(caminho)]
 
 
 @pytest.mark.parametrize("args", [("claude",), ("chrome", "--user-data-dir=~/.config/ze-chrome")])

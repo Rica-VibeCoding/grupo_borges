@@ -38,6 +38,9 @@ NOMES_PERFIL = {
     "agente": "Agente", "campanha": "Campanha", "fluytcom": "Fluyt Com",
     "fluytpos": "Fluyt Pós", "fluytfin": "Fluyt Fin",
 }
+# Fluyt .claude/orquestrar/BASE.md: socket cadeiras-<app>, app em com/pos/fin.
+# O nome exibido continua vindo do cadastro local, nunca do sufixo humanizado.
+DONOS_CADEIRAS = {"com": "fluytcom", "pos": "fluytpos", "fin": "fluytfin"}
 
 # Ruído Chrome ocioso medido no Arsenal fica abaixo de 10% de um núcleo.
 CPU_TRABALHO_USEC_S = 100_000
@@ -151,7 +154,7 @@ def fechar_browser(url, porta):
 
 class Maquinas:
     def __init__(self, *, agentes=(), home=None, proc=Path("/proc"), cgroup=None,
-                 runtime=None, chave=None, cgroup_sistema=Path("/sys/fs/cgroup"),
+                 runtime=None, chave=None, sockets=None, cgroup_sistema=Path("/sys/fs/cgroup"),
                  sys_block=Path("/sys/block"),
                  relogio=time.time, monotono=time.monotonic):
         self.home = Path.home() if home is None else Path(home)
@@ -160,6 +163,8 @@ class Maquinas:
             f"/sys/fs/cgroup/user.slice/user-{os.getuid()}.slice/user@{os.getuid()}.service")
         self.cgroup_sistema, self.sys_block = Path(cgroup_sistema), Path(sys_block)
         self.runtime = Path(runtime) if runtime is not None else Path(f"/run/user/{os.getuid()}")
+        self.sockets = Path(sockets) if sockets is not None else Path(
+            os.environ.get("TMUX_TMPDIR") or "/tmp") / f"tmux-{os.getuid()}"
         self.chave = Path(chave) if chave is not None else self.home / ".config/cockpit-maquina/chave"
         self.agentes = {a["id"]: a["nome"] for a in agentes}
         self.relogio, self.monotono = relogio, monotono
@@ -349,6 +354,45 @@ class Maquinas:
                     return candidato
             return scope  # Spawn órfão também é um terminal fechável.
         return None
+
+    def _rotulos_cadeiras(self, scopes):
+        # Só muda apresentação de terminais já listados; não autoriza novos alvos.
+        por_pid = {s.principal.pid: s for s in scopes if self._terminal(s, scopes) is not None}
+        rotulos = {}
+        if not por_pid:
+            return rotulos
+        # -L usa tmux-UID sob TMUX_TMPDIR (ou /tmp). Não depende de agentes.json
+        # listar os sockets das cadeiras, nem de argv/TMUX herdado do agente pai.
+        for socket in sorted(self.sockets.glob("cadeiras-*")):
+            try:
+                info = socket.lstat()
+                if not stat.S_ISSOCK(info.st_mode) or info.st_uid != os.getuid():
+                    continue
+                # https://man.openbsd.org/tmux.1#FORMATS: socket_path é o socket
+                # do servidor, session_name o nome da sessão, pane_pid sua raiz.
+                r = subprocess.run(["tmux", "-S", str(socket), "list-panes", "-a", "-F",
+                                    "#{socket_path}\t#{session_name}\t#{pane_pid}"],
+                                   capture_output=True, text=True, timeout=1, env=self.ambiente())
+                if r.returncode:
+                    continue
+                candidatos = {}
+                for linha in r.stdout.splitlines():
+                    caminho, sessao, pid = linha.split("\t")
+                    if Path(caminho) != socket or not sessao:
+                        continue
+                    scope = por_pid.get(int(pid))
+                    if scope is None or self.processo(scope.principal.pid) != scope.principal:
+                        continue
+                    ident = DONOS_CADEIRAS.get(socket.name.removeprefix("cadeiras-"))
+                    dono = self.agentes.get(ident)
+                    nome = f"{dono} · cadeira {sessao}" if dono else f"Cadeira {sessao}"
+                    candidatos.setdefault(scope.id, set()).add((nome, dono))
+                # Pane ligado a mais de uma sessão: não escolhe um nome arbitrário.
+                rotulos.update((ident, next(iter(nomes))) for ident, nomes in candidatos.items()
+                               if len(nomes) == 1)
+            except (OSError, ValueError, subprocess.SubprocessError):
+                continue  # Socket encerrado/indisponível não impede a lista.
+        return rotulos
 
     def classificar(self, scope, janelas, scopes=None):
         if self._terminal(scope, scopes) is not None:
@@ -602,13 +646,14 @@ class Maquinas:
         janelas = self.janelas()
         itens = []
         scopes = self.scopes()
+        cadeiras = self._rotulos_cadeiras(scopes)
         with self._trava:
             cpu_total = self._cpu_total
             cpu_scopes = {s.id: self.cpu(s.id) for s in scopes}
             parados_scopes = {s.id: self.parado(s.id) for s in scopes}
         terminais = {}
         for scope in scopes:
-            terminal = self._terminal(scope, scopes)
+            terminal = scope if scope.id in cadeiras else self._terminal(scope, scopes)
             if terminal is not None:
                 terminais.setdefault(terminal.id, (terminal, []))[1].append(scope)
                 continue
@@ -637,12 +682,17 @@ class Maquinas:
             grupos = [(terminal, [terminal] + spawns[:1], False)]
             grupos.extend((s, [s], True) for s in spawns[1:])
             for alvo, scopes_item, cadeira in grupos:
+                nome = rotulo + " · cadeira" if cadeira else rotulo
+                dono_item = dono
+                if alvo.id in cadeiras:
+                    nome, dono_item = cadeiras[alvo.id]
+                    cadeira = True
                 parados = [parados_scopes[s.id] for s in scopes_item]
                 cpus = [cpu_scopes[s.id] for s in scopes_item]
                 # Um membro ativo basta, mesmo com outro ainda sem duas amostras.
                 parado = 0 if 0 in parados else None if None in parados else min(parados)
                 itens.append({"id": alvo.id, "grupo": "terminal",
-                              "rotulo": rotulo + " · cadeira" if cadeira else rotulo, "dono": dono,
+                              "rotulo": nome, "dono": dono_item,
                               "memoria_mb": soma_medidas(self.memoria(s) for s in scopes_item),
                               "cpu_pct": round(sum(cpus), 1) if None not in cpus else None,
                               "parado_s": parado,
