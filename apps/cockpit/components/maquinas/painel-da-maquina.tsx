@@ -6,7 +6,7 @@
  * Ciclo próprio de 10 s, só com a tela aberta e a aba visível — o mesmo
  * `setInterval` + `visibilitychange` do `usa-recursos-locais`. Não usa o resumo
  * compartilhado de 30 s (`usa-resumo-da-maquina`): aqui o Rica está olhando e
- * acabou de fechar alguma coisa, 30 s seria velho.
+ * acabou de fechar alguma coisa, 30 s seria velho. A ponte guarda só 3 s.
  *
  * Leitura que falha DEPOIS da primeira mantém a última na tela, como no cartão
  * da VPS. Máquina fora do ar não inventa número: barras vazias e o motivo.
@@ -23,6 +23,7 @@ import { emAlerta, formataTamanho, fracaoDaBarra } from '@/components/shell/recu
 import {
   fetchAbertos,
   fetchResumo,
+  FalhaDaMaquina,
   temperaturaEmAlerta,
   textoDaTela,
   type Abertos,
@@ -39,7 +40,7 @@ const MOSTRA_LIBEROU_MS = 8_000;
 
 export type Liberados = Record<string, { item: ItemAberto; mb: number; ate: number }>;
 
-export type LeituraDosAbertos = { abertos: Abertos } | { falha: string } | null;
+export type LeituraDosAbertos = { abertos: Abertos } | { falha: string; status?: number } | null;
 
 export function PainelDaMaquina({
   id,
@@ -68,7 +69,7 @@ export function PainelDaMaquina({
         fetchResumo(id).then((novo) => vivo && setResumo(novo)),
         fetchAbertos(id).then(
           (novo) => vivo && setAbertos({ abertos: novo }),
-          (erro: Error) => vivo && setAbertos({ falha: erro.message }),
+          (erro: Error) => vivo && setAbertos({ falha: erro.message, status: erro instanceof FalhaDaMaquina ? erro.status : undefined }),
         ),
       ]).finally(() => {
         emVoo = false;
@@ -136,8 +137,6 @@ export function PainelDaMaquina({
         </p>
       </section>
 
-      {/* Fora do ar não há lista: o motivo já está no cartão de cima. */}
-      {fora ? null : (
       <ListaDeAbertos
         maquina={id}
         leitura={abertos}
@@ -146,7 +145,6 @@ export function PainelDaMaquina({
           setLiberados((antes) => ({ ...antes, [item.id]: { item, mb, ate: Date.now() + MOSTRA_LIBEROU_MS } }))
         }
       />
-      )}
     </>
   );
 }

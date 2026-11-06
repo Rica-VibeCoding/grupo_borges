@@ -108,11 +108,11 @@ def pc(tmp_path, monkeypatch):
 def test_cpu_amostras_em_segundo_plano(pc):
     pc.windows.cpu_ler.side_effect = [(100, 500), (120, 600), (120, 600), (120, 700)]
     pc.amostrar_cpu()
-    assert pc.cpu_pct == 0.0
+    assert pc.cpu_pct is None
     pc.amostrar_cpu()
     assert pc.cpu_pct == 80.0
     pc.amostrar_cpu()
-    assert pc.cpu_pct == 80.0
+    assert pc.cpu_pct is None
     pc.amostrar_cpu()
     assert pc.cpu_pct == 100.0
 
@@ -161,7 +161,7 @@ def test_resumo_mesmo_contrato_linux_e_disco_c(pc, monkeypatch):
         "cpu_pct": 12.5,
         "ram": {"usado_mb": 4000, "livre_mb": 12000, "total_mb": 16000, "pct": 25.0},
         "disco": {"usado_mb": 10000, "livre_mb": 90000, "total_mb": 100000, "pct": 10.0},
-        "temperatura_c": 50.0, "parados_30min": 0,
+        "temperatura_c": 50.0, "parados_30min": None,
         "tela": {"em_uso": None, "ultimo_uso_s": None}, "medido_em": 1234,
     }
     disco.assert_called_once_with("C:/")
@@ -255,3 +255,23 @@ def test_descoberta_tenta_caminho_windows_e_falha_fechado(monkeypatch):
 def test_host_fora_da_tailnet_recusado(host):
     with pytest.raises(ValueError):
         painel.host_tailscale(host)
+
+
+def test_cpu_falha_retira_medida_antiga_e_exige_duas_amostras(pc):
+    pc.cpu_pct = 85
+    pc.windows.cpu_ler.side_effect = OSError('indisponível')
+    with pytest.raises(OSError):
+        pc.amostrar_cpu()
+    assert pc.cpu_pct is None
+    pc.windows.cpu_ler.side_effect = [(100, 500), (120, 600)]
+    pc.amostrar_cpu()
+    assert pc.cpu_pct is None
+    pc.amostrar_cpu()
+    assert pc.cpu_pct == 80
+
+
+def test_primeiro_resumo_nao_inventa_cpu_nem_parados(pc, monkeypatch):
+    monkeypatch.setattr(painel.shutil, 'disk_usage', lambda _: shutil._ntuple_diskusage(100, 50, 50))
+    resumo = pc.resumo()
+    assert resumo['cpu_pct'] is None
+    assert resumo['parados_30min'] is None

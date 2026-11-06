@@ -151,3 +151,24 @@ test('nome na linha: tira só o prefixo que o grupo já diz', () => {
   assert.equal(nomeNaLinha({ grupo: 'agente', rotulo: 'Chrome do Fluyt Com' }), 'Fluyt Com');
   assert.equal(nomeNaLinha({ grupo: 'seus', rotulo: 'Chrome do Rica' }), 'Chrome do Rica');
 });
+
+test('PC sem suporte diz o motivo sem prometer nova tentativa', async () => {
+  const { fetchAbertos, FalhaDaMaquina, textoDaFalhaDosAbertos } = await import('./maquinas.ts');
+  const anterior = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ mensagem: 'o PC ainda não lista o que está aberto' }), { status: 501 });
+  try {
+    await assert.rejects(fetchAbertos('pc'), (erro: Error) => {
+      assert.ok(erro instanceof FalhaDaMaquina);
+      assert.equal(erro.status, 501);
+      assert.equal(textoDaFalhaDosAbertos(erro.message, erro.status), 'o PC ainda não lista o que está aberto');
+      return true;
+    });
+    assert.match(textoDaFalhaDosAbertos('não responde', 502), /Tento de novo sozinho/);
+  } finally { globalThis.fetch = anterior; }
+});
+
+test('resumo sem primeira amostra não inventa selo de parados', () => {
+  assert.deepEqual(seloDaMaquina(resumo({ cpu_pct: null, parados_30min: null }), 'PC'), {
+    texto: null, vermelho: false, descricao: '',
+  });
+});

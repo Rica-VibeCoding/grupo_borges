@@ -17,7 +17,7 @@ import { useState, type ReactNode } from 'react';
 
 import { IconeCadeado } from '@/components/shell/icones';
 import { formataTamanho } from '@/components/shell/recursos-da-vps';
-import { agrupa, type Abertos, type GrupoDeItens, type ItemAberto } from '@/lib/maquinas';
+import { agrupa, textoDaFalhaDosAbertos, type Abertos, type GrupoDeItens, type ItemAberto } from '@/lib/maquinas';
 
 import { CabecalhoDasColunas, LinhaAberta, LinhaProtegida, PilulaDaMaquina } from './linha-aberta';
 import type { Liberados, LeituraDosAbertos } from './painel-da-maquina';
@@ -39,7 +39,7 @@ export function ListaDeAbertos({
     <section aria-label="Aberto agora" className="flex flex-col" style={{ gap: 'var(--ck-space-2)', minHeight: '240px' }}>
       {leitura && 'falha' in leitura ? (
         <p style={{ ...SECUNDARIO_XS, padding: '0 var(--ck-space-3)' }}>
-          Não consegui listar o que está aberto: {leitura.falha}. Tento de novo sozinho.
+          {textoDaFalhaDosAbertos(leitura.falha, leitura.status)}
         </p>
       ) : null}
       {leitura && 'abertos' in leitura ? <Grupos maquina={maquina} leitura={leitura.abertos} liberados={liberados} aoFechar={aoFechar} /> : null}

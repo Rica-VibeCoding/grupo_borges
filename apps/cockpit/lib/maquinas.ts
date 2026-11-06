@@ -12,11 +12,11 @@ export type Tela = { em_uso: boolean | null; ultimo_uso_s: number | null };
 
 export type ResumoOnline = {
   online: true;
-  cpu_pct: number;
+  cpu_pct: number | null;
   ram: Recurso;
   disco: Recurso;
   temperatura_c: number | null;
-  parados_30min: number;
+  parados_30min: number | null;
   tela: Tela;
   medido_em: number;
 };
@@ -44,7 +44,17 @@ export type ItemAberto = {
 export type Abertos = { observado_desde: number; itens: ItemAberto[] };
 
 /** Falha que o painel explicou (403/404/409/502 com `{mensagem}`). */
-export class FalhaDaMaquina extends Error {}
+export class FalhaDaMaquina extends Error {
+  status?: number;
+  constructor(mensagem: string, status?: number) {
+    super(mensagem);
+    this.status = status;
+  }
+}
+
+export function textoDaFalhaDosAbertos(mensagem: string, status?: number): string {
+  return status === 501 ? mensagem : `Não consegui listar o que está aberto: ${mensagem}. Tento de novo sozinho.`;
+}
 
 // No servidor o fetch precisa de URL absoluta; no cliente o rewrite do
 // `next.config` resolve o caminho relativo — mesma divisão da `faxina.ts`.
@@ -78,13 +88,13 @@ export async function fetchNomeLocal(): Promise<string> {
 
 export async function fetchResumo(id: string): Promise<Resumo> {
   const res = await fetch(`/api/maquinas/${id}/resumo`, { cache: 'no-store' });
-  if (!res.ok) throw new FalhaDaMaquina(await mensagemDe(res));
+  if (!res.ok) throw new FalhaDaMaquina(await mensagemDe(res), res.status);
   return res.json();
 }
 
 export async function fetchAbertos(id: string): Promise<Abertos> {
   const res = await fetch(`/api/maquinas/${id}/abertos`, { cache: 'no-store' });
-  if (!res.ok) throw new FalhaDaMaquina(await mensagemDe(res));
+  if (!res.ok) throw new FalhaDaMaquina(await mensagemDe(res), res.status);
   return res.json();
 }
 
@@ -94,7 +104,7 @@ export async function postFechar(maquina: string, item: string): Promise<{ liber
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ id: item }),
   });
-  if (!res.ok) throw new FalhaDaMaquina(await mensagemDe(res));
+  if (!res.ok) throw new FalhaDaMaquina(await mensagemDe(res), res.status);
   return res.json();
 }
 
@@ -228,10 +238,10 @@ export function seloDaMaquina(resumo: Resumo | null, nome: string): Selo {
   const parados = resumo.parados_30min;
   const ramAlta = resumo.ram.pct > TETO_RAM_DO_SELO;
   const partes: string[] = [];
-  if (parados > 0) partes.push(`${parados} ${parados === 1 ? 'parado' : 'parados'} há mais de 30 min`);
+  if (parados !== null && parados > 0) partes.push(`${parados} ${parados === 1 ? 'parado' : 'parados'} há mais de 30 min`);
   if (ramAlta) partes.push(`RAM em ${Math.round(resumo.ram.pct)}%`);
   return {
-    texto: parados > 0 ? String(parados) : ramAlta ? '!' : null,
+    texto: parados !== null && parados > 0 ? String(parados) : ramAlta ? '!' : null,
     vermelho: ramAlta,
     descricao: partes.length ? `${nome}: ${partes.join(', ')}` : '',
   };

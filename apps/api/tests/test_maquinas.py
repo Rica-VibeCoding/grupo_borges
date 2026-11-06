@@ -110,15 +110,15 @@ async def test_lista_nao_consulta_o_painel(cliente, painel):
     assert painel[2] == []
 
 
-async def test_cache_expira_em_30_segundos_com_relogio_injetado(cliente, painel):
+async def test_cache_expira_em_3_segundos_com_relogio_injetado(cliente, painel):
     _, agora, pedidos = painel
     primeira = await cliente.get("/api/maquinas/arsenal/resumo")
-    agora[0] += 29.9
+    agora[0] += 2.9
     segunda = await cliente.get("/api/maquinas/arsenal/resumo")
     assert primeira.status_code == segunda.status_code == 200
     assert primeira.json() == segunda.json() == {**RESUMO, "online": True}
     assert len(pedidos) == 1
-    agora[0] = 130.0
+    agora[0] = 103.0
     assert (await cliente.get("/api/maquinas/arsenal/resumo")).status_code == 200
     assert len(pedidos) == 2
 
@@ -245,7 +245,7 @@ async def test_abertos_cpu_pct_aceita_nulo_e_numero_finito(cliente, painel, cpu)
         assert resposta.status_code == 502
 
 
-@pytest.mark.parametrize("status", [403, 404, 409])
+@pytest.mark.parametrize("status", [403, 404, 409, 501])
 @pytest.mark.parametrize("rota", ["abertos", "fechar"])
 async def test_repassa_status_e_mensagem_do_painel(cliente, painel, status, rota):
     corpo = {"mensagem": "protegido ou já encerrou"}
@@ -294,3 +294,31 @@ async def test_maquina_desconhecida(cliente, painel, rota):
         resposta = await cliente.get(f"/api/maquinas/desconhecida/{rota}")
     assert resposta.status_code == 404
     assert painel[2] == []
+
+
+async def test_reinicio_sem_cpu_continua_online_e_nova_amostra_chega_em_3s(cliente, painel):
+    corpo = {**RESUMO, "cpu_pct": None, "parados_30min": None}
+    painel[0](lambda _: httpx.Response(200, json=corpo))
+    assert (await cliente.get('/api/maquinas/note/resumo')).json() == {**corpo, 'online': True}
+    corpo['cpu_pct'] = 17.0
+    corpo['parados_30min'] = 0
+    painel[1][0] += 3
+    assert (await cliente.get('/api/maquinas/note/resumo')).json() == {**corpo, 'online': True}
+
+
+async def test_fechar_invalida_resumo_da_maquina(cliente, painel):
+    corpo = dict(RESUMO)
+    painel[0](lambda r: httpx.Response(200, json={'liberou_mb': 10} if r.method == 'POST' else corpo))
+    await cliente.get('/api/maquinas/arsenal/resumo')
+    corpo['parados_30min'] = 0
+    await cliente.post('/api/maquinas/arsenal/fechar', json={'id': 'teste'})
+    assert (await cliente.get('/api/maquinas/arsenal/resumo')).json()['parados_30min'] == 0
+    assert len(painel[2]) == 3
+
+
+async def test_pc_sem_listagem_preserva_explicacao(cliente, painel):
+    corpo = {'mensagem': 'o PC ainda não lista o que está aberto'}
+    painel[0](lambda _: httpx.Response(501, json=corpo))
+    resposta = await cliente.get('/api/maquinas/pc/abertos')
+    assert resposta.status_code == 501
+    assert resposta.json() == corpo

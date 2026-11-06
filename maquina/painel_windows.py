@@ -132,7 +132,7 @@ class Painel:
     def __init__(self, windows, *, chave=None):
         self.windows = windows
         self.chave = Path(chave) if chave is not None else Path.home() / ".config/cockpit-maquina/chave"
-        self.cpu_pct = 0.0
+        self.cpu_pct = None
         self.temperatura_c = None
         self._anterior = None
         self._temperatura_em = None
@@ -151,12 +151,18 @@ class Painel:
             raise Falha(401, "Chave inválida ou ausente.")
 
     def amostrar_cpu(self):
-        atual = self.windows.cpu_ler()
-        anterior, self._anterior = self._anterior, atual
-        if anterior and atual[1] > anterior[1]:
-            pct = 100 * (1 - (atual[0] - anterior[0]) / (atual[1] - anterior[1]))
+        try:
+            atual = self.windows.cpu_ler()
+        except OSError:
             with self._trava:
-                self.cpu_pct = round(max(0, min(100, pct)), 2)
+                self._anterior, self.cpu_pct = None, None
+            raise
+        anterior, self._anterior = self._anterior, atual
+        pct = None
+        if anterior and atual[1] > anterior[1]:
+            pct = round(max(0, min(100, 100 * (1 - (atual[0] - anterior[0]) / (atual[1] - anterior[1])))), 2)
+        with self._trava:
+            self.cpu_pct = pct
 
     def amostrar_temperatura(self):
         agora = time.monotonic()
@@ -194,7 +200,7 @@ class Painel:
             cpu, temperatura = self.cpu_pct, self.temperatura_c
         return {"cpu_pct": cpu, "ram": recurso(total, livre),
                 "disco": recurso(disco.total, disco.free), "temperatura_c": temperatura,
-                "parados_30min": 0, "tela": self.windows.tela(), "medido_em": int(time.time())}
+                "parados_30min": None, "tela": self.windows.tela(), "medido_em": int(time.time())}
 
 
 class Servidor(ThreadingHTTPServer):
