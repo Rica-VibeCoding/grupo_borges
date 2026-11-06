@@ -83,8 +83,12 @@ serviços e containers. Configuração e limites: [maquina-vps](../docs/maquina-
   tmpfs sem recorte**. Ausência/divergência de fonte permanece desconhecida.
 - Fontes da mesma coleta: `memoria_meminfo_kb`, `memoria_fontes` por linha e
   `kernel_vmap_stack`; ocupação lógica e RAM do tmpfs ficam discriminadas.
-  O pequeno `Sem dono` ainda pode conter alocações não discriminadas do kernel,
+  O `Sem dono` ainda pode conter alocações não discriminadas do kernel,
   processos fora dos recortes e defasagem entre leituras. Não é prova de cache.
+- **DRM/i915 não é outra parcela de RAM**: os buffers GEM de `system0` usam
+  shmem, já cobrado acima. Somar `drm-resident-system0` ao residual duplicaria
+  essa memória, mesmo deduplicando clientes (provado em 06/11: buffer de
+  16 MiB subiu DRM, Shmem e o shmem do cgroup nos mesmos 16 MiB).
 
 Referências oficiais lidas antes da alteração:
 [cgroup v2 (CPU e memória)](https://docs.kernel.org/admin-guide/cgroup-v2.html),
