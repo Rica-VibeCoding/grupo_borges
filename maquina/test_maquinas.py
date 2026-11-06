@@ -1129,6 +1129,8 @@ def test_frota_cpu_compartilhada_nao_duplica_e_conta_threads(linux, frota, monke
         campos = dados.split()
         campos[11] = str(round(segundos * ticks))
         arquivo.write_text(prefixo + ") " + " ".join(campos))
+    # O servidor tmux é unidade inteira: o kernel soma os 0,3 s no cpu.stat dela.
+    (linux.m.cgroup / "app.slice/servico-100.service/cpu.stat").write_text("usage_usec 300000\n")
     total(linux, ocupado=48, ocioso=1072)
     linux.agora[1] = 3
     frota.m.amostrar()
@@ -1474,3 +1476,56 @@ def test_residual_negativo_ou_com_medida_ausente_e_desconhecido(linux):
     leitura = linux.m.contabilizar({'itens': [{'cpu_pct': None, 'memoria_mb': None}]}, 50)
     assert leitura['itens'][-1]['cpu_pct'] is None
     assert leitura['itens'][-1]['memoria_mb'] is None
+
+
+def test_delta_de_processos_conta_quem_nasceu_no_intervalo_e_esquece_quem_saiu(tmp_path):
+    from maquinas import Processo
+    from medicao_processos import RELOGIO, contadores_cpu, delta_processos, memoria_mb
+    tick = os.sysconf("SC_CLK_TCK")
+
+    def processo(pid, inicio, segundos):
+        pasta = tmp_path / str(pid)
+        pasta.mkdir(exist_ok=True)
+        campos = ["S", "1"] + ["0"] * 9 + [str(round(segundos * tick)), "0"] + ["0"] * 6 + [str(inicio)]
+        (pasta / "stat").write_text(f"{pid} (x) " + " ".join(campos))
+        (pasta / "smaps_rollup").write_text("Pss_Anon: 1024 kB\nPss_Shmem: 0 kB\n")
+        return Processo(pid, 1, inicio, ("x",))
+
+    velho = processo(10, 100, 5.0)
+    (tmp_path / "uptime").write_text("100.00 0\n")
+    antes = contadores_cpu(tmp_path, [velho])
+    assert antes[RELOGIO] == 100 * tick
+    # Nasceu depois da leitura anterior: o contador inteiro cabe no intervalo.
+    novo = processo(11, 101 * tick, 0.5)
+    processo(10, 100, 5.2)
+    (tmp_path / "uptime").write_text("103.00 0\n")
+    depois = contadores_cpu(tmp_path, [velho, novo])
+    assert delta_processos(depois, antes) == 700_000
+    # Chegou de outro item com a vida inteira acumulada: sem delta.
+    migrado = processo(12, 50, 3600.0)
+    assert delta_processos(contadores_cpu(tmp_path, [velho, migrado]), antes) is None
+    # Saiu entre a listagem e a leitura: não derruba a medida dos outros.
+    shutil.rmtree(tmp_path / "11")
+    restante = contadores_cpu(tmp_path, [velho, novo])
+    assert delta_processos(restante, antes) == 200_000
+    assert memoria_mb(tmp_path, [velho, novo]) == 1
+    # Sem relógio (fixtures antigas) só o mesmo conjunto dá delta.
+    sem_relogio = {k: v for k, v in restante.items() if k != RELOGIO}
+    assert delta_processos(sem_relogio, antes) is None
+
+
+def test_frota_unidade_inteira_mede_cpu_pelo_cgroup_mesmo_com_worker_que_saiu(linux, frota, monkeypatch):
+    monkeypatch.setattr(os, "cpu_count", lambda: 4)
+    linux.processo(700, args=("python3", "-m", "homeassistant"))
+    linux.processo(701, ppid=700, args=("ffmpeg",))
+    pasta = linux.scope("system.slice/docker-abc.scope", 700, 701)
+    frota.m.amostrar()
+    # O worker saiu; o cpu.stat do container guarda o que ele gastou.
+    shutil.rmtree(linux.m.proc / "701")
+    (pasta / "cgroup.procs").write_text("700")
+    uso(pasta, 1_200_000)
+    total(linux, ocupado=48, ocioso=1072)
+    linux.agora[1] = 3
+    frota.m.amostrar()
+    item = next(s for s in frota.m.scopes() if s.caminho == pasta)
+    assert frota.m.cpu(item.id) == 10

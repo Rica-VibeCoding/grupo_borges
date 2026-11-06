@@ -34,13 +34,11 @@ class MaquinasFrota(Maquinas):
         # duplicaria CPU e atribuiria trabalho ao dono errado. /proc/<pid>/stat
         # inclui TODAS as threads (utime+stime), ao contrário de schedstat.
         # Workers que nascem e morrem entre leituras ficam em Fora da lista.
-        return contadores_cpu(self.proc, scope.processos)
-
-    @staticmethod
-    def _delta_cpu(cpus, anterior):
-        # Um PID que chegou de outro item já pode ter horas de CPU acumulada.
-        # Mudou o conjunto, precisamos de outra amostra para saber o delta.
-        return Maquinas._delta_cpu(cpus, anterior)
+        if isinstance(scope, (Sessao, ScopePorProcessos)):
+            return contadores_cpu(self.proc, scope.processos)
+        # Unidade inteira (serviço, container de root): cpu.stat do cgroup é
+        # legível e não perde o worker que nasce e morre entre leituras.
+        return super()._contadores_cpu(scope)
 
     def memoria(self, scope):
         if isinstance(scope, (Sessao, ScopePorProcessos)):

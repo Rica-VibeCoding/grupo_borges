@@ -22,7 +22,7 @@ import time
 from urllib.parse import urlsplit
 
 from chrome_processos import agrupar_chromes
-from medicao_processos import contadores_cpu, memoria_mb, soma_medidas
+from medicao_processos import RELOGIO, contadores_cpu, delta_processos, memoria_mb, soma_medidas
 
 
 IDENT = re.compile(r"[A-Za-z0-9_-]{1,64}\Z")
@@ -470,6 +470,8 @@ class Maquinas:
 
     @staticmethod
     def _delta_cpu(cpus, anterior):
+        if RELOGIO in cpus:
+            return delta_processos(cpus, anterior.cpus if anterior is not None else None)
         if (anterior is None or cpus.keys() != anterior.cpus.keys()
                 or any(cpu < anterior.cpus[k] for k, cpu in cpus.items())):
             return None
