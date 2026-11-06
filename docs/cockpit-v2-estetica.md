@@ -15,7 +15,7 @@ Medida (espaço, largura, toque, raio, ritmo) é da §B do `globals.css`; aqui s
    de luz de 1px no topo da superfície elevada. Fundo escuro não tem sombra.
 4. **Acromático onde não há significado.** Superfície, texto e borda têm croma zero. Matiz é
    reservado a estado e tons de estado (§2), diff, link, seleção, ouro do pulso, verde dos atalhos
-   de tela e acentos da gaveta (§8). Foco não tem cor (§9.17).
+   de tela, acentos da gaveta (§8) e a pílula Mostrar/Esconder da tela Abertos (§8). Foco não tem cor (§9.17).
 5. **A temperatura sobe quando a máquina precisa de você:** violeta (pensando) → dourado do pulso
    (executando, no feed; ciano só fora dele) → **âmbar (espera humano)** → verde (feito) / coral
    (falhou). Âmbar é o único estado que chama o Rica; dourado e âmbar são vizinhos (1,1:1 entre si),
@@ -68,7 +68,7 @@ forte com ✓ (§8). Não há barra lateral. Botão com véu dentro de superfíc
 recorta (`overflow: clip`), senão o véu sai de canto vivo por cima do raio.
 
 **Link e seleção:** `--ck-link` (croma menor que qualquer estado: URL não grita mais que falha),
-sempre sublinhado via `.ck-link`. `::selection` força fundo **e** cor (`--ck-selection-*`).
+sempre sublinhado via `.ck-link`; a exceção é a pílula Mostrar/Esconder (§8), que usa a cor sem ser link. `::selection` força fundo **e** cor (`--ck-selection-*`).
 
 **Materiais (vidro):** cada um é token próprio, não se reaproveita entre eles.
 - Caixa do composer: `--ck-surface-composer-material` (raised 60%) + `--ck-veu-desfoque` 36px.
@@ -332,7 +332,8 @@ ocupação. O toque abre `/abertos` na aba da máquina; a grade 2×2 e os proces
 **Tela Abertos** (`maquinas/lista-de-abertos.tsx`, 05/11) — uma linha por item, em colunas fixas: nome · parado · CPU ·
 RAM · Fechar, com o título das colunas uma vez por grupo. Confirmar é em linha: o nome fica, aviso e botões entram no
 lugar das medidas. O Protegido nasce fechado e afunda um degrau abaixo da mesa (`.ck-vps-poco`: `canvas`, contorno, sem fio
-de luz), com texto `secondary` e cadeado no lugar do Fechar: o que não se alcança fica mais longe.
+de luz), com texto `secondary` e cadeado no lugar do Fechar: o que não se alcança fica mais longe. A pílula Mostrar/Esconder
+leva a cor do link, sem sublinhado (`--ck-pilula-mostrar-*`): exceção do Rica (05/11), para não se confundir com o Fechar.
 
 **Medidores:** contexto neutro → âmbar ≥ 25% → `state-fail` > 30% (`corDoContexto`); cota âmbar ≥ 80% → `state-fail` ≥ 95% (`corDaCota`).
 

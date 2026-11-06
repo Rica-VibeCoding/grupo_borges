@@ -125,7 +125,7 @@ function CartaoDoGrupo({ grupo, children }: { grupo: GrupoDeItens; children: Rea
           {protegido ? <IconeCadeado tamanho={14} className="shrink-0" /> : null}
           {grupo.nome}
         </h3>
-        <PilulaDaMaquina aria-expanded={aberto} aria-controls={idDaLista} aoTocar={() => setAberto((a) => !a)}>
+        <PilulaDaMaquina mostrar aria-expanded={aberto} aria-controls={idDaLista} aoTocar={() => setAberto((a) => !a)}>
           {aberto ? 'Esconder' : 'Mostrar'}
         </PilulaDaMaquina>
         <span className="ck-tabular ml-auto" style={SECUNDARIO_XS}>
