@@ -1974,17 +1974,40 @@ html[data-troca-agente] .ck-palco {
 }
 .ck-vps-botao:disabled { cursor: default; }
 .ck-vps-botao:disabled:hover .ck-vps-pilula { background-image: none; }
-/* As colunas da tela Abertos: nome · parado · CPU · RAM · ação. Em rem, para
- * acompanhar o texto ampliado. Abaixo de 360px o Parado cede a vez ao nome. */
+/* As colunas da tela Abertos: nome · atividade · CPU · RAM · ação. Em rem, para
+ * acompanhar o texto ampliado; a Atividade tem a largura do próprio título. Abaixo
+ * de 360px ela cede a vez ao nome e fica só o girador. */
 .ck-abertos-grade {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 3rem 2.25rem 3.25rem 4.125rem;
+  grid-template-columns: minmax(0, 1fr) 3.5rem 2.25rem 3.25rem 4.125rem;
   column-gap: var(--ck-space-2);
   align-items: center;
 }
 @media (max-width: 359px) {
-  .ck-abertos-grade { grid-template-columns: minmax(0, 1fr) 0 2.25rem 3.25rem 4.125rem; }
-  .ck-abertos-parado { visibility: hidden; }
+  .ck-abertos-grade { grid-template-columns: minmax(0, 1fr) 0.75rem 2.25rem 3.25rem 4.125rem; }
+  .ck-abertos-atividade { visibility: hidden; } /* o tempo e o título saem; o girador fica */
+}
+/* Em uso: anel âmbar de 12px girando no ritmo do anel do feed (1.1s). Âmbar por
+ * pedido do Rica (06/11); giro e não pulso porque é atividade em curso, não
+ * chamado. Com movimento reduzido vira ponto cheio de 8px, parado. */
+.ck-abertos-girador {
+  display: inline-block;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 50%;
+  border: 2px solid color-mix(in oklch, var(--ck-state-attention) 35%, transparent);
+  border-top-color: var(--ck-state-attention);
+  animation: ck-abertos-gira 1.1s linear infinite;
+}
+@keyframes ck-abertos-gira { to { transform: rotate(1turn); } }
+@media (prefers-reduced-motion: reduce) {
+  .ck-abertos-girador {
+    animation: none;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-color: var(--ck-state-attention);
+    background: var(--ck-state-attention);
+  }
 }
 /* Foco de teclado nas pílulas e no Cancelar: véu e fio interno cinza (§9.17). */
 .ck-vps-botao:focus-visible .ck-vps-pilula,

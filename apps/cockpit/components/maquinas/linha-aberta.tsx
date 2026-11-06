@@ -1,6 +1,6 @@
 /**
- * Uma coisa aberta na máquina, numa linha só e em colunas fixas: nome, há quanto
- * está parado, CPU, RAM e a pílula curta "Fechar" — o rótulo exato do painel
+ * Uma coisa aberta na máquina, numa linha só e em colunas fixas: nome, atividade
+ * (girador em uso, ou há quanto está parado), CPU, RAM e a pílula curta "Fechar" — o rótulo exato do painel
  * ("Fechar Chrome do Fluyt Com") vai no nome acessível.
  *
  * Fechar não confirma (Rica, 05/11: igual ao PC). Se o painel um dia mandar
@@ -17,7 +17,8 @@ import { useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type HTM
 
 import { IconeCadeado, IconeVisto } from '@/components/shell/icones';
 import { formataTamanho } from '@/components/shell/recursos-da-vps';
-import { nomeNaLinha, paradoCurto, postFechar, textoDaCpu, textoDasAbas, type ItemAberto } from '@/lib/maquinas';
+import { CelulaDaAtividade, Medida } from '@/components/maquinas/medida';
+import { nomeNaLinha, postFechar, textoDaCpu, textoDasAbas, type ItemAberto } from '@/lib/maquinas';
 
 type Fase = 'parado' | 'confirmando' | 'fechando';
 
@@ -79,31 +80,12 @@ export function PilulaDaMaquina({
   );
 }
 
-const NUMERO = { fontSize: 'var(--ck-text-sm)', textAlign: 'right', whiteSpace: 'nowrap' } as const;
-
-/** Uma coluna numérica. O rótulo só existe para leitor de tela: quem enxerga lê o cabeçalho. */
-function Medida({ rotulo, valor, cor, classe = '' }: { rotulo: string; valor: string; cor: string; classe?: string }) {
-  return (
-    <span className={`ck-tabular ${classe}`} style={{ ...NUMERO, color: cor }}>
-      <span className="sr-only">{rotulo}: </span>
-      {valor === '—' ? (
-        <>
-          <span aria-hidden="true">—</span>
-          <span className="sr-only">sem dado</span>
-        </>
-      ) : (
-        valor
-      )}
-    </span>
-  );
-}
-
-/** O título das colunas, uma vez por grupo. O Protegido não mede parado: serviço vive parado. */
-export function CabecalhoDasColunas({ comParado = true }: { comParado?: boolean }) {
+/** O título das colunas, uma vez por grupo. O Protegido não mede atividade: serviço vive parado. */
+export function CabecalhoDasColunas({ comAtividade = true }: { comAtividade?: boolean }) {
   const celula = { fontSize: 'var(--ck-text-xs)', textAlign: 'right', color: 'var(--ck-text-secondary)' } as const;
   return (
     <div aria-hidden="true" className="ck-abertos-grade" style={{ minHeight: '20px' }}>
-      {comParado ? <span className="ck-abertos-parado" style={{ ...celula, gridColumn: 2 }}>Parado</span> : null}
+      {comAtividade ? <span className="ck-abertos-atividade" style={{ ...celula, gridColumn: 2 }}>Atividade</span> : null}
       <span style={{ ...celula, gridColumn: 3 }}>CPU</span>
       <span style={{ ...celula, gridColumn: 4 }}>RAM</span>
     </div>
@@ -259,7 +241,7 @@ export function LinhaAberta({
           </FimDaLinha>
         ) : (
           <>
-            <Medida rotulo="Parado" classe="ck-abertos-parado" valor={paradoCurto(item.parado_s, observadoDesde, agora)} cor="var(--ck-text-secondary)" />
+            <CelulaDaAtividade parado_s={item.parado_s} observadoDesde={observadoDesde} agora={agora} />
             <Medida rotulo="CPU" valor={textoDaCpu(item.cpu_pct)} cor="var(--ck-text-primary)" />
             <Medida rotulo="RAM" valor={formataTamanho(item.memoria_mb)} cor="var(--ck-text-primary)" />
             {item.acao_rotulo ? (

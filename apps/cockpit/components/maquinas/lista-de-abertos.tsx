@@ -71,7 +71,7 @@ function Grupos({
     <CartaoDoGrupo key={grupo.grupo} grupo={grupo}>
       {grupo.grupo === 'protegido' ? (
         <>
-          <CabecalhoDasColunas comParado={false} />
+          <CabecalhoDasColunas comAtividade={false} />
           <ul className="flex flex-col">
             {grupo.itens.map((item) => (
               <LinhaProtegida key={item.id} item={item} />
