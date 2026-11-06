@@ -947,3 +947,249 @@ def test_rotulo_religando_agente(linux):
     sc = linux.m.scopes()[0]
     assert linux.m.rotulo(sc, {}) == ("Religando Fluyt Pós", "Fluyt Pós")
     assert linux.m.classificar(sc, {}) == "protegido"
+
+
+@pytest.fixture
+def frota(linux, monkeypatch):
+    from frota import MaquinasFrota
+    import frota as modulo
+    cadastro = [
+        {"id": ident, "nome": nome, "socket": "borges-" + ident, "sessao": ident}
+        for ident, nome in (("pavan", "Pavan"), ("daniel", "Daniel"), ("sobral", "Sobral"),
+                            ("vinicius", "Vinicius"), ("barsi", "Barsi"), ("felipe", "Felipe"),
+                            ("caseiro", "Caseiro"), ("miga", "Miga"), ("canario", "Canário"))
+    ]
+    cadastro.append({"id": "pavan-alerta", "nome": "Pavan alerta", "socket": "borges-pavan-alerta",
+                     "sessao": "pavan-alerta", "cadeira_de": "pavan"})
+    m = MaquinasFrota(home=linux.m.home, proc=linux.m.proc, cgroup=linux.m.cgroup,
+                     runtime=linux.m.runtime, agentes=cadastro,
+                     relogio=lambda: linux.agora[0], monotono=lambda: linux.agora[1])
+    def executar_seguro(cmd, **kwargs):
+        assert cmd == ["docker", "ps", "--no-trunc", "--format", "{{.ID}}\t{{.Names}}"]
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+    m.executar = executar_seguro
+    inventario = []
+    monkeypatch.setattr(m, "_inventario", lambda: iter(inventario))
+    monkeypatch.setattr(modulo.time, "sleep", lambda _: linux.agora.__setitem__(1, linux.agora[1] + 1))
+
+    def sessao(ident="pavan", pid=100, *, cadeira=False, scope="app.slice/tmux-spawn-a.scope"):
+        # O tmux e o CLI ficam em scopes DIFERENTES, como na VPS.
+        linux.processo(pid, args=("tmux",), pss=1024, swap=0)
+        linux.scope(f"app.slice/servico-{pid}.service", pid)
+        linux.processo(pid + 1, ppid=pid, args=("bash",), pss=1024, swap=0)
+        linux.scope(scope, pid + 1)
+        linux.processo(pid + 2, ppid=pid + 1, args=("claude",), pss=2048, swap=0)
+        linux.processo(pid + 3, ppid=pid + 2, args=("bun", "server.ts"), pss=4096, swap=0)
+        compartilhado = linux.m.cgroup / "borges.slice/borges-frota.slice/run-u5465.scope/cgroup.procs"
+        antigos = [int(v) for v in compartilhado.read_text().split()] if compartilhado.exists() else []
+        linux.scope("borges.slice/borges-frota.slice/run-u5465.scope", *antigos, pid + 2, pid + 3)
+        inventario.append((m.sockets / ("borges-" + ident), pid, "$0", ident, cadeira, {pid + 1}))
+        return next(s for s in m.scopes() if s.principal.pid == pid + 1)
+
+    return types.SimpleNamespace(m=m, inventario=inventario, sessao=sessao, modulo=modulo)
+
+
+def test_defaults_seguem_uid_real(monkeypatch, tmp_path):
+    monkeypatch.setattr(os, "getuid", lambda: 1002)
+    m = Maquinas(home=tmp_path)
+    assert m.cgroup == Path("/sys/fs/cgroup/user.slice/user-1002.slice/user@1002.service")
+    assert m.runtime == Path("/run/user/1002")
+
+
+def test_frota_soma_sessao_atraves_de_scopes_e_separa_cadeira(linux, frota):
+    principal = frota.sessao()
+    # Cadeira em outro socket, servidor dentro de serviço protegido (poller).
+    cadeira = frota.sessao("pavan-alerta", 200, cadeira=True, scope="app.slice/tmux-spawn-b.scope")
+    frota.m.amostrar()
+    linux.agora[1] = 1800
+    frota.m.amostrar()
+    terminais = [i for i in frota.m.abertos()["itens"] if i["grupo"] == "terminal"]
+    assert [(i["rotulo"], i["dono"], i["memoria_mb"], i["parado_s"], i["cpu_pct"])
+            for i in terminais] == [("Pavan", "Pavan", 7, 1800, 0), ("Pavan · cadeira", "Pavan", 7, 1800, 0)]
+    assert {i["id"] for i in terminais} == {principal.id, cadeira.id}
+    assert all(i["acao_rotulo"] and not i["pede_confirmacao"] for i in terminais)
+    assert frota.m.tela() == {"em_uso": None, "ultimo_uso_s": None}
+
+
+@pytest.mark.parametrize("ident,nome", [("pavan", "Pavan"), ("daniel", "Daniel"), ("sobral", "Sobral"),
+    ("vinicius", "Vinicius"), ("barsi", "Barsi"), ("felipe", "Felipe"), ("caseiro", "Caseiro"),
+    ("miga", "Miga"), ("canario", "Canário")])
+def test_frota_rotula_cada_agente_pelo_cadastro(frota, ident, nome):
+    sessao = frota.sessao(ident)
+    assert frota.m.rotulo(sessao, {}) == (nome, nome)
+
+
+@pytest.mark.parametrize("nome,args", [
+    ("system.slice/docker.service", ("dockerd",)),
+    ("system.slice/docker-123.scope", ("node", "n8n")),
+    ("system.slice/supabase.service", ("postgres",)),
+    ("system.slice/evolution.service", ("node",)),
+    ("system.slice/ssh.service", ("sshd",)),
+    ("system.slice/tailscaled.service", ("tailscaled",)),
+    ("system.slice/cron.service", ("cron",)),
+    ("app.slice/cockpit-api.service", ("python", "-m", "uvicorn", "main:app")),
+    ("app.slice/cockpit-v2.service", ("next-server",)),
+    ("app.slice/cockpit-maquina.service", ("python", "painel.py")),
+    ("app.slice/vigia-fluyt-ponte.service", ("bash",)),
+    ("app.slice/poller.service", ("bun",)),
+    ("borges.slice/borges-frota.slice/run-u999.scope", ("claude",)),
+    ("app.slice/tmux-spawn-desconhecido.scope", ("claude",)),
+])
+def test_frota_protege_infra_e_orfaos_sem_executor(linux, frota, nome, args):
+    linux.processo(10, args=args)
+    linux.scope(nome, 10)
+    item = frota.m.abertos()["itens"][0]
+    assert item["grupo"] == "protegido" and item["acao_rotulo"] is None
+    falha(403, frota.m.fechar, item["id"])
+
+
+def test_frota_cgroup_compartilhado_e_servico_filho_nao_viram_alvo(linux, frota):
+    frota.sessao()
+    # Servidor de Canário herdou o scope de Pavan: não pode cair junto.
+    linux.processo(300, ppid=102, args=("tmux",))
+    linux.processo(301, ppid=300, args=("claude",))
+    linux.processo(400, ppid=102, args=("bun", "poller"))
+    linux.scope("borges.slice/borges-frota.slice/run-u5465.scope", 102, 103, 300, 301)
+    linux.scope("app.slice/poller.service", 400)
+    sessao = next(s for s in frota.m.scopes() if s.principal.pid == 101)
+    assert {p.pid for p in sessao.processos} == {101, 102, 103}
+    assert {p.pid for s in frota.m.scopes() if frota.m.classificar(s, {}) == "protegido"
+            for p in s.processos} == {100, 300, 301, 400}
+
+
+def test_frota_fechar_usa_executor_falso_somente_sessao_e_pidfds(linux, frota, monkeypatch):
+    sessao = frota.sessao()
+    sinais, comandos, fechados = [], [], []
+    monkeypatch.setattr(os, "pidfd_open", lambda pid: pid + 1000)
+    fechar_original = os.close
+    monkeypatch.setattr(os, "close", lambda fd: fechados.append(fd) if fd >= 1000 else fechar_original(fd))
+
+    def sinalizar(fd, sig):
+        assert sig == signal.SIGTERM
+        sinais.append(fd - 1000)
+        shutil.rmtree(linux.m.proc / str(fd - 1000))
+
+    def executar(cmd, **kwargs):
+        comandos.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    frota.m.executar = executar
+    monkeypatch.setattr(signal, "pidfd_send_signal", sinalizar)
+    assert frota.m.fechar(sessao.id) == {"liberou_mb": 7}
+    assert sinais == [103, 102, 101]
+    assert fechados == [1101, 1102, 1103]
+    assert comandos == [["tmux", "-S", str(frota.m.sockets / "borges-pavan"), "kill-session", "-t", "$0"]]
+    assert frota.m.processo(100) is not None  # Servidor e serviço seguem intactos.
+
+
+def test_frota_revalida_pid_e_sessao_antes_de_efeito(linux, frota, monkeypatch):
+    sessao = frota.sessao()
+    fechados = []
+
+    def abrir(pid):
+        linux.processo(pid, inicio=99999)
+        return 500
+
+    monkeypatch.setattr(os, "pidfd_open", abrir)
+    monkeypatch.setattr(os, "close", fechados.append)
+    falha(409, frota.m.fechar, sessao.id)
+    assert fechados == [500]
+    falha(404, frota.m.fechar, sessao.id)
+
+
+def test_frota_falha_de_inventario_so_deixa_protegidos(linux, frota):
+    frota.sessao()
+    frota.inventario.clear()
+    assert all(i["grupo"] == "protegido" for i in frota.m.abertos()["itens"])
+
+
+def test_frota_inventario_exige_socket_cadastro_e_alvo_exato(linux, frota, monkeypatch, tmp_path):
+    from frota import MaquinasFrota
+    m = frota.m
+    m.sockets = tmp_path / "sockets"
+    m.sockets.mkdir()
+    sock = socket.socket(socket.AF_UNIX)
+    sock.bind(str(m.sockets / "borges-pavan"))
+    comandos = []
+
+    def executar(cmd, **kwargs):
+        comandos.append(cmd)
+        assert cmd[3:6] == ["list-panes", "-a", "-F"]
+        return subprocess.CompletedProcess(cmd, 0,
+            "100\tpavan\t$0\t101\n100\tpavan__revisao\t$1\t201\n"
+            "100\tservico\t$2\t301\n100\tpavan\tnao-exato\t401\n", "")
+
+    m.executar = executar
+    try:
+        inventario = list(MaquinasFrota._inventario(m))
+        assert [(v[1], v[2], v[3], v[4], v[5]) for v in inventario] == [
+            (100, "$0", "pavan", False, {101}), (100, "$1", "pavan", True, {201})]
+        assert len(comandos) == 1
+    finally:
+        sock.close()
+
+
+def test_http_vps_lista_e_recusa_protegido_sem_sinal(http_painel, linux, frota, monkeypatch):
+    frota.sessao()
+    monkeypatch.setattr(http_painel.painel, "MAQUINAS", frota.m)
+    monkeypatch.setitem(http_painel.painel.CONFIG, "frota_vps", True)
+    assert http_painel("GET", "/api/maquina/abertos", chave=False)[0] == 401
+    status, corpo = http_painel("GET", "/api/maquina/abertos")
+    assert status == 200
+    assert {i["grupo"] for i in corpo["itens"]} == {"terminal", "protegido"}
+    protegido = next(i for i in corpo["itens"] if i["grupo"] == "protegido")
+    assert http_painel("POST", "/api/maquina/fechar", json.dumps({"id": protegido["id"]}))[0] == 403
+    headers = {"Origin": "http://" + http_painel.autoridade,
+               "Content-Type": "application/x-www-form-urlencoded"}
+    assert http_painel("POST", "/api/acao", "agente=pavan&acao=desligar", headers=headers)[0] == 403
+
+
+def test_frota_supervisor_ativo_nao_e_parado(linux, frota):
+    frota.sessao()
+    shutil.rmtree(linux.m.cgroup / "app.slice/servico-100.service")
+    linux.scope("system.slice/borges-clawd@pavan.service", 100)
+    assert all(i["grupo"] == "protegido" for i in frota.m.abertos()["itens"])
+
+
+def test_frota_sessao_desaparece_entre_validacoes_sem_efeito(linux, frota, monkeypatch):
+    sessao = frota.sessao()
+    fechados = []
+    def abrir(pid):
+        frota.inventario.clear()
+        return pid + 1000
+    monkeypatch.setattr(os, "pidfd_open", abrir)
+    monkeypatch.setattr(os, "close", fechados.append)
+    falha(404, frota.m.fechar, sessao.id)
+    assert fechados == [1101, 1102, 1103]
+
+
+def test_frota_nao_fecha_sessao_com_parentesco_incorreto(linux, frota):
+    frota.sessao()
+    linux.processo(101, ppid=999, args=("bash",))
+    assert all(i["grupo"] == "protegido" for i in frota.m.abertos()["itens"])
+
+
+def test_frota_fechar_timeout_nao_escala_para_kill(linux, frota, monkeypatch):
+    sessao = frota.sessao()
+    sinais, fechados = [], []
+    monkeypatch.setattr(os, "pidfd_open", lambda pid: pid + 1000)
+    monkeypatch.setattr(os, "close", fechados.append)
+    monkeypatch.setattr(signal, "pidfd_send_signal", lambda fd, sig: sinais.append((fd, sig)))
+    frota.m.executar = lambda cmd, **kwargs: subprocess.CompletedProcess(cmd, 0, "", "")
+    falha(409, frota.m.fechar, sessao.id)
+    assert sinais == [(1103, signal.SIGTERM), (1102, signal.SIGTERM), (1101, signal.SIGTERM)]
+    assert fechados == [1101, 1102, 1103]
+
+
+def test_frota_rotulo_container_usa_nome_sem_ler_env(linux, frota):
+    linux.processo(10, args=("postgres",))
+    linux.scope("system.slice/docker-abc123.scope", 10)
+    chamadas = []
+    def executar(cmd, **kwargs):
+        chamadas.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, "abc123\tsupabase-db\n", "")
+    frota.m.executar = executar
+    for _ in range(2):
+        item = frota.m.abertos()["itens"][0]
+        assert (item["rotulo"], item["grupo"], item["acao_rotulo"]) == ("Container supabase-db", "protegido", None)
+    assert len(chamadas) == 1

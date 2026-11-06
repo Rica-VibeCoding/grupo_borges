@@ -138,13 +138,13 @@ def fechar_browser(url, porta):
 
 class Maquinas:
     def __init__(self, *, agentes=(), home=None, proc=Path("/proc"), cgroup=None,
-                 runtime=Path("/run/user/1000"), chave=None,
+                 runtime=None, chave=None,
                  relogio=time.time, monotono=time.monotonic):
         self.home = Path.home() if home is None else Path(home)
         self.proc = Path(proc)
         self.cgroup = Path(cgroup) if cgroup is not None else Path(
-            "/sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service")
-        self.runtime = Path(runtime)
+            f"/sys/fs/cgroup/user.slice/user-{os.getuid()}.slice/user@{os.getuid()}.service")
+        self.runtime = Path(runtime) if runtime is not None else Path(f"/run/user/{os.getuid()}")
         self.chave = Path(chave) if chave is not None else self.home / ".config/cockpit-maquina/chave"
         self.agentes = {a["id"]: a["nome"] for a in agentes}
         self.relogio, self.monotono = relogio, monotono
