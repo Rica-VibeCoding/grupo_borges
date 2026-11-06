@@ -35,6 +35,9 @@ class CadeiraCodex(ScopePorProcessos):
 
 
 class MaquinasFrota(Maquinas):
+    # A quebra física (zram/kernel/Sem dono) vem de Maquinas.contabilizar.
+    # Esta raiz já inclui serviços de root e containers: não há uma segunda
+    # cobrança em "Sistema" para as mesmas unidades.
     def _contadores_cpu(self, scope):
         # Sessões atravessam/compartilham cgroups: o contador da unidade inteira
         # duplicaria CPU e atribuiria trabalho ao dono errado. /proc/<pid>/stat

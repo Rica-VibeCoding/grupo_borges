@@ -42,9 +42,11 @@ def linux(tmp_path, monkeypatch):
     (proc / "sys/kernel/random").mkdir(parents=True)
     (proc / "sys/kernel/random/boot_id").write_text("boot-teste")
     (proc / "stat").write_text("cpu 0 0 0 1000 0 0 0 0 0 0\n")
-    (proc / "meminfo").write_text("MemTotal: 8192000 kB\nMemAvailable: 4096000 kB\n")
+    (proc / "meminfo").write_text("MemTotal: 8192000 kB\nMemAvailable: 4096000 kB\n"
+                                 "SUnreclaim: 0 kB\nKernelStack: 0 kB\nPageTables: 0 kB\n")
     agora = [10_000.0, 0.0]
-    m = Maquinas(home=home, proc=proc, cgroup=cg, runtime=runtime,
+    m = Maquinas(home=home, proc=proc, cgroup=cg, cgroup_sistema=cg,
+                 sys_block=tmp_path / "sys-block", runtime=runtime,
                  agentes=[{"id": "fluytcom", "nome": "Fluyt"}],
                  relogio=lambda: agora[0], monotono=lambda: agora[1])
     m.chave.parent.mkdir(parents=True)
@@ -554,7 +556,7 @@ def test_fora_da_lista_fecha_cpu_e_ram_e_nao_e_fechavel(linux, monkeypatch):
     leitura = linux.m.abertos()
     item, fora = leitura["itens"]
     assert item["cpu_pct"] == 20 and item["memoria_mb"] == 120
-    assert fora["rotulo"] == "Fora da lista" and fora["grupo"] == "residual"
+    assert fora["rotulo"] == "Sem dono" and fora["grupo"] == "residual"
     assert fora["cpu_pct"] == 55 and fora["memoria_mb"] == 3880
     assert sum(i["cpu_pct"] for i in leitura["itens"]) == leitura["cpu_pct"] == 75
     assert sum(i["memoria_mb"] for i in leitura["itens"]) == leitura["memoria_mb"] == 4000
@@ -641,6 +643,7 @@ def test_cache_distingue_primeira_amostra_de_atividade(linux, duas_amostras, esp
         uso(pasta, 300_000)
         linux.m.amostrar()
     novo = Maquinas(home=linux.m.home, proc=linux.m.proc, cgroup=linux.m.cgroup,
+                    cgroup_sistema=linux.m.cgroup, sys_block=linux.m.sys_block,
                     relogio=lambda: linux.agora[0], monotono=lambda: linux.agora[1])
     assert novo.parado(novo.scopes()[0].id) == esperado
 
@@ -660,6 +663,7 @@ def test_observacoes_preservam_40min_apos_reinicio(linux, intervalo, mono):
     assert dados["observacoes"][item_id]["desde"] == 10000
     linux.agora[:] = [12400 + intervalo, mono]
     novo = Maquinas(home=linux.m.home, proc=linux.m.proc, cgroup=linux.m.cgroup,
+                    cgroup_sistema=linux.m.cgroup, sys_block=linux.m.sys_block,
                     relogio=lambda: linux.agora[0], monotono=lambda: linux.agora[1])
     assert novo.parado(item_id) == 2400
     uso(pasta, intervalo * 1000)
@@ -705,6 +709,7 @@ def test_cache_corrompido_ou_schedstat_antigo_comeca_do_zero(linux, conteudo):
     arquivo.write_bytes(conteudo)
     linux.agora[:] = [12000, 2000]
     novo = Maquinas(home=linux.m.home, proc=linux.m.proc, cgroup=linux.m.cgroup,
+                    cgroup_sistema=linux.m.cgroup, sys_block=linux.m.sys_block,
                     relogio=lambda: linux.agora[0], monotono=lambda: linux.agora[1])
     assert novo.observado_desde == 12000 and novo._observacoes == {}
     novo.amostrar()
@@ -1062,6 +1067,7 @@ def frota(linux, monkeypatch):
     cadastro.append({"id": "pavan-alerta", "nome": "Pavan alerta", "socket": "borges-pavan-alerta",
                      "sessao": "pavan-alerta", "cadeira_de": "pavan"})
     m = MaquinasFrota(home=linux.m.home, proc=linux.m.proc, cgroup=linux.m.cgroup,
+                     cgroup_sistema=linux.m.cgroup, sys_block=linux.m.sys_block,
                      runtime=linux.m.runtime, agentes=cadastro,
                      relogio=lambda: linux.agora[0], monotono=lambda: linux.agora[1])
     def executar_seguro(cmd, **kwargs):

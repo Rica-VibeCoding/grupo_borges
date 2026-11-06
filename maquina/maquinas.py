@@ -24,6 +24,7 @@ from urllib.parse import urlsplit
 from chrome_processos import agrupar_chromes
 from atividade_agentes import RegistrosClaude
 from medicao_processos import RELOGIO, contadores_cpu, delta_processos, memoria_mb, soma_medidas
+from memoria_sistema import item_memoria, itens_sistema
 
 
 IDENT = re.compile(r"[A-Za-z0-9_-]{1,64}\Z")
@@ -150,12 +151,14 @@ def fechar_browser(url, porta):
 
 class Maquinas:
     def __init__(self, *, agentes=(), home=None, proc=Path("/proc"), cgroup=None,
-                 runtime=None, chave=None,
+                 runtime=None, chave=None, cgroup_sistema=Path("/sys/fs/cgroup"),
+                 sys_block=Path("/sys/block"),
                  relogio=time.time, monotono=time.monotonic):
         self.home = Path.home() if home is None else Path(home)
         self.proc = Path(proc)
         self.cgroup = Path(cgroup) if cgroup is not None else Path(
             f"/sys/fs/cgroup/user.slice/user-{os.getuid()}.slice/user@{os.getuid()}.service")
+        self.cgroup_sistema, self.sys_block = Path(cgroup_sistema), Path(sys_block)
         self.runtime = Path(runtime) if runtime is not None else Path(f"/run/user/{os.getuid()}")
         self.chave = Path(chave) if chave is not None else self.home / ".config/cockpit-maquina/chave"
         self.agentes = {a["id"]: a["nome"] for a in agentes}
@@ -447,13 +450,17 @@ class Maquinas:
 
     @staticmethod
     def _unidades_filhas(scope):
+        yield from Maquinas._unidades_filhas_caminho(scope.caminho)
+
+    @staticmethod
+    def _unidades_filhas_caminho(caminho):
         # Sub-cgroups comuns pertencem ao item; outra unidade tem linha própria.
-        for arquivo in scope.caminho.rglob("cgroup.procs"):
+        for arquivo in caminho.rglob("cgroup.procs"):
             filha = arquivo.parent
-            if filha == scope.caminho or filha.suffix not in {".scope", ".service"}:
+            if filha == caminho or filha.suffix not in {".scope", ".service"}:
                 continue
             if not any(p.suffix in {".scope", ".service"}
-                       for p in filha.relative_to(scope.caminho).parents if p != Path(".")):
+                       for p in filha.relative_to(caminho).parents if p != Path(".")):
                 yield filha
 
     def _contadores_cpu(self, scope):
@@ -642,25 +649,27 @@ class Maquinas:
                               "parado_s": parado,
                               "abas": [], "pede_confirmacao": False,
                               "acao_rotulo": "Fechar cadeira" if cadeira else "Fechar " + rotulo})
-        return self.contabilizar({"observado_desde": self.observado_desde, "itens": itens}, cpu_total)
+        return self.contabilizar({"observado_desde": self.observado_desde, "itens": itens}, cpu_total, scopes)
 
-    def contabilizar(self, leitura, cpu_total):
+    def contabilizar(self, leitura, cpu_total, scopes=()):
         """Completa a mesma lista que o cliente renderiza, inclusive fora de user@."""
         mem = self._estatisticas_memoria()
         ram = round((mem["MemTotal"] - mem["MemAvailable"]) / 1024, 2)
         itens = leitura["itens"]
         cpu_listada = soma_medidas(i["cpu_pct"] for i in itens)
+        itens.extend(itens_sistema(self, mem, scopes))
         ram_listada = soma_medidas(i["memoria_mb"] for i in itens)
         # Leituras não atômicas podem divergir; residual impossível é desconhecido,
         # nunca consumo negativo nem zero inventado para fechar a conta.
         cpu_resto = None if cpu_total is None or cpu_listada is None else round(cpu_total - cpu_listada, 1)
         ram_resto = None if ram_listada is None else round(ram - ram_listada, 2)
-        itens.append({"id": "fora-da-lista", "grupo": "residual", "rotulo": "Fora da lista",
-                      "dono": None, "cpu_pct": cpu_resto if cpu_resto is not None and cpu_resto >= 0 else None,
-                      "memoria_mb": ram_resto if ram_resto is not None and ram_resto >= 0 else None, "parado_s": None,
-                      "abas": [], "pede_confirmacao": False, "acao_rotulo": None})
+        resto = item_memoria("fora-da-lista", "Sem dono",
+                             ram_resto if ram_resto is not None and ram_resto >= 0 else None)
+        resto["cpu_pct"] = cpu_resto if cpu_resto is not None and cpu_resto >= 0 else None
+        itens.append(resto)
         return {**leitura, "cpu_pct": cpu_total, "memoria_mb": ram,
-                "memoria_metrica": "anon+shmem", "medido_em": int(self.relogio())}
+                "memoria_metrica": "anon+shmem", "memoria_meminfo_kb": mem,
+                "medido_em": int(self.relogio())}
 
     def _estatisticas_memoria(self):
         return {nome: int(valor.split()[0]) for nome, valor in
