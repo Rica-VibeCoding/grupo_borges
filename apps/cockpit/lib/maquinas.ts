@@ -167,9 +167,16 @@ export function textoDoParado(parado_s: number | null, observado_desde: number, 
   return `parado há ${duracao(parado_s)}`;
 }
 
-/** A coluna "Parado": "8 min", "12+ min" ou "—" (em uso, ou o painel ainda não viu). */
-export function paradoCurto(parado_s: number | null, observado_desde: number, agora: number): string {
-  return textoDoParado(parado_s, observado_desde, agora)?.replace('parado há ', '') ?? '—';
+/**
+ * A coluna "Atividade": em uso (o painel viu mexer no último minuto), parado com o
+ * tempo ("8 min", "12+ min") ou desconhecido (o painel ainda não viu — traço).
+ */
+export type Atividade = { estado: 'em-uso' } | { estado: 'parado'; texto: string } | { estado: 'desconhecido' };
+
+export function atividade(parado_s: number | null, observado_desde: number, agora: number): Atividade {
+  if (parado_s === null) return { estado: 'desconhecido' };
+  const parado = textoDoParado(parado_s, observado_desde, agora);
+  return parado ? { estado: 'parado', texto: parado.replace('parado há ', '') } : { estado: 'em-uso' };
 }
 
 /** "3%", "<1%" ou "—" enquanto o painel não tem duas amostras. */

@@ -3,9 +3,9 @@ import { test } from 'node:test';
 
 import {
   agrupa,
+  atividade,
   maquinasDeFora,
   nomeNaLinha,
-  paradoCurto,
   seloDaMaquina,
   temperaturaEmAlerta,
   textoDaCpu,
@@ -128,11 +128,13 @@ test('mini cartão some com a máquina que o cartão de recursos já mede, sem o
   assert.deepEqual(maquinasDeFora(lista, 'VPS').map((m) => m.id), ['arsenal', 'note']);
 });
 
-test('coluna Parado: só o tempo, com o "+" do piso; em uso ou sem leitura, traço', () => {
-  assert.equal(paradoCurto(600, AGORA - 3600, AGORA), '10 min');
-  assert.equal(paradoCurto(3600, AGORA - 720, AGORA), '12+ min');
-  assert.equal(paradoCurto(10, AGORA - 3600, AGORA), '—');
-  assert.equal(paradoCurto(null, AGORA - 3600, AGORA), '—');
+test('coluna Atividade: em uso, parado com o tempo (e o "+" do piso) ou desconhecido', () => {
+  assert.deepEqual(atividade(600, AGORA - 3600, AGORA), { estado: 'parado', texto: '10 min' });
+  assert.deepEqual(atividade(3600, AGORA - 720, AGORA), { estado: 'parado', texto: '12+ min' });
+  assert.deepEqual(atividade(60, AGORA - 3600, AGORA), { estado: 'parado', texto: '1 min' });
+  assert.deepEqual(atividade(59, AGORA - 3600, AGORA), { estado: 'em-uso' });
+  assert.deepEqual(atividade(0, AGORA - 3600, AGORA), { estado: 'em-uso' });
+  assert.deepEqual(atividade(null, AGORA - 3600, AGORA), { estado: 'desconhecido' });
 });
 
 test('CPU: arredonda, "<1%" no quase nada e traço sem amostra', () => {
