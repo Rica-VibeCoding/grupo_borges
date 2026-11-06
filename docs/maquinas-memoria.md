@@ -91,3 +91,11 @@ Reinícios comprovados por PID/data de início e checksums iguais ao repositóri
 A árvore `~/Projetos/grupo_borges` do Arsenal não foi acessada.
 Note: offline na Tailscale, com timeout de SSH em duas tentativas; instalação
 aguarda conectividade. Não foi alegada como concluída.
+
+Front publicado às 11:26:24 UTC a partir do commit local `1e81ff4`, sem push.
+Foi usado o mesmo script `publicar-cockpit.sh` numa cópia temporária, substituindo
+apenas a referência `origin/main` pelo hash local: worktree isolado, build em
+estágio, prova de página/chunk na 3013, troca, restart e checagem na 3008.
+`deploymentId=734dc2f25133`; a rota `/abertos?m=arsenal` e as duas consultas
+`/api/maquinas/{arsenal,vps}/abertos` responderam pela 3008 com as novas linhas.
+O bundle contém o texto “Sistema e sem dono”. Nenhuma mudança em componente.
