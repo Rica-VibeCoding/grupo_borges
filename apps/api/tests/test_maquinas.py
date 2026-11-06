@@ -322,3 +322,10 @@ async def test_pc_sem_listagem_preserva_explicacao(cliente, painel):
     resposta = await cliente.get('/api/maquinas/pc/abertos')
     assert resposta.status_code == 501
     assert resposta.json() == corpo
+
+
+async def test_ram_e_liberacao_desconhecidas_atravessam_ponte(cliente, painel):
+    corpo = {**ABERTOS, 'itens': [{**ABERTOS['itens'][0], 'memoria_mb': None}]}
+    painel[0](lambda r: httpx.Response(200, json={'liberou_mb': None} if r.method == 'POST' else corpo))
+    assert (await cliente.get('/api/maquinas/note/abertos')).json() == corpo
+    assert (await cliente.post('/api/maquinas/note/fechar', json={'id': 'teste'})).json() == {'liberou_mb': None}

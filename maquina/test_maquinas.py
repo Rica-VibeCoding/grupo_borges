@@ -1349,3 +1349,42 @@ def test_frota_rotulo_container_usa_nome_sem_ler_env(linux, frota):
         item = frota.m.abertos()["itens"][:-1][0]
         assert (item["rotulo"], item["grupo"], item["acao_rotulo"]) == ("Container supabase-db", "protegido", None)
     assert len(chamadas) == 1
+
+
+def test_frota_root_e_container_medidos_por_cgroup_sem_smaps(linux, frota):
+    for pid, nome, mb in ((700, 'system.slice/docker-abc.scope', 276), (800, 'system.slice/root.service', 133)):
+        linux.processo(pid, args=('root-worker',))
+        pasta = linux.scope(nome, pid)
+        (pasta / 'memory.stat').write_text(f'anon {mb * 2**20}\nshmem 0\nfile 900000000\n')
+        (linux.m.proc / str(pid) / 'smaps_rollup').unlink()
+    leitura = frota.m.abertos()
+    assert [i['memoria_mb'] for i in leitura['itens']] == [276, 133, 3591]
+    assert sum(i['memoria_mb'] for i in leitura['itens']) == leitura['memoria_mb'] == 4000
+
+
+def test_frota_recorte_nao_reconta_ram_de_sessao_no_protegido(linux, frota):
+    frota.sessao()
+    linux.processo(500, args=('worker',), pss=3072)
+    linux.scope('borges.slice/borges-frota.slice/run-u5465.scope', 102, 103, 500)
+    itens = frota.m.abertos()['itens']
+    protegido = next(i for i in itens if i['rotulo'] == 'Run u5465')
+    sessao = next(i for i in itens if i['grupo'] == 'terminal')
+    assert protegido['memoria_mb'] == 3
+    assert sessao['memoria_mb'] == 7
+
+
+@pytest.mark.parametrize('recorte', [False, True])
+def test_memoria_indisponivel_e_null_sem_soma_parcial(linux, frota, recorte):
+    if recorte:
+        frota.sessao()
+        (linux.m.proc / '102/smaps_rollup').unlink()
+        leitura = frota.m.abertos()
+        item = next(i for i in leitura['itens'] if i['grupo'] == 'terminal')
+    else:
+        linux.processo(10)
+        pasta = linux.scope('app.slice/a.scope', 10)
+        (pasta / 'memory.stat').unlink()
+        leitura = linux.m.abertos()
+        item = leitura['itens'][0]
+    assert item['memoria_mb'] is None
+    assert leitura['itens'][-1]['memoria_mb'] is None

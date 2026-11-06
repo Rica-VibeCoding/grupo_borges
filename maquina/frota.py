@@ -14,7 +14,8 @@ import stat
 import subprocess
 import time
 
-from maquinas import Falha, IDENT, Maquinas, Processo, Scope
+from maquinas import Falha, IDENT, Maquinas, Processo, Scope, ScopePorProcessos
+from medicao_processos import contadores_cpu, memoria_mb
 
 
 @dataclass(frozen=True)
@@ -33,16 +34,7 @@ class MaquinasFrota(Maquinas):
         # duplicaria CPU e atribuiria trabalho ao dono errado. /proc/<pid>/stat
         # inclui TODAS as threads (utime+stime), ao contrário de schedstat.
         # Workers que nascem e morrem entre leituras ficam em Fora da lista.
-        contadores = {}
-        for p in scope.processos:
-            try:
-                campos = (self.proc / str(p.pid) / "stat").read_text().rsplit(")", 1)[1].split()
-                if int(campos[19]) == p.inicio:
-                    uso = (int(campos[11]) + int(campos[12])) * 1_000_000 // os.sysconf("SC_CLK_TCK")
-                    contadores[f"pid:{p.pid}:{p.inicio}"] = uso
-            except (OSError, ValueError, IndexError):
-                pass
-        return contadores
+        return contadores_cpu(self.proc, scope.processos)
 
     @staticmethod
     def _delta_cpu(cpus, anterior):
@@ -51,16 +43,10 @@ class MaquinasFrota(Maquinas):
         return Maquinas._delta_cpu(cpus, anterior)
 
     def memoria(self, scope):
-        # Mesmo recorte residente anon+shmem, proporcional entre processos.
-        kb = 0
-        for p in scope.processos:
-            try:
-                for linha in (self.proc / str(p.pid) / "smaps_rollup").read_text().splitlines():
-                    if linha.startswith(("Pss_Anon:", "Pss_Shmem:")):
-                        kb += int(linha.split()[1])
-            except (OSError, ValueError, IndexError):
-                pass
-        return round(kb / 1024, 2)
+        if isinstance(scope, (Sessao, ScopePorProcessos)):
+            return memoria_mb(self.proc, scope.processos)
+        # Unidade inteira: memory.stat é legível inclusive para root/containers.
+        return super().memoria(scope)
 
     def __init__(self, *, agentes=(), sockets=None, executar=None, **kwargs):
         kwargs.setdefault("cgroup", Path("/sys/fs/cgroup"))
@@ -187,8 +173,10 @@ class MaquinasFrota(Maquinas):
                 continue
             pids = {p.pid for p in restantes}
             raizes = [p for p in restantes if p.ppid not in pids] or restantes
-            protegidos.append(replace(s, processos=restantes,
-                                      principal=min(raizes, key=lambda p: (p.inicio, p.pid))))
+            principal = min(raizes, key=lambda p: (p.inicio, p.pid))
+            protegidos.append(ScopePorProcessos(s.caminho, s.nome, restantes, principal)
+                              if len(restantes) != len(s.processos)
+                              else replace(s, principal=principal))
         return protegidos + sessoes
 
     def _terminal(self, scope, scopes=None):

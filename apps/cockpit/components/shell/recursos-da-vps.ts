@@ -119,7 +119,8 @@ const MB_POR_GB = 1024;
 
 /** `996 MB`, `7,2 GB`, `35 GB`: uma casa só quando ela ainda distingue alguma
  *  coisa. Vírgula porque a tela é em português. */
-export function formataTamanho(mb: number): string {
+export function formataTamanho(mb: number | null | undefined): string {
+  if (mb == null || !Number.isFinite(mb) || mb < 0) return '—';
   if (mb < MB_POR_GB) return `${Math.round(mb)} MB`;
   const gb = mb / MB_POR_GB;
   return `${(gb < 10 ? gb.toFixed(1) : Math.round(gb).toString()).replace('.', ',')} GB`;

@@ -172,3 +172,15 @@ test('resumo sem primeira amostra não inventa selo de parados', () => {
     texto: null, vermelho: false, descricao: '',
   });
 });
+
+test('RAM desconhecida deixa a soma desconhecida e vem depois das medidas conhecidas', () => {
+  const [grupo] = agrupa([item({ id: 'incerto', grupo: 'agente', memoria_mb: null }), item({ id: 'medido', grupo: 'agente', memoria_mb: 20 })]);
+  assert.equal(grupo.memoria_mb, null);
+  assert.deepEqual(grupo.itens.map(i => i.id), ['medido', 'incerto']);
+});
+
+test('fechar sem medida confirma fechamento sem inventar RAM liberada', async () => {
+  const { textoDoFechado } = await import('./maquinas.ts');
+  assert.equal(textoDoFechado(null), 'Fechado · RAM sem leitura');
+  assert.equal(textoDoFechado(10), 'Liberou 10 MB');
+});

@@ -4,7 +4,7 @@
 // estado mostra. Sem React: a lógica que decide o que a tela diz é testável em
 // `node --test`.
 
-import type { Recurso } from '../components/shell/recursos-da-vps.ts';
+import { formataTamanho, type Recurso } from '../components/shell/recursos-da-vps.ts';
 
 export type Maquina = { id: string; nome: string };
 
@@ -32,7 +32,7 @@ export type ItemAberto = {
   grupo: Grupo;
   rotulo: string;
   dono: string | null;
-  memoria_mb: number;
+  memoria_mb: number | null;
   /** Fatia da máquina inteira no último minuto; null até a 2ª amostra do painel. */
   cpu_pct?: number | null;
   parado_s: number | null;
@@ -54,6 +54,10 @@ export class FalhaDaMaquina extends Error {
 
 export function textoDaFalhaDosAbertos(mensagem: string, status?: number): string {
   return status === 501 ? mensagem : `Não consegui listar o que está aberto: ${mensagem}. Tento de novo sozinho.`;
+}
+
+export function textoDoFechado(mb: number | null): string {
+  return mb === null ? 'Fechado · RAM sem leitura' : `Liberou ${formataTamanho(mb)}`;
 }
 
 // No servidor o fetch precisa de URL absoluta; no cliente o rewrite do
@@ -98,7 +102,7 @@ export async function fetchAbertos(id: string): Promise<Abertos> {
   return res.json();
 }
 
-export async function postFechar(maquina: string, item: string): Promise<{ liberou_mb: number }> {
+export async function postFechar(maquina: string, item: string): Promise<{ liberou_mb: number | null }> {
   const res = await fetch(`/api/maquinas/${maquina}/fechar`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -131,14 +135,14 @@ const NOME_DO_GRUPO: Record<Grupo, string> = {
 
 const ORDEM_DOS_GRUPOS: Grupo[] = ['seus', 'terminal', 'agente', 'protegido'];
 
-export type GrupoDeItens = { grupo: Grupo; nome: string; itens: ItemAberto[]; memoria_mb: number };
+export type GrupoDeItens = { grupo: Grupo; nome: string; itens: ItemAberto[]; memoria_mb: number | null };
 
 /** Os grupos na ordem da tela, cada um do que mais come ao que menos. Grupo vazio não vem. */
 export function agrupa(itens: ItemAberto[]): GrupoDeItens[] {
   return ORDEM_DOS_GRUPOS.flatMap((grupo) => {
-    const doGrupo = itens.filter((i) => i.grupo === grupo).sort((a, b) => b.memoria_mb - a.memoria_mb);
+    const doGrupo = itens.filter((i) => i.grupo === grupo).sort((a, b) => (b.memoria_mb ?? -1) - (a.memoria_mb ?? -1));
     if (doGrupo.length === 0) return [];
-    const memoria_mb = doGrupo.reduce((soma, i) => soma + i.memoria_mb, 0);
+    const memoria_mb = doGrupo.some((i) => i.memoria_mb === null) ? null : doGrupo.reduce((soma, i) => soma + i.memoria_mb!, 0);
     return [{ grupo, nome: NOME_DO_GRUPO[grupo], itens: doGrupo, memoria_mb }];
   });
 }

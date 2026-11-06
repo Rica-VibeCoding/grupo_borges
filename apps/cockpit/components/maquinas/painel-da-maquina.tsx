@@ -38,7 +38,7 @@ const INTERVALO_MS = 10_000;
 /** Quanto o "Liberou" fica: menos que um ciclo, então a linha sai no seguinte. */
 const MOSTRA_LIBEROU_MS = 8_000;
 
-export type Liberados = Record<string, { item: ItemAberto; mb: number; ate: number }>;
+export type Liberados = Record<string, { item: ItemAberto; mb: number | null; ate: number }>;
 
 export type LeituraDosAbertos = { abertos: Abertos } | { falha: string; status?: number } | null;
 

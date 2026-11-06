@@ -147,3 +147,8 @@ test('uma leitura com temperatura basta: a seguinte sem sensor não devolve a Sw
   assert.equal(temSensor({ ...ORACLE, nome: 'Arsenal', temperatura_c: null }, true), true);
   assert.equal(temSensor(null, true), true);
 });
+
+test('tamanho desconhecido ou negativo nunca vira consumo zero ou negativo', () => {
+  for (const mb of [null, undefined, -300, NaN, Infinity]) assert.equal(formataTamanho(mb), '—');
+  assert.equal(formataTamanho(0), '0 MB');
+});

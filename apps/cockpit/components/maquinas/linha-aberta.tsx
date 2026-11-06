@@ -18,7 +18,7 @@ import { useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type HTM
 import { IconeCadeado, IconeVisto } from '@/components/shell/icones';
 import { formataTamanho } from '@/components/shell/recursos-da-vps';
 import { CelulaDaAtividade, Medida } from '@/components/maquinas/medida';
-import { nomeNaLinha, postFechar, textoDaCpu, textoDasAbas, type ItemAberto } from '@/lib/maquinas';
+import { nomeNaLinha, postFechar, textoDoFechado, textoDaCpu, textoDasAbas, type ItemAberto } from '@/lib/maquinas';
 
 type Fase = 'parado' | 'confirmando' | 'fechando';
 
@@ -131,8 +131,8 @@ export function LinhaAberta({
   agora: number;
   primeira: boolean;
   /** Fechou há pouco: quanto liberou. Quem guarda é o painel (`liberados`). */
-  liberouMb: number | null;
-  aoFechar: (item: ItemAberto, mb: number) => void;
+  liberouMb: number | null | undefined;
+  aoFechar: (item: ItemAberto, mb: number | null) => void;
 }) {
   const [fase, setFase] = useState<Fase>('parado');
   const [falha, setFalha] = useState<string | null>(null);
@@ -164,7 +164,7 @@ export function LinhaAberta({
   const nome = nomeNaLinha(item);
   const rotuloDaAcao = item.acao_rotulo ?? undefined;
   // Sempre montada: região viva que nasce com o texto pode não ser anunciada.
-  const anuncio = liberouMb !== null ? `${nome}: liberou ${formataTamanho(liberouMb)}` : falha ? `${nome} não fechou: ${falha}` : '';
+  const anuncio = liberouMb !== undefined ? `${nome}: ${textoDoFechado(liberouMb)}` : falha ? `${nome} não fechou: ${falha}` : '';
 
   return (
     <li style={{ borderTop: primeira ? undefined : '1px solid var(--ck-edge-hairline)' }}>
@@ -193,14 +193,14 @@ export function LinhaAberta({
           ) : null}
         </span>
 
-        {liberouMb !== null ? (
+        {liberouMb !== undefined ? (
           <FimDaLinha>
             <span
               className="ck-maquina-liberou ck-tabular flex items-center"
               style={{ gap: 'var(--ck-space-1)', fontSize: 'var(--ck-text-sm)', fontWeight: 500, color: 'var(--ck-state-ok)' }}
             >
               <IconeVisto tamanho={16} className="shrink-0" />
-              Liberou {formataTamanho(liberouMb)}
+              {textoDoFechado(liberouMb)}
             </span>
           </FimDaLinha>
         ) : fase === 'confirmando' ? (

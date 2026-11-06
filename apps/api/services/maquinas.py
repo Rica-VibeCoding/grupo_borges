@@ -74,7 +74,7 @@ class ItemAberto(RespostaPainel):
     grupo: Literal["seus", "agente", "terminal", "protegido"]
     rotulo: str
     dono: str | None
-    memoria_mb: float
+    memoria_mb: float | None
     cpu_pct: float | None
     parado_s: int | None
     abas: list[str]
@@ -88,7 +88,7 @@ class Abertos(RespostaPainel):
 
 
 class Fechado(RespostaPainel):
-    liberou_mb: float
+    liberou_mb: float | None
 
 
 class Mensagem(RespostaPainel):

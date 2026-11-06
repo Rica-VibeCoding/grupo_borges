@@ -33,7 +33,7 @@ export function ListaDeAbertos({
   maquina: string;
   leitura: LeituraDosAbertos;
   liberados: Liberados;
-  aoFechar: (item: ItemAberto, mb: number) => void;
+  aoFechar: (item: ItemAberto, mb: number | null) => void;
 }) {
   return (
     <section aria-label="Aberto agora" className="flex flex-col" style={{ gap: 'var(--ck-space-2)', minHeight: '240px' }}>
@@ -56,7 +56,7 @@ function Grupos({
   maquina: string;
   leitura: Abertos;
   liberados: Liberados;
-  aoFechar: (item: ItemAberto, mb: number) => void;
+  aoFechar: (item: ItemAberto, mb: number | null) => void;
 }) {
   // O recém-fechado segue na lista até o prazo dele, venha ou não na leitura.
   const agoraMs = Date.now();
@@ -90,7 +90,7 @@ function Grupos({
                 observadoDesde={leitura.observado_desde}
                 agora={agora}
                 primeira={i === 0}
-                liberouMb={idsVivos.has(item.id) ? liberados[item.id].mb : null}
+                liberouMb={idsVivos.has(item.id) ? liberados[item.id].mb : undefined}
                 aoFechar={aoFechar}
               />
             ))}

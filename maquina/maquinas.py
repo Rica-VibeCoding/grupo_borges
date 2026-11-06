@@ -21,6 +21,8 @@ import threading
 import time
 from urllib.parse import urlsplit
 
+from medicao_processos import soma_medidas
+
 
 IDENT = re.compile(r"[A-Za-z0-9_-]{1,64}\Z")
 PROTEGIDOS = {
@@ -61,6 +63,10 @@ class Scope:
     def id(self):
         bruto = f"{self.nome}\0{self.principal.inicio}".encode()
         return base64.urlsafe_b64encode(hashlib.sha256(bruto).digest()[:12]).decode()
+
+
+class ScopePorProcessos(Scope):
+    """Uma parte da unidade: seus contadores de cgroup não pertencem ao item."""
 
 
 @dataclass
@@ -422,7 +428,7 @@ class Maquinas:
                 uso -= mem["anon"] + mem["shmem"]
             return round(max(0, uso) / 2**20, 2)
         except (OSError, ValueError, KeyError):
-            return 0.0  # O total ainda contabiliza a memória em Fora da lista.
+            return None
 
     @staticmethod
     def _unidades_filhas(scope):
@@ -557,7 +563,7 @@ class Maquinas:
                 parado = 0 if 0 in parados else None if None in parados else min(parados)
                 itens.append({"id": alvo.id, "grupo": "terminal",
                               "rotulo": rotulo + " · cadeira" if cadeira else rotulo, "dono": dono,
-                              "memoria_mb": round(sum(self.memoria(s) for s in scopes_item), 2),
+                              "memoria_mb": soma_medidas(self.memoria(s) for s in scopes_item),
                               "cpu_pct": round(sum(cpus), 1) if None not in cpus else None,
                               "parado_s": parado,
                               "abas": [], "pede_confirmacao": False,
@@ -570,12 +576,12 @@ class Maquinas:
         ram = round((mem["MemTotal"] - mem["MemAvailable"]) / 1024, 2)
         itens = leitura["itens"]
         cpu_listada = sum(i["cpu_pct"] or 0 for i in itens)
-        ram_listada = sum(i["memoria_mb"] for i in itens)
+        ram_listada = soma_medidas(i["memoria_mb"] for i in itens)
         # Não esconde diferenças negativas: expõe desvio em vez de alterar itens
         # ou inventar um residual zero (contadores não são leituras atômicas).
         itens.append({"id": "fora-da-lista", "grupo": "protegido", "rotulo": "Fora da lista",
                       "dono": None, "cpu_pct": None if cpu_total is None else round(cpu_total - cpu_listada, 1),
-                      "memoria_mb": round(ram - ram_listada, 2), "parado_s": None,
+                      "memoria_mb": None if ram_listada is None else round(ram - ram_listada, 2), "parado_s": None,
                       "abas": [], "pede_confirmacao": False, "acao_rotulo": None})
         return {**leitura, "cpu_pct": cpu_total, "memoria_mb": ram,
                 "memoria_metrica": "anon+shmem", "medido_em": int(self.relogio())}
