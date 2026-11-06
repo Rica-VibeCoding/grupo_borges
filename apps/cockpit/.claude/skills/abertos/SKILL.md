@@ -26,6 +26,8 @@ Nenhum nome de máquina fixo em tela: vem da API (`COCKPIT_MAQUINA_NOME` ou o ho
 9. **A tela, como o Rica aprovou em 05/11:** uma linha por item (nome · parado · CPU · RAM · Fechar); todo grupo nasce fechado, com a pílula Mostrar/Esconder ao lado do nome; o Protegido fica um degrau mais escuro, com cadeado; grupo vazio some. A UI é feita pela cadeira de UI (o plugin `ui` está clonado no Arsenal em `~/Projetos/agente-ui`).
 8. **No painel do Arsenal, tudo que muda estado exige a chave** (`/api/acao` ligar/desligar/compactar/nova e o Fechar): sem chave 401, sem arquivo 503; só `/` e `/api/estado` seguem abertos na Tailscale (os `/api/maquina/*`, inclusive resumo e abertos, sempre exigiram a chave). O `painel.html` pede a chave uma vez e guarda no `localStorage` do navegador. Prova sem efeito: `ligar` num agente já ligado só faz `tmux has-session` e responde "já no ar".
 
+10. **As 4 máquinas medem pelo mesmo contrato** (`/api/maquinas/<id>/resumo`): Arsenal e Note pelo painel Linux (`~/.local/share/cockpit-maquina/`), o PC pelo `maquina/painel_windows.py` em `%LOCALAPPDATA%\\cockpit-maquina\\`, que sobe pela tarefa agendada `CockpitMaquina` (pythonw, no logon), escuta no IP Tailscale :8787 com a regra de firewall "Cockpit maquina 8787" e chave em `%USERPROFILE%\\.config\\cockpit-maquina\\chave`. O PC devolve temperatura `null` e `abertos` 501 (ainda não lista). Na home e na barra lateral, cada máquina é **uma linha** — CPU · RAM · °C (Rica, 06/11).
+
 ## Publicar
 
 `git commit -- <paths>` → `push-meu.sh <hash>` → `scripts/publicar-cockpit.sh` → restart da `cockpit-api` da VPS → atualizar o Arsenal (item 4). Painel do Arsenal: `scp` de `maquina/*.py` para `~/.local/share/cockpit-maquina/` + `systemctl --user restart cockpit-maquina.service`.
