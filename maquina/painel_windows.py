@@ -249,10 +249,17 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", help="IPv4 Tailscale para o bind (porta 8787)")
     args = parser.parse_args()
-    try:
-        host = host_tailscale(args.host) if args.host else ip_tailscale()
-    except ValueError as exc:
-        parser.error(str(exc))
+    # No logon a Tailscale pode ainda não ter IP: sem esperar, o painel saía
+    # com código 2 e o PC ficava sem dados no cockpit até alguém religar (06/11).
+    prazo = time.monotonic() + 600
+    while True:
+        try:
+            host = host_tailscale(args.host) if args.host else ip_tailscale()
+            break
+        except ValueError as exc:
+            if args.host or time.monotonic() > prazo:
+                parser.error(str(exc))
+            time.sleep(10)
     painel = Painel(Windows())
     with Servidor((host, PORTA), H) as servidor:
         servidor.autoridade = f"{host}:{PORTA}"
