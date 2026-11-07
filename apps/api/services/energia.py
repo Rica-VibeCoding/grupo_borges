@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 import shlex
 import time
@@ -27,7 +28,10 @@ MAQUINAS = {
         "motivo": "liga só na mão",
     },
 }
-PC_SCRIPT = "/home/clawd/repos/ze_claude/pavan/.claude/skills/pc-remoto/scripts/pc.sh"
+# A tomada mora no HA da VPS; fora dela (Arsenal) o .env aponta para um repasse por SSH.
+PC_SCRIPT = os.environ.get(
+    "PC_SCRIPT", "/home/clawd/repos/ze_claude/pavan/.claude/skills/pc-remoto/scripts/pc.sh"
+)
 CACHE_SEGUNDOS = 15
 TCP_TIMEOUT = 3.0
 COMANDO_TIMEOUT = 10.0
