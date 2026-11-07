@@ -14,8 +14,7 @@ Na VPS, o mesmo painel usa `frota_vps` para listar sessões tmux e proteger
 serviços e containers. Configuração e limites: [maquina-vps](../docs/maquina-vps.md).
 
 No PC, `painel_windows.py` também lista as janelas em `/api/maquina/abertos`,
-com executável e RAM por PID, somente consulta. Critérios Win32, fontes e
-limites da medição: [painel Windows](../docs/painel-windows.md).
+com executável e RAM por PID, somente consulta.
 
 ## Medição de recursos
 
