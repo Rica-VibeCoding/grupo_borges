@@ -255,7 +255,7 @@ def main() -> None:
         db = GrupoBorgesDB(args.db)
         report["candidatos"] = asyncio.run(new_candidates(report, db))
         verdicts, usage = evaluate(report["candidatos"], repo=args.repo.resolve(),
-                                   include_content=not args.somente_metadados)
+                                   include_content=not args.somente_metadados, db_path=Path(args.db))
         created = asyncio.run(persist(report, db, verdicts))
         report["novos"] = len(created)
         report["jev_uso"] = usage

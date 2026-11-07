@@ -44,8 +44,12 @@
 - A varredura madura consulta o Jev apenas para novos candidatos, antes de gravar. Duas perguntas `choice` por unidade: destino e motivo. Até 10 unidades e 24 KB por lote.
 - A chave OPENROUTER sai do cofre somente para a memória e o ambiente do processo filho do Jev. Erro de API interrompe sem inserir candidatos nem repetir a chamada; HTTP 402 é identificado explicitamente.
 - Envio de conteúdo autorizado pelo Rica em 23/09/2026 e ligado por padrão: título, cabeçalhos e até 1.500 caracteres do corpo; para skill, trecho do próprio `SKILL.md`. `--somente-metadados` desliga o conteúdo. Linhas com indicadores de segredo são removidas da cópia, mantendo o restante. É redução de dano, não garantia universal de anonimização. Nunca envia cofre, `.env` ou destinos externos ao repositório. Arquivos maiores que 200 KiB ficam sem trecho.
+- Cada record também leva `sinais`: até 6 `linhas_estado` de até 240 caracteres encontradas no texto inteiro; `citacoes_repo` com contagem de arquivos versionados que citam caminho ou nome e até 5 caminhos (sem o próprio alvo, seu conteúdo interno ou `arquivo/`); até 5 `skills_relacionadas` ativas de `<workspace>/.claude/skills/*` ou `ze-shared/.claude/skills/*`, com nome, caminho e description até 150 caracteres; `ultimo_commit_pasta` em UTC, de qualquer arquivo irmão; e até 8 `decisoes_rica` com caminho e decisão, do mesmo workspace, priorizando a mesma pasta. Skills usam interseção simples de termos de pelo menos 4 caracteres no caminho/título e nome/description, sem acentos e descartando palavras genéricas e o nome do workspace; similaridade não comprova substituição.
+- Os sinais são locais, sem chamada de rede. Aplicam os mesmos filtros `SECRET` e `restricted_path`, excluem cofre/vault, `.env` e destinos externos; fontes de conteúdo precisam ser arquivos regulares seguros. Aliases de skills internas são resolvidos e deduplicados. Description suspeita é removida antes do corte, assim como linhas de estado suspeitas. `--somente-metadados` também desliga linhas de estado e leitura de skills; preserva citações, data da pasta e exemplos de caminhos/decisões.
+- Histórico aberto por SQLite URI `mode=ro`, sem migrar/inicializar o banco. O schema atual não identifica o autor: decisões `mantido`/`arquivado` com data são usadas, excluindo conservadoramente qualquer arquivamento compatível com `arquivar_sem_resposta` (veredito arquivar, probabilidade ≥ 0,8 e prazo ≥ 7 dias menos 1h). Isso pode excluir decisões humanas indistinguíveis da regra. O próprio caminho/id nunca entra como exemplo; no replay só entram decisões anteriores à data da decisão avaliada. Exemplos com o mesmo caminho são deduplicados.
+- O teto de 24.000 bytes mede o JSON UTF-8 completo com perguntas e sinais; ao exceder, reduz o número de cartões do lote, sem retirar sinais. Se nem um cartão couber, falha explicitamente antes de abrir o cofre ou chamar a API.
 - Parecer é exibição, não autorização: devolve o rótulo concreto de maior probabilidade e `jev_probabilidade` (REAL entre 0 e 1, opcional). Se `incerto` liderar, só mostra o concreto quando ele supera o segundo concreto por pelo menos 0,15; caso contrário, parecer e probabilidade ficam `null`. Não renormaliza probabilidades. Motivo segue a mesma regra, independentemente do destino. Saída 2 de um lote não apaga respostas de outros documentos.
-- Os limiares originais 0,8 / 0,15 permanecem na avaliação conservadora gravada em `jev-decisoes.jsonl`, para eventual política futura de automação. Nenhuma automação de arquivamento está habilitada.
+- Os limiares originais 0,8 / 0,15 permanecem na avaliação conservadora gravada em `jev-decisoes.jsonl`. O parecer continua sendo exibição; a regra `arquivar_sem_resposta` descrita acima permanece intacta.
 - `jev_duplica_de` não é inventado: as duas perguntas não identificam um arquivo substituto.
 - O consumo devolvido pelo provedor fica no relatório da passagem em `jev_uso` e em `${XDG_STATE_HOME:-$HOME/.local/state}/faxina-frota/jev-uso.jsonl`, sem documentos nem credenciais.
 
@@ -67,6 +71,19 @@
 cd apps/api
 .venv/bin/python -m pytest tests/test_faxina.py tests/test_faxina_executor.py tests/test_store.py tests/test_security_headers.py -q
 .venv/bin/python -m pytest tests/test_faxina_executor.py::test_ciclo_http_arquivar_desfazer -q -s
+.venv/bin/python -m pytest tests/test_faxina_jev.py tests/test_faxina_replay.py tests/test_faxina_varredura.py -q
 ```
 
 Todos os movimentos desses testes ocorrem em repositórios temporários. Não criar candidatos artificiais no banco de produção.
+
+## Replay da régua do Rica
+
+```sh
+apps/api/.venv/bin/python scripts/faxina_replay.py \
+  --db apps/api/db/grupo_borges.db --repo /home/clawd/repos/ze_claude \
+  --desde 1794052800
+```
+
+Chama a API real pelo mesmo caminho de credencial do Jev. Só lê o banco (`mode=ro`), não move arquivos nem grava `jev-decisoes.jsonl`/`jev-uso.jsonl`. Compara os mesmos cartões `arquivado`/`mantido` desde o corte, com as exclusões conservadoras de origem e segurança acima. Exibe acordo antes (veredito no banco) e depois, incluindo `duplica` e ausência de parecer na matriz, sempre no denominador total.
+
+Conteúdo já movido é lido de `arquivado_para`, preservando o caminho original no record. A idade zerada pelo toque manter é reconstruída na data de criação. A decisão/status do alvo não é enviada ao Jev; histórico exclui o próprio alvo e decisões simultâneas/posteriores. É uma comparação com os sinais locais atuais: citações, skills e atividade da pasta não são reconstruídas na versão histórica do repo.
