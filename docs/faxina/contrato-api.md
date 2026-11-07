@@ -11,6 +11,7 @@
 - `id`: inteiro. Datas: segundos desde 1970 UTC, ou `null`. `citado_em`: lista JSON de caminhos. `ultima_varredura` fica `null` até haver uma varredura real.
 - `manter` e a restauração concluída renovam `decidido_em`, zeram `dias_parado` e impedem nova candidatura por 20 dias. Não inventam uma leitura: `ultima_leitura` continua sendo a leitura observada.
 - `todos` também mostra pedidos em execução e erros. Erros exigem conferência manual; não há repetição automática de operações que falharam.
+- Destravar um `erro` (não há rota HTTP): corrigir a causa e voltar o cartão a `arquivar_pedido` no banco, zerando `erro` e `citado_em`. O `citado_em` é foto da varredura: tirar o ponteiro do índice não basta, o executor relê a lista gravada. "Arquivos ignorados" costuma ser `__pycache__/` (apagar) ou dado de execução como `runs/` (mover para fora e devolver para dentro do destino depois do `git mv`).
 
 ## Integração da próxima etapa
 
