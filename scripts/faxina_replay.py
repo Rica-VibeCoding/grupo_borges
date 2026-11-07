@@ -50,21 +50,39 @@ def agreement(items: list[dict], verdicts: dict) -> dict:
             "matriz_rica_por_jev": matrix}
 
 
+def disagreements(items: list[dict], verdicts: dict) -> list[dict]:
+    errors = []
+    for item in items:
+        verdict = verdicts.get(item["caminho"], {})
+        expected = "arquivar" if item["status"] == "arquivado" else "manter"
+        if verdict.get("jev_veredito") != expected:
+            errors.append({"id": item["id"], "caminho": item["caminho"],
+                           "rica": expected, **verdict})
+    return errors
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--db", type=Path, default=Path(get_settings().db_path))
     parser.add_argument("--repo", type=Path, default=ZE_CLAUDE_ROOT)
     parser.add_argument("--desde", type=int, default=SINCE)
+    parser.add_argument("--sem-exemplos", action="store_true",
+                        help="Desliga decisões passadas do Rica; mantém os demais sinais e critérios.")
     args = parser.parse_args()
     repo = args.repo.resolve()
     rows = read_decisions(args.db)
     items, excluded = replay_items(rows, repo, args.desde)
     before = {item["caminho"]: {"jev_veredito": item["jev_veredito"]} for item in items}
-    after, usage = evaluate(items, repo=repo, db_path=args.db, log_results=False)
+    after, usage = evaluate(items, repo=repo, db_path=args.db, log_results=False,
+                            include_examples=not args.sem_exemplos)
     print(json.dumps({"desde": args.desde, "somente_leitura": True,
                       "excluidos_seguranca": excluded,
+                      "exemplos_habilitados": not args.sem_exemplos,
                       "por_status": dict(Counter(item["status"] for item in items)),
                       "antes": agreement(items, before), "depois": agreement(items, after),
+                      "cartoes": [{"id": item["id"], "caminho": item["caminho"],
+                                   "rica": item["status"]} for item in items],
+                      "erros": disagreements(items, after),
                       "jev_uso": usage}, ensure_ascii=False, indent=2))
 
 

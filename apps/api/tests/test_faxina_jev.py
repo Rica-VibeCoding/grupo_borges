@@ -360,3 +360,32 @@ def test_replay_nao_grava_logs_nem_expoe_status_alvo(tmp_path, monkeypatch):
     monkeypatch.setattr(jev.subprocess, 'run', run)
     assert jev.evaluate([target], repo=tmp_path, log_results=False)[0]
     assert not (tmp_path / 'state').exists()
+
+
+def test_ablacao_remove_so_decisoes_passadas_sem_ler_banco(tmp_path, monkeypatch):
+    candidate = item() | {'id': 100, 'decidido_em': 3000}
+    write(tmp_path, candidate['caminho'], '# Pesquisa\nEstado: concluído')
+    decisions = [{'id': 1, 'caminho': 'tara/docs/irmao.md', 'workspace': 'tara',
+                  'status': 'arquivado', 'decidido_em': 2000, 'criado_em': 1000,
+                  'jev_veredito': 'manter', 'jev_probabilidade': 0.9}]
+    monkeypatch.setattr(jev, 'openrouter_key', lambda: 'ficticio')
+    monkeypatch.setattr(jev, 'read_decisions', lambda path: decisions)
+    monkeypatch.setattr(jev, 'record_usage', lambda *a: pytest.fail('gravou uso'))
+    monkeypatch.setattr(jev, 'record_decisions', lambda *a: pytest.fail('gravou decisões'))
+    requests = []
+
+    def run(*args, **kwargs):
+        requests.append(json.loads(kwargs['input']))
+        return SimpleNamespace(returncode=0, stdout=json.dumps(report()), stderr='')
+
+    monkeypatch.setattr(jev.subprocess, 'run', run)
+    jev.evaluate([candidate], repo=tmp_path, db_path=tmp_path / 'db', log_results=False)
+    monkeypatch.setattr(jev, 'read_decisions', lambda *a: pytest.fail('leu exemplos desligados'))
+    jev.evaluate([candidate], repo=tmp_path, db_path=tmp_path / 'db', log_results=False,
+                 include_examples=False)
+    signals = requests[0]['state']['records'][candidate['caminho']]['sinais']
+    assert signals.pop('decisoes_rica') == [{'caminho': 'tara/docs/irmao.md', 'decisao': 'arquivado'}]
+    assert requests[1]['state']['records'][candidate['caminho']]['sinais'].pop('decisoes_rica') == []
+    assert signals['linhas_estado'] == ['Estado: concluído']
+    # Mesmos critérios, conteúdo e sinais: só os exemplos mudam.
+    assert requests[0] == requests[1]

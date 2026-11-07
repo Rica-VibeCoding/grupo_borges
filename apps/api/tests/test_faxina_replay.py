@@ -44,7 +44,9 @@ def test_historico_ro_filtra_automaticos_sem_criar_banco(history, tmp_path):
     assert not missing.exists()
 
 
-def test_replay_compara_mesmos_cartoes_sem_gravar_e_sem_vazar(history, tmp_path, monkeypatch, capsys):
+@pytest.mark.parametrize('sem_exemplos', [False, True])
+def test_replay_compara_mesmos_cartoes_sem_gravar_e_sem_vazar(history, tmp_path, monkeypatch, capsys,
+                                                           sem_exemplos):
     import faxina_jev as jev
     before = history.read_bytes()
     (tmp_path / 'tara/arquivo/docs').mkdir(parents=True)
@@ -66,12 +68,18 @@ def test_replay_compara_mesmos_cartoes_sem_gravar_e_sem_vazar(history, tmp_path,
         return SimpleNamespace(returncode=0, stdout=json.dumps({'response': {'answers': answers}}), stderr='')
 
     monkeypatch.setattr(jev.subprocess, 'run', run)
-    monkeypatch.setattr(sys, 'argv', ['faxina_replay.py', '--db', str(history), '--repo', str(tmp_path)])
+    monkeypatch.setattr(sys, 'argv', ['faxina_replay.py', '--db', str(history), '--repo', str(tmp_path)] +
+                        (['--sem-exemplos'] if sem_exemplos else []))
     replay.main()
     result = json.loads(capsys.readouterr().out)
     assert result['antes']['acertos'] == 1
     assert result['depois']['acertos'] == result['depois']['total'] == 2
     assert result['excluidos_seguranca'] == 1
+    assert result['exemplos_habilitados'] is not sem_exemplos
+    assert result['cartoes'] == [
+        {'id': 2, 'caminho': 'tara/docs/pesquisa.md', 'rica': 'arquivado'},
+        {'id': 1, 'caminho': 'tara/docs/antigo.md', 'rica': 'mantido'}]
+    assert result['erros'] == []
     assert result['depois']['matriz_rica_por_jev']['arquivado']['arquivar'] == 1
     assert result['depois']['matriz_rica_por_jev']['mantido']['manter'] == 1
     assert history.read_bytes() == before
@@ -80,9 +88,20 @@ def test_replay_compara_mesmos_cartoes_sem_gravar_e_sem_vazar(history, tmp_path,
     records = payloads[0]['state']['records']
     assert records['tara/docs/pesquisa.md']['sinais']['linhas_estado'] == ['Estado: implementado']
     assert 'automatico' not in json.dumps(records)
-    assert 'antigo.md' in json.dumps(records['tara/docs/pesquisa.md']['sinais']['decisoes_rica'])
+    assert ('antigo.md' in json.dumps(records['tara/docs/pesquisa.md']['sinais']['decisoes_rica'])) is not sem_exemplos
     assert 'pesquisa.md' not in json.dumps(records['tara/docs/antigo.md']['sinais']['decisoes_rica'])
     assert records['tara/docs/antigo.md']['dias_parado'] > 20
+
+
+def test_divergencias_incluem_abstencao_sem_inventar_diagnostico():
+    items = [{'id': i, 'caminho': str(i), 'status': 'arquivado' if i == 1 else 'mantido'}
+             for i in range(3)]
+    verdicts = {'0': {'jev_veredito': 'manter'},
+                '1': {'jev_veredito': 'manter', 'jev_probabilidade': 0.7,
+                      'jev_motivo': 'Referência perene'}}
+    assert replay.disagreements(items, verdicts) == [
+        {'id': 1, 'caminho': '1', 'rica': 'arquivar', **verdicts['1']},
+        {'id': 2, 'caminho': '2', 'rica': 'manter'}]
 
 
 def test_matriz_conta_abstencoes_e_duplicacoes():
