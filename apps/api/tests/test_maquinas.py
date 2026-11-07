@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
+from unittest.mock import Mock
 
 import httpx
 import pytest
@@ -316,12 +318,31 @@ async def test_fechar_invalida_resumo_da_maquina(cliente, painel):
     assert len(painel[2]) == 3
 
 
-async def test_pc_sem_listagem_preserva_explicacao(cliente, painel):
+async def test_pc_com_painel_antigo_preserva_explicacao_501(cliente, painel):
     corpo = {'mensagem': 'o PC ainda não lista o que está aberto'}
     painel[0](lambda _: httpx.Response(501, json=corpo))
     resposta = await cliente.get('/api/maquinas/pc/abertos')
     assert resposta.status_code == 501
     assert resposta.json() == corpo
+
+
+async def test_abertos_windows_real_atravessa_ponte(cliente, painel, monkeypatch):
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[3] / "maquina"))
+    from painel_windows import Painel
+
+    windows = Mock()
+    windows.janelas.return_value = [
+        {"pid": 123, "hwnd": 456, "titulo": "Documento", "cloaked": None}]
+    windows.processo.return_value = {"executavel": None, "memoria_mb": None}
+    corpo = Painel(windows).abertos()
+    painel[0](lambda _: httpx.Response(200, json=corpo))
+    resposta = await cliente.get('/api/maquinas/pc/abertos')
+    assert resposta.status_code == 200
+    item = resposta.json()["itens"][0]
+    assert item["id"] == "windows-123" and item["rotulo"] == "Documento"
+    assert item["grupo"] == "seus" and item["memoria_mb"] is None
+    assert item["cpu_pct"] is None and item["parado_s"] is None
+    assert item["acao_rotulo"] is None
 
 
 async def test_ram_e_liberacao_desconhecidas_atravessam_ponte(cliente, painel):

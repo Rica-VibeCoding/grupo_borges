@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-r"""Resumo do PC, só stdlib. Iniciar na sessão do usuário: python painel_windows.py.
+r"""Resumo e janelas abertas do PC, só stdlib. Iniciar: python painel_windows.py.
 
 Chave em %USERPROFILE%\.config\cockpit-maquina\chave (Authorization: Bearer).
 Sem Tailscale, falha fechado; --host permite fixar o IPv4 da tailnet.
@@ -12,7 +12,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import ipaddress
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import shutil
 import subprocess
 import threading
@@ -51,6 +51,14 @@ def ip_tailscale():
 # Tipos de largura fixa: o DWORD do Windows tem 32 bits, inclusive em Python 64 bits.
 DWORD = ctypes.c_uint32
 BOOL = ctypes.c_int32
+HANDLE = ctypes.c_void_p
+GWL_EXSTYLE = -20
+GW_OWNER = 4
+WS_EX_TOOLWINDOW = 0x00000080
+WS_EX_APPWINDOW = 0x00040000
+WS_EX_NOACTIVATE = 0x08000000
+DWMWA_CLOAKED = 14
+PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 
 
 class FILETIME(ctypes.Structure):
@@ -71,11 +79,21 @@ class LASTINPUTINFO(ctypes.Structure):
     _fields_ = [("cbSize", DWORD), ("dwTime", DWORD)]
 
 
+class PROCESS_MEMORY_COUNTERS(ctypes.Structure):
+    _fields_ = [("cb", DWORD), ("PageFaultCount", DWORD)] + [
+        (nome, ctypes.c_size_t) for nome in (
+            "PeakWorkingSetSize", "WorkingSetSize", "QuotaPeakPagedPoolUsage",
+            "QuotaPagedPoolUsage", "QuotaPeakNonPagedPoolUsage", "QuotaNonPagedPoolUsage",
+            "PagefileUsage", "PeakPagefileUsage")]
+
+
 class Windows:
     def __init__(self):
         # DLLs só são carregadas na inicialização, permitindo importar/testar no Linux.
         self.kernel = ctypes.WinDLL("kernel32", use_last_error=True)
         self.user = ctypes.WinDLL("user32", use_last_error=True)
+        self.dwm = ctypes.WinDLL("dwmapi", use_last_error=True)
+        self._enum_callback = ctypes.WINFUNCTYPE(BOOL, HANDLE, ctypes.c_ssize_t)
         for dll, nome, args, resultado in (
             (self.kernel, "GetSystemTimes", [ctypes.POINTER(FILETIME)] * 3, BOOL),
             (self.kernel, "GlobalMemoryStatusEx", [ctypes.POINTER(MEMORYSTATUSEX)], BOOL),
@@ -83,9 +101,88 @@ class Windows:
             (self.kernel, "ProcessIdToSessionId", [DWORD, ctypes.POINTER(DWORD)], BOOL),
             (self.kernel, "GetTickCount64", [], ctypes.c_uint64),
             (self.user, "GetLastInputInfo", [ctypes.POINTER(LASTINPUTINFO)], BOOL),
+            (self.user, "EnumWindows", [self._enum_callback, ctypes.c_ssize_t], BOOL),
+            (self.user, "IsWindowVisible", [HANDLE], BOOL),
+            (self.user, "GetWindow", [HANDLE, DWORD], HANDLE),
+            (self.user, "GetWindowLongW", [HANDLE, ctypes.c_int32], ctypes.c_int32),
+            (self.user, "GetWindowTextW", [HANDLE, ctypes.c_wchar_p, ctypes.c_int32], ctypes.c_int32),
+            (self.user, "GetWindowThreadProcessId", [HANDLE, ctypes.POINTER(DWORD)], DWORD),
+            (self.dwm, "DwmGetWindowAttribute", [HANDLE, DWORD, ctypes.c_void_p, DWORD], ctypes.c_int32),
+            (self.kernel, "OpenProcess", [DWORD, BOOL, DWORD], HANDLE),
+            (self.kernel, "CloseHandle", [HANDLE], BOOL),
+            (self.kernel, "QueryFullProcessImageNameW",
+             [HANDLE, DWORD, ctypes.c_wchar_p, ctypes.POINTER(DWORD)], BOOL),
+            (self.kernel, "K32GetProcessMemoryInfo",
+             [HANDLE, ctypes.POINTER(PROCESS_MEMORY_COUNTERS), DWORD], BOOL),
         ):
             funcao = getattr(dll, nome)
             funcao.argtypes, funcao.restype = args, resultado
+
+    def janelas(self):
+        """Candidatas à barra de tarefas do desktop atual; UWP não é completo.
+
+        WS_VISIBLE não prova pixels visíveis (janelas encobertas/minimizadas
+        continuam abertas). Falha no DWM mantém cloaked desconhecido.
+        """
+        janelas, erros = [], []
+
+        def visitar(hwnd, _):
+            # Exceções não podem escapar pelo callback C: ctypes as descartaria.
+            try:
+                if not self.user.IsWindowVisible(hwnd):
+                    return 1
+                ctypes.set_last_error(0)
+                estilo = self.user.GetWindowLongW(hwnd, GWL_EXSTYLE)
+                if estilo == 0 and ctypes.get_last_error():
+                    return 1  # Janela pode ter sumido durante a enumeração.
+                if estilo & WS_EX_TOOLWINDOW:
+                    return 1
+                if not estilo & WS_EX_APPWINDOW:
+                    if estilo & WS_EX_NOACTIVATE or self.user.GetWindow(hwnd, GW_OWNER):
+                        return 1
+                cloak = DWORD()
+                hr = self.dwm.DwmGetWindowAttribute(
+                    hwnd, DWMWA_CLOAKED, ctypes.byref(cloak), ctypes.sizeof(cloak))
+                cloaked = bool(cloak.value) if hr == 0 else None
+                if cloaked is True:
+                    return 1
+                pid = DWORD()
+                if not self.user.GetWindowThreadProcessId(hwnd, ctypes.byref(pid)) or not pid.value:
+                    return 1
+                titulo = ctypes.create_unicode_buffer(4096)
+                self.user.GetWindowTextW(hwnd, titulo, len(titulo))
+                # Não descarta janelas sem título: título não decide presença na barra.
+                janelas.append({"hwnd": hwnd, "pid": pid.value,
+                                "titulo": titulo.value.strip(), "cloaked": cloaked})
+                return 1
+            except Exception as exc:
+                erros.append(exc)
+                return 0
+
+        callback = self._enum_callback(visitar)  # Mantém vivo até EnumWindows voltar.
+        if not self.user.EnumWindows(callback, 0) or erros:
+            raise OSError("EnumWindows falhou") from (erros[0] if erros else None)
+        return janelas
+
+    def processo(self, pid):
+        """Consulta mínima; acesso negado/encerrado não apaga a janela."""
+        dados = {"executavel": None, "memoria_mb": None}
+        handle = self.kernel.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not handle:
+            return dados
+        try:
+            caminho = ctypes.create_unicode_buffer(32768)
+            tamanho = DWORD(len(caminho))
+            if self.kernel.QueryFullProcessImageNameW(handle, 0, caminho, ctypes.byref(tamanho)):
+                dados["executavel"] = PureWindowsPath(caminho.value).name
+            mem = PROCESS_MEMORY_COUNTERS()
+            mem.cb = ctypes.sizeof(mem)
+            # Windows atuais aceitam QUERY_LIMITED_INFORMATION, sem VM_READ.
+            if self.kernel.K32GetProcessMemoryInfo(handle, ctypes.byref(mem), mem.cb):
+                dados["memoria_mb"] = round(mem.WorkingSetSize / 2**20, 2)
+            return dados
+        finally:
+            self.kernel.CloseHandle(handle)
 
     def cpu_ler(self):
         idle, kernel, user = FILETIME(), FILETIME(), FILETIME()
@@ -137,6 +234,7 @@ class Painel:
         self._anterior = None
         self._temperatura_em = None
         self._trava = threading.Lock()
+        self.observado_desde = int(time.time())
 
     def autorizar(self, autorizacoes):
         try:
@@ -202,6 +300,24 @@ class Painel:
                 "disco": recurso(disco.total, disco.free), "temperatura_c": temperatura,
                 "parados_30min": None, "tela": self.windows.tela(), "medido_em": int(time.time())}
 
+    def abertos(self):
+        por_pid = {}
+        for janela in self.windows.janelas():
+            por_pid.setdefault(janela["pid"], []).append(janela)
+        itens = []
+        for pid, janelas in sorted(por_pid.items()):
+            processo = self.windows.processo(pid)
+            titulo = next((j["titulo"] for j in janelas if j["titulo"]), f"Processo {pid}")
+            rotulo = f'{processo["executavel"]} · {titulo}' if processo["executavel"] else titulo
+            itens.append({"id": f"windows-{pid}", "grupo": "seus", "rotulo": rotulo,
+                          "dono": None, "memoria_mb": processo["memoria_mb"], "cpu_pct": None,
+                          "parado_s": None, "abas": [], "pede_confirmacao": False,
+                          "acao_rotulo": None, "janelas": janelas})
+        # RAM é working set do PID da janela, não árvore do app nem RAM privada.
+        return {"observado_desde": self.observado_desde, "itens": itens,
+                "memoria_metrica": "working-set", "cobertura": "janelas-desktop-parcial",
+                "medido_em": int(time.time())}
+
 
 class Servidor(ThreadingHTTPServer):
     daemon_threads = True
@@ -231,7 +347,7 @@ class H(BaseHTTPRequestHandler):
         try:
             self.server.painel.autorizar(self.headers.get_all("Authorization", []))
             if self.path == "/api/maquina/abertos":
-                return self.responder(501, {"mensagem": "o PC ainda não lista o que está aberto"})
+                return self.responder(200, self.server.painel.abertos())
             return self.responder(200, self.server.painel.resumo())
         except Falha as exc:
             return self.responder(exc.status, {"mensagem": exc.mensagem})

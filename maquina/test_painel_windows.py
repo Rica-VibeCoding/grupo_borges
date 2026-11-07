@@ -27,10 +27,19 @@ def sem_comandos_reais(monkeypatch):
 def windows(monkeypatch):
     kernel = SimpleNamespace(**{nome: Mock(return_value=1) for nome in (
         "GetSystemTimes", "GlobalMemoryStatusEx", "GetCurrentProcessId",
-        "ProcessIdToSessionId", "GetTickCount64")})
-    user = SimpleNamespace(GetLastInputInfo=Mock(return_value=1))
+        "ProcessIdToSessionId", "GetTickCount64", "OpenProcess", "CloseHandle",
+        "QueryFullProcessImageNameW", "K32GetProcessMemoryInfo")})
+    user = SimpleNamespace(**{nome: Mock(return_value=1) for nome in (
+        "GetLastInputInfo", "EnumWindows", "IsWindowVisible", "GetWindow",
+        "GetWindowLongW", "GetWindowTextW", "GetWindowThreadProcessId")})
+    dwm = SimpleNamespace(DwmGetWindowAttribute=Mock(return_value=0))
     monkeypatch.setattr(painel.ctypes, "WinDLL", lambda nome, **_: {
-        "kernel32": kernel, "user32": user}[nome], raising=False)
+        "kernel32": kernel, "user32": user, "dwmapi": dwm}[nome], raising=False)
+    # stdcall/LastError só existem no Windows; o callback ainda cruza C no Linux.
+    monkeypatch.setattr(painel.ctypes, "WINFUNCTYPE", ctypes.CFUNCTYPE, raising=False)
+    erro = [0]
+    monkeypatch.setattr(painel.ctypes, "set_last_error", lambda valor: erro.__setitem__(0, valor), raising=False)
+    monkeypatch.setattr(painel.ctypes, "get_last_error", lambda: erro[0], raising=False)
     return painel.Windows()
 
 
@@ -193,8 +202,13 @@ def servidor(pc):
 
 def test_http_resumo_e_abertos(servidor, pc):
     pc.resumo = Mock(return_value={"cpu_pct": 12.5})
+    pc.windows.janelas.return_value = []
     assert servidor() == (200, {"cpu_pct": 12.5})
-    assert servidor("/api/maquina/abertos") == (501, {"mensagem": "o PC ainda não lista o que está aberto"})
+    status, dados = servidor("/api/maquina/abertos")
+    assert status == 200 and dados["itens"] == []
+    assert dados["observado_desde"] == pc.observado_desde
+    pc.windows.janelas.side_effect = OSError()
+    assert servidor("/api/maquina/abertos")[0] == 503
     pc.resumo.side_effect = OSError()
     assert servidor()[0] == 503
 
@@ -275,3 +289,156 @@ def test_primeiro_resumo_nao_inventa_cpu_nem_parados(pc, monkeypatch):
     resumo = pc.resumo()
     assert resumo['cpu_pct'] is None
     assert resumo['parados_30min'] is None
+
+
+def enumerar(windows, *, estilo=0, dono=0, cloak=0, hr=0, titulo="Documento", hwnd=2**40 + 17):
+    windows.user.GetWindowLongW.return_value = estilo
+    windows.user.GetWindow.return_value = dono
+    windows.user.GetWindowThreadProcessId.side_effect = lambda h, ptr: preencher(ptr, painel.DWORD, value=123)
+    windows.user.GetWindowTextW.side_effect = lambda h, buf, n: setattr(buf, "value", titulo) or len(titulo)
+
+    def dwm(h, atributo, ptr, tamanho):
+        assert atributo == painel.DWMWA_CLOAKED and tamanho == 4
+        preencher(ptr, painel.DWORD, value=cloak)
+        return hr
+
+    windows.dwm.DwmGetWindowAttribute.side_effect = dwm
+    windows.user.EnumWindows.side_effect = lambda callback, arg: callback(hwnd, arg)
+
+
+@pytest.mark.parametrize("estilo,dono,incluida", [
+    (0, 0, True), (0, 99, False),
+    (painel.WS_EX_APPWINDOW, 99, True),
+    (painel.WS_EX_TOOLWINDOW, 0, False),
+    (painel.WS_EX_TOOLWINDOW | painel.WS_EX_APPWINDOW, 0, False),
+    (painel.WS_EX_NOACTIVATE, 0, False),
+    (painel.WS_EX_NOACTIVATE | painel.WS_EX_APPWINDOW, 99, True),
+])
+def test_janelas_owner_e_estilos_da_barra(windows, estilo, dono, incluida):
+    enumerar(windows, estilo=estilo, dono=dono)
+    janelas = windows.janelas()
+    assert bool(janelas) is incluida
+    if incluida:
+        assert janelas == [{"hwnd": 2**40 + 17, "pid": 123, "titulo": "Documento", "cloaked": False}]
+    windows.kernel.OpenProcess.assert_not_called()
+
+
+def test_janela_invisivel_excluida_mas_sem_titulo_continua(windows):
+    enumerar(windows, titulo="")
+    assert windows.janelas()[0]["titulo"] == ""
+    windows.user.IsWindowVisible.return_value = 0
+    assert windows.janelas() == []
+
+
+@pytest.mark.parametrize("cloak", [1, 2, 4, 7])
+def test_cloaked_exclui_todas_as_razoes_documentadas(windows, cloak):
+    enumerar(windows, cloak=cloak)
+    assert windows.janelas() == []
+
+
+def test_dwm_falhou_cloaking_desconhecido_nao_usa_buffer(windows):
+    enumerar(windows, cloak=7, hr=-2147024891)
+    assert windows.janelas()[0]["cloaked"] is None
+
+
+def test_janela_some_antes_de_ler_estilo_ou_pid(windows):
+    enumerar(windows)
+
+    def falhar(*_):
+        painel.ctypes.set_last_error(1400)
+        return 0
+
+    windows.user.GetWindowLongW.side_effect = falhar
+    assert windows.janelas() == []
+    windows.user.GetWindowLongW.side_effect = None
+    windows.user.GetWindowThreadProcessId.side_effect = None
+    windows.user.GetWindowThreadProcessId.return_value = 0
+    assert windows.janelas() == []
+
+
+def test_enum_falha_nao_devolve_inventario_parcial_e_callback_propaga_erro(windows):
+    enumerar(windows)
+    windows.user.EnumWindows.side_effect = lambda cb, arg: cb(17, arg) and 0
+    with pytest.raises(OSError, match="EnumWindows"):
+        windows.janelas()
+    enumerar(windows)
+    windows.user.IsWindowVisible.side_effect = ValueError("erro no callback")
+    with pytest.raises(OSError) as erro:
+        windows.janelas()
+    assert isinstance(erro.value.__cause__, ValueError)
+
+
+def test_processo_memoria_executavel_unicode_e_handle_64_bits(windows):
+    handle = 2**40 + 19
+    windows.kernel.OpenProcess.return_value = handle
+
+    def caminho(h, flags, buf, n):
+        assert h == handle and flags == 0
+        assert ctypes.cast(n, ctypes.POINTER(painel.DWORD)).contents.value == 32768
+        buf.value = "C:\\Program Files\\Aplicação\\editor.exe"
+        return preencher(n, painel.DWORD, value=len(buf.value))
+
+    def memoria(h, ptr, n):
+        assert h == handle
+        assert n == 8 + 8 * ctypes.sizeof(ctypes.c_size_t)
+        assert ctypes.cast(ptr, ctypes.POINTER(painel.PROCESS_MEMORY_COUNTERS)).contents.cb == n
+        return preencher(ptr, painel.PROCESS_MEMORY_COUNTERS, WorkingSetSize=42 * 2**20)
+
+    windows.kernel.QueryFullProcessImageNameW.side_effect = caminho
+    windows.kernel.K32GetProcessMemoryInfo.side_effect = memoria
+    assert windows.processo(123) == {"executavel": "editor.exe", "memoria_mb": 42.0}
+    windows.kernel.OpenProcess.assert_called_once_with(0x1000, False, 123)
+    windows.kernel.CloseHandle.assert_called_once_with(handle)
+    assert windows.kernel.OpenProcess.restype is ctypes.c_void_p
+    assert windows.user.GetWindow.restype is ctypes.c_void_p
+
+
+def test_processo_acesso_negado_preserva_desconhecidos(windows):
+    windows.kernel.OpenProcess.return_value = None
+    assert windows.processo(123) == {"executavel": None, "memoria_mb": None}
+    windows.kernel.QueryFullProcessImageNameW.assert_not_called()
+    windows.kernel.K32GetProcessMemoryInfo.assert_not_called()
+    windows.kernel.CloseHandle.assert_not_called()
+
+
+@pytest.mark.parametrize("nome,mem", [(0, 1), (1, 0), (0, 0)])
+def test_falhas_de_consulta_independentes_e_handle_sempre_fechado(windows, nome, mem):
+    windows.kernel.QueryFullProcessImageNameW.side_effect = lambda h, f, buf, n: setattr(buf, "value", "a.exe") or nome
+    windows.kernel.K32GetProcessMemoryInfo.side_effect = lambda h, ptr, n: preencher(
+        ptr, painel.PROCESS_MEMORY_COUNTERS, WorkingSetSize=2**20) and mem
+    assert windows.processo(123) == {"executavel": "a.exe" if nome else None,
+                                     "memoria_mb": 1.0 if mem else None}
+    windows.kernel.CloseHandle.assert_called_once()
+    windows.kernel.CloseHandle.reset_mock()
+    windows.kernel.QueryFullProcessImageNameW.side_effect = OSError()
+    with pytest.raises(OSError):
+        windows.processo(123)
+    windows.kernel.CloseHandle.assert_called_once()
+
+
+def test_abertos_agrupa_pid_sem_duplicar_ram_e_preserva_acesso_negado(pc):
+    pc.windows.janelas.return_value = [
+        {"hwnd": 11, "pid": 7, "titulo": "Um", "cloaked": False},
+        {"hwnd": 12, "pid": 7, "titulo": "Dois", "cloaked": None},
+        {"hwnd": 13, "pid": 8, "titulo": "Elevado", "cloaked": False},
+        {"hwnd": 14, "pid": 9, "titulo": "", "cloaked": False},
+    ]
+    pc.windows.processo.side_effect = lambda pid: {
+        "executavel": "a.exe" if pid == 7 else None, "memoria_mb": 42 if pid == 7 else None}
+    leitura = pc.abertos()
+    um, elevado, vazio = leitura["itens"]
+    assert len(leitura["itens"]) == 3
+    assert um["rotulo"] == "a.exe · Um" and um["memoria_mb"] == 42
+    assert len(um["janelas"]) == 2 and um["janelas"][1]["cloaked"] is None
+    assert elevado["rotulo"] == "Elevado" and elevado["memoria_mb"] is None
+    assert vazio["rotulo"] == "Processo 9"
+    assert pc.windows.processo.call_count == 3
+    for item in leitura["itens"]:
+        assert item["acao_rotulo"] is None
+        assert item["cpu_pct"] is None and item["parado_s"] is None
+
+
+@pytest.mark.parametrize("headers", [{}, {"Authorization": "Bearer errada"}])
+def test_abertos_exige_chave_antes_de_enumerar(servidor, pc, headers):
+    assert servidor("/api/maquina/abertos", headers=headers)[0] == 401
+    pc.windows.janelas.assert_not_called()
