@@ -37,7 +37,7 @@
 - Candidatos versionados: `*/docs/**/*.md`, `ze-shared/planos/**/*.md` e pastas canônicas de `*/.claude/skills/*/SKILL.md`. Cada skill conta como uma unidade; aliases são deduplicados.
 - Exige simultaneamente 20 dias sem leitura e sem commit. Leitura de qualquer arquivo interno ou invocação do nome/alias da skill conta como uso. Alterações locais excluem candidatos.
 - `@caminho` e `@include caminho` em `CLAUDE.md`, inclusive referências transitivas, excluem arquivos carregados na inicialização. Nomes/caminhos referenciados em ganchos registrados globalmente ou por espaço de trabalho e em `ze-shared/hooks/*` também são excluídos. Citações comuns ficam no cartão.
-- Cartão `pendente` há 7 dias (folga de 1h), com `jev_veredito = arquivar` e `jev_probabilidade ≥ 0,8`, vira `arquivar_pedido` no início da varredura (`arquivar_sem_resposta`, autorizado pelo Rica em 23/09). O resto fica pendente. Quem move é o executor, com as mesmas travas do toque manual.
+- Cartão `pendente` há 7 dias (folga de 1h), com `jev_veredito = arquivar` e `jev_probabilidade ≥ 0,8`, vira `arquivar_pedido` no início da varredura (`arquivar_sem_resposta`, autorizado pelo Rica em 23/09; **pausado em 07/11** por `AUTOMATICO_LIGADO = False` em `faxina_varredura.py`, até medir duas semanas de pareceres da pergunta nova). O resto fica pendente. Quem move é o executor, com as mesmas travas do toque manual.
 
 ## Jev
 

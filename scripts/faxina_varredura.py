@@ -24,6 +24,8 @@ WINDOW = 20 * 86400
 # rodar segundos antes do horário em que o cartão nasceu na semana passada.
 PRAZO_SEM_RESPOSTA = 7 * 86400 - 3600
 LIMIAR_AUTOMATICO = 0.8
+# Pausado pelo Rica em 07/11/2026: medir os pareceres da pergunta nova por 2 semanas antes de religar.
+AUTOMATICO_LIGADO = False
 GLOBAL_SETTINGS = Path.home() / ".claude/settings.json"
 INCLUDE = re.compile(r"(?<![\w])@(?:include\s+)?([^\s`<>()\[\],;]+)")
 
@@ -242,7 +244,8 @@ def main() -> None:
     parser.add_argument("--somente-metadados", action="store_true",
                         help="Desativa envio de título, cabeçalhos e trecho ao Jev.")
     args = parser.parse_args()
-    if args.aplicar:
+    pedidos = []
+    if args.aplicar and AUTOMATICO_LIGADO:
         pedidos = asyncio.run(arquivar_sem_resposta(GrupoBorgesDB(args.db), int(time.time())))
     report = collect(args.repo, args.leituras)
     if args.aplicar:
