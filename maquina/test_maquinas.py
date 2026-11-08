@@ -287,8 +287,8 @@ def cadeiras_tmux(linux, monkeypatch):
     saidas, consultas = {}, []
     original = maquinas.subprocess.run
 
-    def cadastrar(sufixo, linhas):
-        caminho = linux.m.sockets / ("cadeiras-" + sufixo)
+    def cadastrar(sufixo, linhas, prefixo="cadeiras-"):
+        caminho = linux.m.sockets / (prefixo + sufixo)
         servidor = socket.socket(socket.AF_UNIX)
         servidor.bind(str(caminho))
         sockets.append(servidor)
@@ -408,6 +408,63 @@ def test_cadeira_nao_segue_symlink_arquivo_ou_reclassifica_protegido(linux, cade
     assert cadeiras_tmux.consultas == [str(caminho)]
 
 
+def _agente_aberto_por_dentro_de_outro(linux):
+    # Como no Arsenal: o Fluyt Pós (cockpit) abriu, do próprio pane, o servidor
+    # tmux de outro agente; o CLI dele cai num tmux-spawn sem servidor do cockpit.
+    linux.processo(10, args=("tmux", "-L", "fluytcom"))
+    linux.scope("app.slice/cockpit-tmux-fluytcom-abc.scope", 10)
+    linux.processo(100, ppid=10, args=("claude",))
+    linux.processo(110, args=("tmux", "-L", "canario"))
+    linux.scope("app.slice/tmux-spawn-principal.scope", 100, 110)
+    linux.processo(200, ppid=110, args=("claude",), pss=2048)
+    linux.scope("app.slice/tmux-spawn-solto.scope", 200)
+
+
+@pytest.mark.parametrize("socket_nome,sessao,agentes,esperado,dono", [
+    ("canario", "canario", {"canario": "Canário"}, "Canário", "Canário"),
+    ("canario", "outra", {"canario": "Canário"}, "Canário · outra", "Canário"),
+    ("extra", "fluytpos2", {}, "Terminal fluytpos2", None),
+])
+def test_terminal_solto_ganha_nome_pela_sessao_tmux(
+        linux, cadeiras_tmux, socket_nome, sessao, agentes, esperado, dono):
+    linux.m.agentes = agentes
+    _agente_aberto_por_dentro_de_outro(linux)
+    cadeiras_tmux.cadastrar(socket_nome, [(sessao, 200)], prefixo="")
+    itens = linux.m.abertos()["itens"][:-1]
+    item = next(i for i in itens if i["rotulo"] == esperado)
+    assert item["dono"] == dono and item["grupo"] == "terminal"
+    assert item["acao_rotulo"] == "Fechar " + esperado
+    assert linux.m._achar(item["id"]).principal.pid == 200
+    assert len(itens) == 2
+
+
+def test_socket_cadastrado_diferente_do_id_usa_agentes_json(linux, cadeiras_tmux):
+    linux.m.agentes = {"canario": "Canário"}
+    linux.m.socket_agentes = {"passarinho": "canario"}
+    _agente_aberto_por_dentro_de_outro(linux)
+    cadeiras_tmux.cadastrar("passarinho", [("passarinho", 200)], prefixo="")
+    assert "Canário" in {i["rotulo"] for i in linux.m.abertos()["itens"][:-1]}
+
+
+def test_sessao_tmux_nao_renomeia_nem_separa_agente_do_cockpit(linux, cadeiras_tmux):
+    linux.m.agentes = {"fluytcom": "Fluyt"}
+    linux.processo(10, args=("tmux", "-L", "fluytcom"))
+    linux.scope("app.slice/cockpit-tmux-fluytcom-abc.scope", 10)
+    linux.processo(100, ppid=10, args=("claude",))
+    linux.scope("app.slice/tmux-spawn-principal.scope", 100)
+    cadeiras_tmux.cadastrar("fluytcom", [("outro-nome", 100)], prefixo="")
+    itens = linux.m.abertos()["itens"][:-1]
+    assert [(i["rotulo"], i["memoria_mb"]) for i in itens] == [("Fluyt", 2)]
+    # Sem terminal solto, nenhum socket comum é consultado.
+    assert cadeiras_tmux.consultas == []
+
+
+def test_spawn_que_sobrou_so_com_servidor_tmux_diz_qual(linux):
+    linux.processo(110, args=("tmux", "-L", "devpos"))
+    linux.scope("app.slice/tmux-spawn-sobra.scope", 110)
+    assert linux.m.abertos()["itens"][0]["rotulo"] == "Servidor tmux devpos"
+
+
 @pytest.mark.parametrize("args", [("claude",), ("chrome", "--user-data-dir=~/.config/ze-chrome")])
 def test_tmux_spawn_orfao_fechavel_sem_casar_parentesco_de_filho(linux, args):
     linux.processo(10, args=("tmux",))
@@ -422,8 +479,10 @@ def test_tmux_spawn_orfao_fechavel_sem_casar_parentesco_de_filho(linux, args):
     assert linux.m.classificar(scope, linux.m.janelas()) == "terminal"
     item = next(i for i in linux.m.abertos()["itens"][:-1] if i["id"] == scope.id)
     assert item["grupo"] == "terminal" and item["dono"] is None
-    assert item["rotulo"] == "Terminal" and item["memoria_mb"] == 2.0
-    assert item["acao_rotulo"] == "Fechar Terminal" and not item["pede_confirmacao"]
+    # Diz o programa que sobrou, sem herdar dono do perfil do Chrome.
+    rotulo = "Terminal" if args[0] == "claude" else "Terminal · chrome"
+    assert item["rotulo"] == rotulo and item["memoria_mb"] == 2.0
+    assert item["acao_rotulo"] == "Fechar " + rotulo and not item["pede_confirmacao"]
     assert linux.m._achar(scope.id) == scope
 
 

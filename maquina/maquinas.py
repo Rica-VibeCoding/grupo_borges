@@ -166,7 +166,10 @@ class Maquinas:
         self.sockets = Path(sockets) if sockets is not None else Path(
             os.environ.get("TMUX_TMPDIR") or "/tmp") / f"tmux-{os.getuid()}"
         self.chave = Path(chave) if chave is not None else self.home / ".config/cockpit-maquina/chave"
+        agentes = list(agentes)
         self.agentes = {a["id"]: a["nome"] for a in agentes}
+        # agentes.json: "socket" é o -L do tmux do agente (padrão: o próprio id).
+        self.socket_agentes = {a.get("socket") or a["id"]: a["id"] for a in agentes}
         self.relogio, self.monotono = relogio, monotono
         self.observado_desde = int(relogio())
         self._ultima_amostra = None
@@ -363,7 +366,14 @@ class Maquinas:
             return rotulos
         # -L usa tmux-UID sob TMUX_TMPDIR (ou /tmp). Não depende de agentes.json
         # listar os sockets das cadeiras, nem de argv/TMUX herdado do agente pai.
-        for socket in sorted(self.sockets.glob("cadeiras-*")):
+        # Os demais sockets só nomeiam terminal solto (spawn sem servidor do cockpit):
+        # agente aberto à mão, como o Canário de dentro de outro agente, ou sessão avulsa.
+        soltos = {pid for pid, s in por_pid.items() if self._terminal(s, scopes) is s
+                  and re.fullmatch(r"tmux-spawn-.+\.scope", Path(s.nome).name)}
+        for socket in sorted(self.sockets.glob("*")):
+            de_cadeira = socket.name.startswith("cadeiras-")
+            if not de_cadeira and not soltos:
+                continue
             try:
                 info = socket.lstat()
                 if not stat.S_ISSOCK(info.st_mode) or info.st_uid != os.getuid():
@@ -380,13 +390,24 @@ class Maquinas:
                     caminho, sessao, pid = linha.split("\t")
                     if Path(caminho) != socket or not sessao:
                         continue
+                    if not de_cadeira and int(pid) not in soltos:
+                        continue
                     scope = por_pid.get(int(pid))
                     if scope is None or self.processo(scope.principal.pid) != scope.principal:
                         continue
-                    ident = DONOS_CADEIRAS.get(socket.name.removeprefix("cadeiras-"))
-                    dono = self.agentes.get(ident)
-                    nome = f"{dono} · cadeira {sessao}" if dono else f"Cadeira {sessao}"
-                    candidatos.setdefault(scope.id, set()).add((nome, dono))
+                    if de_cadeira:
+                        ident = DONOS_CADEIRAS.get(socket.name.removeprefix("cadeiras-"))
+                        dono = self.agentes.get(ident)
+                        nome = f"{dono} · cadeira {sessao}" if dono else f"Cadeira {sessao}"
+                    else:
+                        ident = self.socket_agentes.get(
+                            socket.name, socket.name if socket.name in self.agentes else None)
+                        dono = self.agentes.get(ident)
+                        if dono is None:
+                            nome = f"Terminal {sessao}"
+                        else:
+                            nome = dono if sessao in {socket.name, ident} else f"{dono} · {sessao}"
+                    candidatos.setdefault(scope.id, set()).add((nome, dono, de_cadeira))
                 # Pane ligado a mais de uma sessão: não escolhe um nome arbitrário.
                 rotulos.update((ident, next(iter(nomes))) for ident, nomes in candidatos.items()
                                if len(nomes) == 1)
@@ -436,6 +457,14 @@ class Maquinas:
             "ze_claude": "Pasta da VPS (sshfs)",
         }
         if servico.startswith("tmux-spawn-"):
+            # Pane já fechado deixa no scope só o que se desligou dele (servidor tmux
+            # aberto ali, wl-copy): diz o que sobrou em vez de um "Terminal" mudo.
+            args = scope.principal.args
+            exe = Path(args[0]).name if args else ""
+            if exe == "tmux" and opcao(args, "-L"):
+                return f"Servidor tmux {opcao(args, '-L')}", None
+            if exe and exe not in {"claude", "bash", "zsh", "sh", "fish", "tmux", "node", "python3"}:
+                return f"Terminal · {exe}", None
             return "Terminal", None
         if servico in conhecidos:
             return conhecidos[servico], None
@@ -685,8 +714,7 @@ class Maquinas:
                 nome = rotulo + " · cadeira" if cadeira else rotulo
                 dono_item = dono
                 if alvo.id in cadeiras:
-                    nome, dono_item = cadeiras[alvo.id]
-                    cadeira = True
+                    nome, dono_item, cadeira = cadeiras[alvo.id]
                 parados = [parados_scopes[s.id] for s in scopes_item]
                 cpus = [cpu_scopes[s.id] for s in scopes_item]
                 # Um membro ativo basta, mesmo com outro ainda sem duas amostras.
@@ -697,7 +725,7 @@ class Maquinas:
                               "cpu_pct": round(sum(cpus), 1) if None not in cpus else None,
                               "parado_s": parado,
                               "abas": [], "pede_confirmacao": False,
-                              "acao_rotulo": "Fechar cadeira" if cadeira else "Fechar " + rotulo})
+                              "acao_rotulo": "Fechar cadeira" if cadeira else "Fechar " + nome})
         return self.contabilizar({"observado_desde": self.observado_desde, "itens": itens}, cpu_total, scopes)
 
     def contabilizar(self, leitura, cpu_total, scopes=()):
