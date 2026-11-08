@@ -30,3 +30,11 @@ def carimbo_fora_do_home(monkeypatch, tmp_path):
     monkeypatch.setattr(desligamento_deliberado, "CAMINHO", alvo)
     monkeypatch.setattr(desligamento_deliberado, "TRAVA", alvo.with_suffix(".lock"))
     return alvo
+
+
+@pytest.fixture(autouse=True)
+def sem_lancador_local_herdado(monkeypatch):
+    # Rodando a suíte de dentro de um agente do cockpit local, o shell herda
+    # COCKPIT_LANCADOR e a API inteira desvia para o lançador: 32 testes do
+    # caminho padrão quebravam. Quem testa o lançador liga a variável na mão.
+    monkeypatch.delenv("COCKPIT_LANCADOR", raising=False)
