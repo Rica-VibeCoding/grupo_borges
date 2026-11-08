@@ -495,6 +495,11 @@
           <div class="fileira"><button type="button" class="ck-gv-pilula" id="gv-tentar">Tentar de novo</button></div>
         </div>
 
+        <div class="bloco" id="gv-por-fora" hidden>
+          <span class="bloco-titulo">Aberto por fora, sem Telegram</span>
+          <span class="bloco-texto">Essa sessão foi aberta no tmux sem passar pelo cockpit, e o bot fica mudo. Feche-a e o Ligar sobe o agente de verdade.</span>
+        </div>
+
         <div class="bloco" id="gv-fora" hidden>
           <span class="bloco-titulo">Fora do ar</span>
           <span class="bloco-texto">A conversa ficou guardada. Ligar retoma de onde parou.</span>
@@ -603,6 +608,7 @@
     function estadoDaPilula(a) {
       if (a.ligado === false) return { tom: 'desligado', rotulo: 'desligado' };
       if (a.ligado !== true) return { tom: 'erro', rotulo: 'sem leitura' };
+      if (a.fora === true) return { tom: 'erro', rotulo: 'aberto por fora, sem Telegram' };
       if (a.status === 'busy') return { tom: 'ze', rotulo: 'trabalhando' };
       if (a.status === 'idle') return { tom: 'prepara', rotulo: 'na linha' };
       return { tom: 'prepara', rotulo: 'sem leitura' };
@@ -749,7 +755,7 @@
         return;
       }
       const agentes = tela.dados.agentes;
-      const trabalhando = agentes.filter((a) => a.ligado === true && a.status === 'busy').length;
+      const trabalhando = agentes.filter((a) => a.ligado === true && a.fora !== true && a.status === 'busy').length;
       const partes = [agentes.length + ' na frota · ' + trabalhando + ' trabalhando'];
       const atrasado = tela.dados.atualizado && Date.now() / 1000 - tela.dados.atualizado > ATRASO_S;
       if (tela.semRede) partes.push(' · ', avisoDoResumo('sem conexão — tentando de novo'));
@@ -818,7 +824,9 @@
       if (!a) { if (tela.aberto && tela.dados) fecha(); return; }
       const v = vida(a.id);
       const { tom, rotulo } = estadoDaPilula(a);
-      const dePe = a.ligado === true, fora = a.ligado === false, semLeitura = !dePe && !fora;
+      // Sessão aberta à mão no mesmo socket: o cockpit mostra, mas não liga, desliga nem envia.
+      const porFora = a.ligado === true && a.fora === true;
+      const dePe = a.ligado === true && !porFora, fora = a.ligado === false, semLeitura = a.ligado !== true && !fora;
       const primeiroNome = a.nome.split(' ')[0] || a.nome;
 
       // Cabeçalho: pílula, interruptor, ×.
@@ -836,6 +844,7 @@
       const armado = v.armado === 'desligar';
       let palavra, ligadoVisual = dePe, descricao;
       if (semLeitura) { palavra = '…'; descricao = 'Lendo o estado do agente'; ligadoVisual = false; }
+      else if (porFora) { palavra = 'Por fora'; descricao = a.nome + ' aberto por fora do cockpit, sem Telegram'; ligadoVisual = false; }
       else if (v.pendente === 'ligar') { palavra = 'Ligando…'; descricao = 'Ligando ' + a.nome; }
       else if (v.pendente === 'desligar') { palavra = 'Desligando…'; descricao = 'Desligando ' + a.nome; }
       else if (armado) { palavra = 'Desligar?'; descricao = 'Toque de novo para desligar ' + a.nome; }
@@ -848,12 +857,13 @@
       marca(chave, 'data-armado', String(armado));
       marca(trilho, 'data-ligado', String(ligadoVisual));
       marca(trilho, 'data-armado', String(armado));
-      chave.disabled = semLeitura;
+      chave.disabled = semLeitura || porFora;
 
       desenhaStatusline(a);
 
       // Cartão Sessão.
       $('gv-indisponivel').hidden = !semLeitura;
+      $('gv-por-fora').hidden = !porFora;
       $('gv-fora').hidden = !fora;
       $('gv-fileira').hidden = !dePe;
       $('gv-comandos').hidden = !dePe;
@@ -970,6 +980,7 @@
     $('gv-interruptor').addEventListener('click', () => {
       const a = agenteAberto(); if (!a) return;
       const v = vida(a.id); if (v.pendente) return;
+      if (a.fora === true) return;
       if (a.ligado === true) { if (v.armado === 'desligar') age(a.id, 'desligar', false); else arma(a.id, 'desligar'); }
       else if (a.ligado === false) age(a.id, 'ligar', false);
     });

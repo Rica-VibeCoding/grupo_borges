@@ -21,6 +21,7 @@ PROJETOS = Path.home() / ".claude/projects"
 IDENT = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}\Z")
 SESSION_ID = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}\Z")
 ENV_NOME = re.compile(r"[a-zA-Z_][a-zA-Z0-9_]*\Z")
+PROC = Path("/proc")
 
 
 def configurar():
@@ -108,6 +109,33 @@ def alvo(a):
 
 def ligado(a):
     return tmux(a, "has-session", "-t", alvo(a)).returncode == 0
+
+
+FORA = ("Sessão aberta por fora do cockpit, sem Telegram. Feche essa sessão no tmux "
+        "(socket {socket}) e o Ligar sobe o agente de verdade.")
+
+
+def do_cockpit(a):
+    """None sem sessão; True se o servidor tmux nasceu do Ligar; False se foi aberto por fora.
+
+    O Ligar põe o servidor num scope cockpit-tmux-<id>-<hex> e roda agentes.py --exec <id>
+    (que vira o Claude com --channels). Um `tmux new-session` à mão usa o mesmo socket e
+    nome, mas fica em outro cgroup e com outra linha de comando no servidor.
+    """
+    r = tmux(a, "display-message", "-p", "-t", alvo(a), "#{pid}")
+    if r.returncode:
+        return None
+    try:
+        pid = int(r.stdout.strip())
+        cgroup = (PROC / str(pid) / "cgroup").read_text().strip().splitlines()[-1].rsplit("/", 1)[-1]
+        if re.fullmatch(r"cockpit-tmux-" + re.escape(a["id"]) + r"-[0-9a-f]{32}\.scope", cgroup):
+            return True
+        args = [os.fsdecode(v) for v in (PROC / str(pid) / "cmdline").read_bytes().split(b"\0")]
+        lancador = str(PASTA / "agentes.py")
+        return any(args[i:i + 3] == [lancador, "--exec", a["id"]] for i in range(len(args)))
+    except (OSError, ValueError, IndexError):
+        # Sem prova de que é do cockpit, trata como de fora: o painel só se recusa a mexer.
+        return False
 
 
 @contextlib.contextmanager
@@ -263,9 +291,10 @@ def estado(a, detalhar=True):
              "-F", "#{pane_id}\t#{pane_pid}\t#{session_created}")
     resultado = dict(id=a["id"], nome=a["nome"], ligado=r.returncode == 0,
                      status="desligado", tokens=None, modelo=None, segundos=None,
-                     janela=CONFIG["janela_tokens"], pane=None, pid=None)
+                     janela=CONFIG["janela_tokens"], pane=None, pid=None, fora=False)
     if r.returncode:
         return resultado
+    resultado["fora"] = do_cockpit(a) is False
     resultado["status"] = "desconhecido"
     for linha in r.stdout.splitlines():
         try:
@@ -284,7 +313,9 @@ def estado(a, detalhar=True):
         resultado["status"] = status if isinstance(status, str) and status in {"busy", "idle"} else "desconhecido"
         sid = dados.get("sessionId")
         if id_valido(sid):
-            gravar_sessao(a, sid)
+            if not resultado["fora"]:
+                # Conversa aberta à mão não vira a conversa que o Ligar retoma.
+                gravar_sessao(a, sid)
             if detalhar:
                 resultado["tokens"], resultado["modelo"] = contexto(sid)
                 telemetria = json_ler(Path("/tmp") / f"cc-status-{sid}.json")
@@ -525,9 +556,13 @@ def ligar(a, resume=None, nova=False, _locked=False):
         if not id_valido(resume) or not (pasta / (resume + ".jsonl")).is_file():
             raise ValueError("A conversa não pertence ao workspace deste agente.")
     if ligado(a):
+        if do_cockpit(a) is False:
+            raise ValueError(FORA.format(socket=a["socket"]))
         return "já no ar"
     with contextlib.nullcontext() if _locked else trava(a):
         if ligado(a):
+            if do_cockpit(a) is False:
+                raise ValueError(FORA.format(socket=a["socket"]))
             return "já no ar"
         if not Path(a["cwd"]).is_dir() or not os.access(CONFIG["claude"], os.X_OK):
             raise ValueError("Confira a pasta do projeto e o executável Claude no config.")
@@ -577,6 +612,9 @@ def desligar(a, _locked=False):
     with contextlib.nullcontext() if _locked else trava(a):
         if not ligado(a):
             return "Já está desligado."
+        if do_cockpit(a) is False:
+            # Sessão de outra pessoa/agente: o cockpit não manda /exit nem mata.
+            raise ValueError(FORA.format(socket=a["socket"]))
         e = estado(a, detalhar=False)  # Guarda o ID antes de encerrar.
         pane = e["pane"]
         if pane:
@@ -600,6 +638,8 @@ def enviar(a, acao, forcar=False):
         raise ValueError("Ação desconhecida.")
     with trava(a):
         e = estado(a, detalhar=False)
+        if e["fora"]:
+            raise ValueError(FORA.format(socket=a["socket"]))
         if not e["ligado"] or not e["pid"]:
             raise ValueError("O agente precisa estar ligado e com o Claude em execução.")
         if not forcar and e["status"] != "idle":
