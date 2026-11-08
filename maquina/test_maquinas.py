@@ -834,6 +834,7 @@ def test_cache_distingue_primeira_amostra_de_atividade(linux, duas_amostras, esp
         linux.m.amostrar()
     novo = Maquinas(home=linux.m.home, proc=linux.m.proc, cgroup=linux.m.cgroup,
                     cgroup_sistema=linux.m.cgroup, sys_block=linux.m.sys_block,
+                    runtime=linux.m.runtime, sockets=linux.m.sockets,
                     relogio=lambda: linux.agora[0], monotono=lambda: linux.agora[1])
     assert novo.parado(novo.scopes()[0].id) == esperado
 
@@ -854,6 +855,7 @@ def test_observacoes_preservam_40min_apos_reinicio(linux, intervalo, mono):
     linux.agora[:] = [12400 + intervalo, mono]
     novo = Maquinas(home=linux.m.home, proc=linux.m.proc, cgroup=linux.m.cgroup,
                     cgroup_sistema=linux.m.cgroup, sys_block=linux.m.sys_block,
+                    runtime=linux.m.runtime, sockets=linux.m.sockets,
                     relogio=lambda: linux.agora[0], monotono=lambda: linux.agora[1])
     assert novo.parado(item_id) == 2400
     uso(pasta, intervalo * 1000)
@@ -900,6 +902,7 @@ def test_cache_corrompido_ou_schedstat_antigo_comeca_do_zero(linux, conteudo):
     linux.agora[:] = [12000, 2000]
     novo = Maquinas(home=linux.m.home, proc=linux.m.proc, cgroup=linux.m.cgroup,
                     cgroup_sistema=linux.m.cgroup, sys_block=linux.m.sys_block,
+                    runtime=linux.m.runtime, sockets=linux.m.sockets,
                     relogio=lambda: linux.agora[0], monotono=lambda: linux.agora[1])
     assert novo.observado_desde == 12000 and novo._observacoes == {}
     novo.amostrar()
@@ -1258,7 +1261,7 @@ def frota(linux, monkeypatch):
                      "sessao": "pavan-alerta", "cadeira_de": "pavan"})
     m = MaquinasFrota(home=linux.m.home, proc=linux.m.proc, cgroup=linux.m.cgroup,
                      cgroup_sistema=linux.m.cgroup, sys_block=linux.m.sys_block,
-                     runtime=linux.m.runtime, agentes=cadastro,
+                     runtime=linux.m.runtime, sockets=linux.m.sockets, agentes=cadastro,
                      relogio=lambda: linux.agora[0], monotono=lambda: linux.agora[1])
     def executar_seguro(cmd, **kwargs):
         assert cmd == ["docker", "ps", "--no-trunc", "--format", "{{.ID}}\t{{.Names}}"]
@@ -1876,5 +1879,6 @@ def test_historico_v2_com_limiar_antigo_e_descartado(linux):
     dados = json.loads(linux.m._arquivo_observacoes.read_text())
     dados["versao"] = 2
     linux.m._arquivo_observacoes.write_text(json.dumps(dados))
-    novo = Maquinas(home=linux.m.home, proc=linux.m.proc, cgroup=linux.m.cgroup)
+    novo = Maquinas(home=linux.m.home, proc=linux.m.proc, cgroup=linux.m.cgroup,
+                    runtime=linux.m.runtime, sockets=linux.m.sockets)
     assert novo.parado(novo.scopes()[0].id) is None
