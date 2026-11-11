@@ -390,6 +390,13 @@ async def test_dialogo_que_nao_sai_vira_erro_e_a_linha_volta(linha) -> None:
 def test_flags_de_largada() -> None:
     assert tmux_driver._flags_de_largada(None) == "--continue"
     assert tmux_driver._flags_de_largada(ID_PROMPT) == f"--resume {ID_PROMPT}"
+    assert tmux_driver._flags_de_largada(None, "claude-fable-5-2") == "--continue --model claude-fable-5-2"
+    assert (
+        tmux_driver._flags_de_largada(ID_PROMPT, "claude-fable-5-2")
+        == f"--resume {ID_PROMPT} --model claude-fable-5-2"
+    )
+    with pytest.raises(ValueError):
+        tmux_driver._flags_de_largada(None, "opus --dangerously")
     for ruim in ("../x", f"{ID_PROMPT} --dangerously", "", ID_PROMPT + "\n"):
         with pytest.raises(ValueError):
             tmux_driver._flags_de_largada(ruim)

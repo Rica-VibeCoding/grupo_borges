@@ -79,7 +79,7 @@ async def _desliga_ok(_sessao: str) -> dict[str, object]:
     return DESLIGADO
 
 
-async def _liga_ok(_sessao: str) -> dict[str, object]:
+async def _liga_ok(_sessao: str, model: str | None = None) -> dict[str, object]:
     return LIGADO
 
 

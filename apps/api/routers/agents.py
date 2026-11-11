@@ -1473,6 +1473,18 @@ def _claude_model_slug(value: Any) -> str | None:
     return matched.group(1) if matched else None
 
 
+def _modelo_de_largada(agent: dict[str, Any]) -> str | None:
+    """O modelo do card para o `--model` do Ligar — só na família Anthropic.
+
+    Motor trocado recebe o modelo pelo settings que o `subir-frota.sh` escreve;
+    um `--model` por cima brigaria com ele.
+    """
+    if (_effective_model_family(agent) or "anthropic") != "anthropic":
+        return None
+    modelo = agent.get("state_model") or agent.get("model_default")
+    return modelo if _claude_model_slug(modelo) else None
+
+
 def _sessao_compativel(agent: dict[str, Any], model: str | None) -> bool:
     familia = _effective_model_family(agent) or "anthropic"
     if not model:
@@ -4914,7 +4926,9 @@ async def post_agent_ligar(slug: str, request: Request) -> dict[str, Any]:
     """
     agent = await _get_agent_or_404(request, slug)
     try:
-        result = await tmux_driver.boot_agent(agent["tmux_session"])
+        result = await tmux_driver.boot_agent(
+            agent["tmux_session"], model=_modelo_de_largada(agent)
+        )
     except tmux_driver.TmuxSessionBusyError as exc:
         raise HTTPException(status_code=409, detail=f"ligar_em_curso: {exc}") from exc
     except (ValueError, libtmux_exc.LibTmuxException) as exc:
@@ -4971,7 +4985,7 @@ async def post_agent_aplicar_motor(
         raise HTTPException(status_code=409, detail=f"desligar_failed: {exc}") from exc
 
     try:
-        ligado = await tmux_driver.boot_agent(session)
+        ligado = await tmux_driver.boot_agent(session, model=_modelo_de_largada(agent))
     except tmux_driver.TmuxSessionBusyError as exc:
         # Prefixo próprio, e não o `ligar_em_curso` do endpoint solto: aqui o
         # agente JÁ FOI DESLIGADO. Quem lê a falha precisa saber que o estado

@@ -2152,21 +2152,27 @@ def _aguarda_unit_de_boot_sumir(session_name: str) -> None:
         time.sleep(_BOOT_UNIT_LIMPEZA_POLL_S)
 
 
-def _flags_de_largada(resume_session_id: str | None) -> str:
+def _flags_de_largada(resume_session_id: str | None, model: str | None = None) -> str:
     """`--continue`, ou `--resume <id>` quando o Retomar escolhe a conversa.
 
     O id vira valor de `--setenv` e depois argumento do `claude` dentro do
     script: casar o formato de UUID é o que mantém essa fronteira estreita.
+
+    `model` acrescenta `--model <slug>`: sem ele a conversa retomada volta no
+    modelo em que foi gravada, e a escolha do card morria calada no Ligar.
     """
+    if model is not None and not _MODEL_PATTERN.fullmatch(model):
+        raise ValueError("modelo inválido para claude --model")
+    sufixo = f" --model {model}" if model else ""
     if resume_session_id is None:
-        return _FLAG_CONTINUE
+        return _FLAG_CONTINUE + sufixo
     if not _SESSION_ID_PATTERN.fullmatch(resume_session_id):
         raise ValueError("session_id inválido para claude --resume")
-    return f"--resume {resume_session_id}"
+    return f"--resume {resume_session_id}{sufixo}"
 
 
 def _boot_agent_sync(
-    session_name: str, resume_session_id: str | None = None
+    session_name: str, resume_session_id: str | None = None, model: str | None = None
 ) -> dict[str, object]:
     """Sobe o agente pelo script de boot da frota, retomando a conversa.
 
@@ -2179,7 +2185,7 @@ def _boot_agent_sync(
         raise ValueError(f"nome de sessão inválido: {session_name}")
     if local_launcher_enabled():
         return _local_launch_sync(session_name, "ligar", resume_session_id)
-    flags = _flags_de_largada(resume_session_id)
+    flags = _flags_de_largada(resume_session_id, model)
     if not _SUBIR_FROTA.is_file():
         raise ValueError(f"script de boot ausente: {_SUBIR_FROTA}")
 
@@ -2240,10 +2246,10 @@ def _boot_agent_sync(
 
 
 async def boot_agent(
-    session_name: str, resume_session_id: str | None = None
+    session_name: str, resume_session_id: str | None = None, model: str | None = None
 ) -> dict[str, object]:
     """Liga o agente pelo boot canônico da frota, com a conversa retomada."""
-    return await _run_tmux_operation(_boot_agent_sync, session_name, resume_session_id)
+    return await _run_tmux_operation(_boot_agent_sync, session_name, resume_session_id, model)
 
 
 #: Os dois diálogos que o CC pode abrir na largada de um `--resume` (F1, lidos

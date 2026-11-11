@@ -830,7 +830,8 @@ def test_ligar_nao_exige_confirmacao(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     assert response.json()["tmux_delivered"] is True
-    liga.assert_awaited_once_with("daniel")
+    # O modelo do card viaja no Ligar: sem ele a conversa volta no modelo antigo.
+    liga.assert_awaited_once_with("daniel", model="opus")
 
 
 def test_ligar_com_boot_ja_em_curso_devolve_409(tmp_path: Path) -> None:

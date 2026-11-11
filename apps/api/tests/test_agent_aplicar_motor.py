@@ -83,7 +83,7 @@ def test_aplicar_desliga_e_religa_nessa_ordem(tmp_path: Path) -> None:
         ordem.append("desligar")
         return DESLIGADO
 
-    async def liga(_sessao: str) -> dict[str, object]:
+    async def liga(_sessao: str, model: str | None = None) -> dict[str, object]:
         ordem.append("ligar")
         return LIGADO
 
