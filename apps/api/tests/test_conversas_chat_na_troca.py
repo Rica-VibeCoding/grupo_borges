@@ -308,8 +308,10 @@ async def test_retomar_publica_titulo_nota_e_briefing_do_gancho(linha, monkeypat
     )
     boot = linha.falsa.boot_agent
 
-    async def boot_com_gancho(sessao: str, resume_session_id: str | None = None) -> dict:
-        resposta = await boot(sessao, resume_session_id)
+    async def boot_com_gancho(
+        sessao: str, resume_session_id: str | None = None, model: str | None = None
+    ) -> dict:
+        resposta = await boot(sessao, resume_session_id, model)
         if resume_session_id:  # o SessionStart chama o briefing na largada
             r = await linha.cliente.get(
                 f"/api/agents/pavan/conversas/{resume_session_id}/briefing"

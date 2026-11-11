@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field
 from config import get_settings
 from db.store import GrupoBorgesDB
 from orchestrator.jsonl_watcher import _mapear_por_encoded, encoded_cwd
-from routers.agents import _esta_ocupado, _get_agent_or_404
+from routers.agents import _esta_ocupado, _get_agent_or_404, _modelo_de_largada
 from services import briefing_retorno, conversas, desligamento_deliberado, tmux_driver
 from services import operacao_conversa as operacao
 
@@ -660,7 +660,7 @@ async def post_nova(request: Request, slug: str, pedido: NovaPedido | None = Non
 
 
 async def _subir_e_esperar(
-    tmux_session: str, pasta: Path, resume_session_id: str | None
+    tmux_session: str, pasta: Path, resume_session_id: str | None, modelo: str | None = None
 ) -> str | None:
     """Sobe a linha e espera ela ficar pronta. `None` = pronta; senão, o motivo.
 
@@ -671,7 +671,7 @@ async def _subir_e_esperar(
     dois seguidos numa caixa vazia abrem o menu de voltar no histórico do CC.
     """
     try:
-        await tmux_driver.boot_agent(tmux_session, resume_session_id)
+        await tmux_driver.boot_agent(tmux_session, resume_session_id, modelo)
     except tmux_driver.TmuxSessionBusyError:
         return "já havia um boot deste agente em curso"
     except (ValueError, libtmux_exc.LibTmuxException) as exc:
@@ -752,7 +752,7 @@ async def _conduzir_retomar(
             atividade_ms = achada[1].st_mtime_ns // 1_000_000 if achada else None
             operacao.tirar_briefing(slug, alvo)  # sobra de uma largada antiga
             await db.marcar_retomada(slug, alvo, int(time.time() * 1000), atividade_ms)
-            motivo = await _subir_e_esperar(tmux_session, pasta, alvo)
+            motivo = await _subir_e_esperar(tmux_session, pasta, alvo, _modelo_de_largada(agent))
             if motivo is None:
                 operacao.registrar_troca(slug, sessao_antes, alvo)
                 if sessao_antes != alvo:

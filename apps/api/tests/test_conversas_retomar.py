@@ -37,6 +37,7 @@ class LinhaFalsa:
         self.palco = palco
         self.pasta = palco.bancada.pasta
         self.boots: list[str | None] = []
+        self.modelos: list[str | None] = []
         self.desligamentos = 0
         self.escapes = 0
         self.conversa: str | None = ID_CUSTOM
@@ -65,9 +66,12 @@ class LinhaFalsa:
         self.palco.bancada.processos.pop("pavan", None)
         return {"attempted": True, "sessao_encerrada": True, "scopes_parados": []}
 
-    async def boot_agent(self, sessao: str, resume_session_id: str | None = None) -> dict:
+    async def boot_agent(
+        self, sessao: str, resume_session_id: str | None = None, model: str | None = None
+    ) -> dict:
         assert sessao == "pavan"
         self.boots.append(resume_session_id)
+        self.modelos.append(model)
         if resume_session_id is None:
             self.recente_no_continue.append(conversas_service.mais_recente(self.pasta))
             if self.falha_continue:
@@ -139,6 +143,8 @@ async def test_retomar_estaciona_derruba_e_sobe_com_resume(linha) -> None:
     pedido, = agente.enviados  # só o pedido de estacionar: nada de /clear
     assert pedido.startswith("[cockpit] Vou fechar esta conversa e retomar")
     assert falsa.boots == [ID_PROMPT]
+    # A conversa retomada sobe no modelo do card, não no que ficou gravado nela.
+    assert falsa.modelos == ["opus"]
     assert falsa.ordem == ["marcar:pavan", "desligar:religando", "desmarcar:pavan"]
     assert agente.passos == ["pedido:estacionando"]
     assert _retomada_em(linha.palco.bancada, ID_PROMPT) is not None
