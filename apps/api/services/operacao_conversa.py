@@ -95,8 +95,10 @@ def avancar(op: Operacao, fase: Fase, detalhe: str | None = None) -> None:
 def avisar_estacionou(slug: str, session_id: str, titulo: str) -> bool:
     """O agente chamou o `/estacionar`. Devolve `True` se havia quem esperasse."""
     op = _operacoes.get(slug)
-    if op is None or op.aguardando is None or op.aguardando != session_id:
+    if op is None or op.aguardando is None:
         return False
+    # O pedido pode gerar o evento que corrige a sessão apontada pelo banco.
+    op.aguardando = session_id
     op.estacionou = True
     op.titulo = titulo
     return True

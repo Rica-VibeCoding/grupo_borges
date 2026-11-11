@@ -490,7 +490,7 @@ async def _estacionar_atual(
     ocupado: bool,
     url_base: str,
     para: str,
-) -> None:
+) -> str | None:
     """Passo comum da Nova e do Retomar: pede a nota e deixa o agente ocioso.
 
     Ocupado (só chega aqui com `forcar`): interrompe e segue sem a nota.
@@ -498,9 +498,9 @@ async def _estacionar_atual(
     slug, tmux_session = agent["slug"], agent["tmux_session"]
     if ocupado:
         await _interromper(db, slug, tmux_session)
-        return
+        return sessao_antes
     if sessao_antes is None:
-        return
+        return sessao_antes
     op.aguardando = sessao_antes
     entrega = await tmux_driver.send_message(
         tmux_session, operacao.mensagem_de_estacionar(url_base, slug, para)
@@ -513,10 +513,12 @@ async def _estacionar_atual(
         return op.estacionou
 
     await operacao.esperar(estacionou, operacao.PRAZO_ESTACIONAR_S)
+    sessao_antes = op.aguardando
     op.aguardando = None
     # Mandado no meio do turno, o `/clear` chega mas não vira comando.
     if not await operacao.esperar(lambda: _ocioso(db, slug), operacao.PRAZO_OCIOSO_S):
         await _interromper(db, slug, tmux_session)
+    return sessao_antes
 
 
 async def _conduzir_nova(
@@ -527,7 +529,7 @@ async def _conduzir_nova(
     slug, tmux_session = agent["slug"], agent["tmux_session"]
     try:
         sessao_antes = await _atual_da_linha(app, agent)
-        await _estacionar_atual(
+        sessao_antes = await _estacionar_atual(
             db, agent, op, sessao_antes=sessao_antes, ocupado=ocupado,
             url_base=url_base, para="nova",
         )
@@ -731,7 +733,7 @@ async def _conduzir_retomar(
             raise _Falha("a pasta de conversas deste agente não é só dele")
         sessao_antes = await _atual_da_linha(app, agent)
         if viva:
-            await _estacionar_atual(
+            sessao_antes = await _estacionar_atual(
                 db, agent, op, sessao_antes=sessao_antes, ocupado=ocupado,
                 url_base=url_base, para="retomar",
             )

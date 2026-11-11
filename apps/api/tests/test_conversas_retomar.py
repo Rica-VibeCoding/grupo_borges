@@ -158,6 +158,27 @@ async def test_retomar_estaciona_derruba_e_sobe_com_resume(linha) -> None:
     assert (itens[ID_CUSTOM]["atual"], itens[ID_CUSTOM]["bloqueada"]) == (False, False)
 
 
+async def test_retomar_com_atual_corrigida_ao_estacionar_nao_espera_o_prazo(linha) -> None:
+    palco = linha.palco
+    palco.bancada.atuais["pavan"] = ID_NOME
+    palco.agente.conversa_ao_estacionar = ID_CUSTOM
+
+    r = await _retomar(linha, ID_PROMPT)
+
+    assert r.status_code == 200, r.text
+    metas = await palco.bancada.db.conversa_meta_do_agente("pavan")
+    assert metas[ID_CUSTOM]["nota"] == "parou no teste"
+    assert ID_NOME not in metas
+    assert palco.relogio.t < operacao.PRAZO_ESTACIONAR_S
+    assert (r.json()["fase"], r.json()["nota"]) == ("pronta", True)
+    assert operacao.deixadas("pavan") == {ID_CUSTOM}
+    assert await palco.bancada.db.anterior_do_agente("pavan") == ID_CUSTOM
+    troca, = operacao.trocas_desde("pavan", 0)[0]
+    assert (troca["de"], troca["session_id"], troca["de_titulo"]) == (
+        ID_CUSTOM, ID_PROMPT, "Feed enxuto",
+    )
+
+
 async def test_a_b_a_seguidos(linha) -> None:
     assert (await _retomar(linha, ID_PROMPT)).status_code == 200
     linha.agente.resposta = {"titulo": "Prompt antigo", "nota": "segunda volta"}

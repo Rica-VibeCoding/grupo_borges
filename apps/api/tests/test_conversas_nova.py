@@ -43,6 +43,7 @@ class AgenteFalso:
         self.resposta: dict | None = {"titulo": "Feed enxuto", "nota": "parou no teste"}
         #: Passos do relógio que o agente leva até chamar a rota.
         self.demora = 3
+        self.conversa_ao_estacionar: str | None = None
         #: Fica ocupado depois de estacionar (turno que não acaba).
         self.preso = False
         self.recusa: str | None = None
@@ -76,6 +77,8 @@ class AgenteFalso:
             return  # ocupado e calado: o cockpit vai ter de interromper
         for _ in range(self.demora):
             await operacao.dormir(operacao.PASSO_S)
+        if self.conversa_ao_estacionar is not None:
+            self.bancada.atuais["pavan"] = self.conversa_ao_estacionar
         r = await self.cliente.post("/api/agents/pavan/conversas/estacionar", json=self.resposta)
         assert r.status_code == 200, r.text
         await operacao.dormir(operacao.PASSO_S)
@@ -185,6 +188,26 @@ async def test_nova_com_agente_ocioso_estaciona_limpa_e_renomeia(palco) -> None:
 
     op = (await c.get("/api/agents/pavan/conversas/operacao")).json()
     assert op["fase"] == "pronta" and isinstance(op["desde"], int)
+
+
+async def test_nova_com_atual_corrigida_ao_estacionar_nao_espera_o_prazo(palco) -> None:
+    palco.bancada.atuais["pavan"] = ID_NOME
+    palco.agente.conversa_ao_estacionar = ID_CUSTOM
+
+    r = await palco.cliente.post("/api/agents/pavan/conversas/nova", json={})
+
+    assert r.status_code == 200, r.text
+    assert _meta(palco.bancada, ID_CUSTOM) == ("Feed enxuto", "parou no teste", 1)
+    assert _meta(palco.bancada, ID_NOME) is None
+    assert palco.relogio.t < operacao.PRAZO_ESTACIONAR_S
+    assert (r.json()["fase"], r.json()["nota"]) == ("pronta", True)
+    assert operacao.estado("pavan").aguardando is None
+    assert operacao.deixadas("pavan") == {ID_CUSTOM}
+    assert await palco.bancada.db.anterior_do_agente("pavan") == ID_CUSTOM
+    troca, = operacao.trocas_desde("pavan", 0)[0]
+    assert (troca["de"], troca["session_id"], troca["de_titulo"]) == (
+        ID_CUSTOM, ID_NOVA, "Feed enxuto",
+    )
 
 
 async def test_nova_com_agente_ocupado_e_409_sem_mandar_nada(palco) -> None:
