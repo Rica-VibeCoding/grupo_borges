@@ -17,7 +17,7 @@ agents:
     tmux_session: pavan
     workspace_path: /home/clawd/repos/ze_claude/pavan
     cli_default: claude_code
-    model_default: claude-fable-5-2
+    model_default: claude-opus-5-5
     capabilities:
       - meta-orquestracao
       - palavra-final
@@ -57,7 +57,7 @@ agents:
     # back resolve o diretório de JSONL. Divergência não dá erro: dá agente ocioso.
     workspace_path: /home/clawd/repos/ze_claude/daniel
     cli_default: claude_code
-    model_default: claude-fable-5-2
+    model_default: claude-opus-5-5
     capabilities:
       - dev-fullstack
       - fluyt
@@ -81,7 +81,7 @@ agents:
     tmux_session: vinicius
     workspace_path: /home/clawd/repos/ze_claude/vinicius
     cli_default: claude_code
-    model_default: claude-fable-5-2
+    model_default: claude-opus-5-5
     capabilities:
       - movelmar
       - lojistas-conecta
@@ -102,7 +102,7 @@ agents:
     tmux_session: felipe
     workspace_path: /home/clawd/repos/ze_claude/felipe
     cli_default: claude_code
-    model_default: claude-fable-5-2
+    model_default: claude-opus-5-5
     capabilities:
       - comercial-fluyt-b2b
       - woodpro
@@ -121,7 +121,7 @@ agents:
     tmux_session: barsi
     workspace_path: /home/clawd/repos/ze_claude/barsi
     cli_default: claude_code
-    model_default: claude-fable-5-2
+    model_default: claude-opus-5-5
     capabilities:
       - cfo-read-only
       - monitor-financeiro
@@ -141,7 +141,7 @@ agents:
     tmux_session: sobral
     workspace_path: /home/clawd/repos/ze_claude/sobral
     cli_default: claude_code
-    model_default: claude-fable-5-2
+    model_default: claude-opus-5-5
     capabilities:
       - funil-de-vendas
     can_review: []
@@ -159,7 +159,7 @@ agents:
     tmux_session: caseiro
     workspace_path: /home/clawd/repos/caseiro
     cli_default: claude_code
-    model_default: claude-fable-5-2
+    model_default: claude-opus-5-5
     capabilities:
       - home-assistant
       - automacao-residencial
