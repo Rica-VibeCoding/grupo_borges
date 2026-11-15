@@ -78,19 +78,21 @@ export function fronteiraDo(id: number): FronteiraEnvio {
   return { id, origem: 'barreira-do-servidor' };
 }
 
-export type LeituraDaResposta =
+export type LeituraDaResposta = (
   | { tipo: 'enfileirada'; fronteira: FronteiraEnvio }
-  | { tipo: 'sem-prova' }
-  | { tipo: 'aceita'; fronteira: FronteiraEnvio };
+  | { tipo: 'sem-prova'; fronteira: FronteiraEnvio }
+  | { tipo: 'aceita'; fronteira: FronteiraEnvio }
+) & { deliveryId?: string };
 
 /** O 2xx do POST, em três desfechos — a ordem das perguntas é o contrato. */
 export function leRespostaDoEnvio(resposta: RespostaComFronteira): LeituraDaResposta {
+  const recibo = { fronteira: fronteiraDo(resposta.event_boundary_id), deliveryId: resposta.delivery_id };
   // O 202: o servidor guardou o texto na fila dele. Tem de vir ANTES da
   // guarda de baixo, porque nesse caminho `tmux_delivered` vem `false` — e
   // lido como ausência de prova ele levaria a máquina a `nao-confirmado`,
   // que é vermelho na tela por uma entrega que está garantida.
   if (resposta.enfileirada === true) {
-    return { tipo: 'enfileirada', fronteira: fronteiraDo(resposta.event_boundary_id) };
+    return { tipo: 'enfileirada', ...recibo };
   }
   // `tmux_delivered: false` é AUSÊNCIA DE PROVA, não erro. O `send_message`
   // só devolve `true` com prova observável no pane (input vazio ou linha
@@ -109,14 +111,14 @@ export function leRespostaDoEnvio(resposta: RespostaComFronteira): LeituraDaResp
   //
   // `falhou` continua existindo e continua sendo o destino de erro HTTP
   // real — rejeição, rede, 4xx/5xx. Só o `tmux_delivered` mudou de lado.
-  if (!resposta.tmux_delivered) return { tipo: 'sem-prova' };
-  return { tipo: 'aceita', fronteira: fronteiraDo(resposta.event_boundary_id) };
+  if (!resposta.tmux_delivered) return { tipo: 'sem-prova', ...recibo };
+  return { tipo: 'aceita', ...recibo };
 }
 
 export type LeituraDoErro =
   | { tipo: 'retentar'; atrasoMs: number }
   | { tipo: 'falhou' }
-  | { tipo: 'incerto' };
+  | { tipo: 'incerto'; deliveryId?: string; fronteira?: FronteiraEnvio };
 
 /** O POST que rejeitou: insistir sozinho, falha certa ou entrega incerta. */
 export function leErroDoEnvio(erro: unknown, jaTentadas: number): LeituraDoErro {
@@ -139,6 +141,12 @@ export function leErroDoEnvio(erro: unknown, jaTentadas: number): LeituraDoErro 
       ? atrasoDaRetentativa(jaTentadas)
       : null;
   if (atraso !== null) return { tipo: 'retentar', atrasoMs: atraso };
+  if (entregaIncerta) {
+    const deliveryId = 'deliveryId' in erro && typeof erro.deliveryId === 'string' ? erro.deliveryId : undefined;
+    const id = 'eventBoundaryId' in erro ? erro.eventBoundaryId : undefined;
+    const fronteira = typeof id === 'number' && Number.isSafeInteger(id) && id >= 0 ? fronteiraDo(id) : undefined;
+    return { tipo: 'incerto', deliveryId, fronteira };
+  }
   // Só a rejeição HTTP com entrega não-incerta prova que o texto não saiu.
   // Rede caída ou entrega incerta podem ter entrado mesmo assim.
   return rejeicaoHttp && !entregaIncerta ? { tipo: 'falhou' } : { tipo: 'incerto' };

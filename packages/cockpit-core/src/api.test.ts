@@ -23,6 +23,8 @@ test('postAgentInput preserva o desfecho estruturado da entrega', async () => {
           delivery_outcome: 'uncertain',
           reason: 'envio_nao_confirmado',
           safe_to_resend: false,
+          delivery_id: 'delivery-1',
+          event_boundary_id: 40,
         },
       }),
       { status: 409, headers: { 'Content-Type': 'application/json' } },
@@ -37,6 +39,8 @@ test('postAgentInput preserva o desfecho estruturado da entrega', async () => {
       assert.equal(erro.deliveryOutcome, 'uncertain');
       assert.equal(erro.reason, 'envio_nao_confirmado');
       assert.equal(erro.safeToResend, false);
+      assert.equal(erro.deliveryId, 'delivery-1');
+      assert.equal(erro.eventBoundaryId, 40);
       return true;
     },
   );

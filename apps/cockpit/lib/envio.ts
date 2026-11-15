@@ -2,7 +2,7 @@
  * Confirmação observável de um envio ao agente.
  *
  * O `200` do backend só prova que o texto foi colado no pane. A confirmação
- * acontece exclusivamente quando um item `user` posterior volta pelo stream.
+ * vem do eco no stream ou do recibo `entrega.confirmada` do watcher.
  *
  * A amostra local de 30/07 teve pior caso de 1,434 s, mas não cobriu o cenário
  * que importa no uso real: agente ocupado, pane rolando e iPhone via Tailscale.
@@ -22,6 +22,7 @@ export type FaseEnvio =
 
 type BaseEnvio = {
   texto: string;
+  deliveryId?: string;
   /**
    * Ecos idênticos que ainda podem pertencer a uma tentativa anterior
    * não confirmada. São consumidos antes de confirmar a tentativa atual.
@@ -47,10 +48,8 @@ export type EstadoEnvio =
       fase: 'confirmado';
       fronteira: FronteiraEnvio;
       /**
-       * `null` quando a confirmação veio do RECIBO DA FILA DO SERVIDOR (202 do
-       * `/input`) e nenhum eco foi visto ainda: ali o texto está guardado no
-       * banco, não colado no pane, e não existe item de stream a apontar. O eco
-       * chega quando a fila drena e preenche este campo — ver a marca `fila`.
+       * `null` quando a confirmação veio de um recibo da fila ou do watcher,
+       * sem um item do feed a apontar. Na fila, o eco posterior o preenche.
        */
       ecoId: number | null;
       /** Presente quando a confirmação veio de uma FILA e não do eco — o
@@ -95,6 +94,7 @@ export type EventoEnvio =
       tipo: 'aceitar';
       agoraMs: number;
       fronteira?: FronteiraEnvio;
+      deliveryId?: string;
     }
   /**
    * O 202 do `/input`: o servidor guardou o texto na fila dele em vez de
@@ -102,7 +102,8 @@ export type EventoEnvio =
    * JÁ é a confirmação, e não há prazo a estourar.
    */
   | { tipo: 'enfileirar'; fronteira?: FronteiraEnvio }
-  | { tipo: 'nao-confirmar'; erro: unknown }
+  | { tipo: 'nao-confirmar'; erro: unknown; deliveryId?: string; fronteira?: FronteiraEnvio }
+  | { tipo: 'entrega-confirmada'; deliveryId: string; id: number }
   | { tipo: 'falhar'; erro: unknown }
   | {
       tipo: 'item-do-stream';
@@ -162,7 +163,10 @@ export function reduzEnvio(
       const { ecoCandidatoId, ...base } = estado;
       return { ...base, fase: 'confirmado', fronteira, ecoId: ecoCandidatoId };
     }
-    return { ...estado, fase: 'aceito', fronteira, aceitoEmMs: evento.agoraMs };
+    return {
+      ...estado, fase: 'aceito', fronteira,
+      aceitoEmMs: evento.agoraMs, deliveryId: evento.deliveryId,
+    };
   }
 
   if (evento.tipo === 'enfileirar') {
@@ -180,7 +184,19 @@ export function reduzEnvio(
   if (evento.tipo === 'nao-confirmar') {
     if (estado.fase !== 'enviando') return estado;
     const { ecoCandidatoId: _, ...base } = estado;
-    return { ...base, fase: 'nao-confirmado', erro: evento.erro };
+    return {
+      ...base, fase: 'nao-confirmado', erro: evento.erro,
+      fronteira: evento.fronteira ?? estado.fronteira, deliveryId: evento.deliveryId,
+    };
+  }
+
+  if (evento.tipo === 'entrega-confirmada') {
+    if (
+      (estado.fase !== 'aceito' && estado.fase !== 'nao-confirmado') ||
+      estado.deliveryId !== evento.deliveryId || estado.fronteira === undefined ||
+      evento.id <= estado.fronteira.id
+    ) return estado;
+    return { ...estado, fase: 'confirmado', fronteira: estado.fronteira, ecoId: null };
   }
 
   if (evento.tipo === 'falhar') {

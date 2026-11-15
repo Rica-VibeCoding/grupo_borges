@@ -104,6 +104,95 @@ function resposta(fronteira: number) {
   };
 }
 
+for (const via of ['turno', 'fila', 'absorvida']) {
+  for (const incerto of [true, false]) {
+    test(`entrega ${via} confirma por delivery_id após ${incerto ? '409 incerto' : '200 sem eco'}`, async () => {
+      const fonte = fonteFake();
+      const relogio = relogioFake();
+      let posts = 0;
+      const controle = createControleEnvio('tara', {
+        postar: async () => {
+          posts += 1;
+          if (incerto) throw Object.assign(new Error('incerto'), {
+            status: 409, deliveryOutcome: 'uncertain', deliveryId: 'd1', eventBoundaryId: 40,
+          });
+          return { ...resposta(40), delivery_id: 'd1' };
+        },
+        FonteEventos: fonte.FonteEventos,
+        agora: relogio.agora, agendar: relogio.agendar, cancelar: relogio.cancelar,
+      });
+      await controle.enviar('faz isso');
+      if (!incerto) {
+        // Outro item do feed pode avançar além do id do recibo antes do prazo.
+        fonte.instancias[0]!.emitirMensagem(100, 'assistant', 'trabalhando');
+        relogio.avancar(PRAZO_ECO_MS);
+      }
+      assert.equal(controle.getEstado().fase, 'nao-confirmado');
+      const stream = fonte.instancias.find((item) => item.url.startsWith('/api/stream?'));
+      assert.ok(stream, 'a confirmação deve ter replay desde a fronteira do POST');
+      assert.match(stream.url, /since_id=40/);
+      const emitir = (agent_slug: string, delivery_id: string, id: number) => {
+        for (const ouvinte of stream.ouvintes.get('entrega.confirmada') ?? []) {
+          ouvinte({ data: JSON.stringify({ id, agent_slug, payload: { agent_slug, delivery_id, via } }) });
+        }
+      };
+      emitir('daniel', 'd1', 41);
+      emitir('tara', 'outro', 42);
+      assert.equal(controle.getEstado().fase, 'nao-confirmado');
+      emitir('tara', 'd1', 43);
+      assert.equal(controle.getEstado().fase, 'confirmado');
+      assert.equal(posts, 1, 'confirmar nunca deve reenviar');
+      assert.equal(stream.fechada, true);
+      controle.dispose();
+    });
+  }
+}
+
+test('200 com delivery_id mantém a confirmação habitual pelo recibo da fila do CLI', async () => {
+  const fonte = fonteFake();
+  const controle = createControleEnvio('tara', {
+    postar: async () => ({ ...resposta(40), delivery_id: 'd1' }),
+    FonteEventos: fonte.FonteEventos,
+  });
+  await controle.enviar('faz isso');
+  const data = JSON.stringify({ id: 41, kind: 'queued', content: 'faz isso', message: null });
+  for (const ouvinte of fonte.instancias[0]!.ouvintes.get('message') ?? []) ouvinte({ data });
+  const estado = controle.getEstado();
+  assert.equal(estado.fase, 'confirmado');
+  assert.ok(estado.fase === 'confirmado' && estado.fila);
+  controle.dispose();
+});
+
+test('confirmação de entrega reconecta com o mesmo delivery_id e sem novo POST', async () => {
+  const fonte = fonteFake();
+  const relogio = relogioFake();
+  let posts = 0;
+  const controle = createControleEnvio('tara', {
+    postar: async () => {
+      posts += 1;
+      throw Object.assign(new Error('incerto'), {
+        status: 409, deliveryOutcome: 'uncertain', deliveryId: 'd1', eventBoundaryId: 0,
+      });
+    },
+    FonteEventos: fonte.FonteEventos,
+    agendar: relogio.agendar, cancelar: relogio.cancelar,
+  });
+  await controle.enviar('faz isso');
+  fonte.instancias[0]!.onerror?.();
+  relogio.avancar(1_000);
+  assert.equal(fonte.instancias.length, 2);
+  assert.match(fonte.instancias[1]!.url, /^\/api\/stream\?since_id=0/);
+  const data = JSON.stringify({ id: 1, agent_slug: 'tara', payload: {
+    agent_slug: 'tara', delivery_id: 'd1', via: 'turno',
+  } });
+  for (const ouvinte of fonte.instancias[0]!.ouvintes.get('entrega.confirmada') ?? []) ouvinte({ data });
+  assert.equal(controle.getEstado().fase, 'nao-confirmado', 'a fonte fechada não confirma');
+  for (const ouvinte of fonte.instancias[1]!.ouvintes.get('entrega.confirmada') ?? []) ouvinte({ data });
+  assert.equal(controle.getEstado().fase, 'confirmado');
+  assert.equal(posts, 1);
+  controle.dispose();
+});
+
 test('POST instala a fronteira, fica aceito e o eco user confirma', async () => {
   const fonte = fonteFake();
   const relogio = relogioFake();

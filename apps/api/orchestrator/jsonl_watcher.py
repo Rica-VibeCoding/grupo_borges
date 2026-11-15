@@ -24,6 +24,7 @@ Encoded-cwd format do CC (validado contra ~/.claude/projects/ real em PC e VPS):
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import re
@@ -216,6 +217,30 @@ def _message_text(payload: dict) -> str | None:
     if isinstance(content, str):
         return content
     return None
+
+
+def _delivery_evidence(payload: dict) -> tuple[str, str] | None:
+    if payload.get("isSidechain"):
+        return None
+    event_type = payload.get("type")
+    text = None
+    via = "turno"
+    if event_type == "user":
+        origin = payload.get("origin")
+        if isinstance(origin, dict) and origin.get("kind") not in {None, "human"}:
+            return None
+        text = _message_text(payload)
+        if text is None:
+            text = "".join(block.get("text", "") for block in _content_blocks(payload)
+                           if block.get("type") == "text" and isinstance(block.get("text"), str))
+    elif event_type == "attachment":
+        attachment = payload.get("attachment")
+        if isinstance(attachment, dict) and attachment.get("type") == "queued_command":
+            text, via = attachment.get("prompt"), "fila"
+    elif (event_type == "queue-operation" and payload.get("operation") == "remove"
+          and payload.get("reason") == "absorbed_mid_turn"):
+        text, via = payload.get("content"), "absorvida"
+    return (text, via) if isinstance(text, str) and text.strip() else None
 
 
 def _tool_activity(payload: dict) -> dict[str, Any]:
@@ -1020,17 +1045,20 @@ class JsonlWatcher:
         event_type = str((payload or {}).get("type") or "unknown")
         if not self._backfill_current:
             update_subagent_state_from_jsonl(slug, payload, event_type)
-        if isinstance(payload, dict) and event_type == "user":
-            message = payload.get("message")
-            text = _message_text(payload)
-            message_uuid = payload.get("uuid")
-            if isinstance(message, dict) and text and isinstance(message_uuid, str):
+        if isinstance(payload, dict):
+            evidence = _delivery_evidence(payload)
+            if evidence is not None:
+                text, via = evidence
+                message_key = payload.get("uuid")
+                if not isinstance(message_key, str) or not message_key:
+                    message_key = hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
                 meta = await self._db.claim_message_origin(
                     agent_slug=slug,
                     executor_kind="tmux",
                     expected_text=text,
-                    message_key=message_uuid,
+                    message_key=message_key,
                     observed_at_ms=_timestamp_ms(payload.get("timestamp")),
+                    via=via,
                 )
                 if meta is not None:
                     payload["meta"] = meta

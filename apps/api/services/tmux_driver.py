@@ -2455,12 +2455,16 @@ def _confirm_armed_submission(
     return None if foreign_content else False, enter_attempts
 
 
-def _send_message_sync(session_name: str, text: str) -> DeliveryResult:
+def sanitize_message_text(text: str) -> str:
     # \r solto vira ruído no buffer tmux; \r\n vira \n; \n é preservado pra
     # multilinha funcionar como paste real (envelope do Cockpit tem 30+ linhas).
     # Control chars (exceto \n e \t) removidos pra evitar sequência ANSI inesperada
     # consumida pelo terminal do pane.
-    sanitized = _CONTROL_CHARS.sub("", text.replace("\r\n", "\n").replace("\r", ""))
+    return _CONTROL_CHARS.sub("", text.replace("\r\n", "\n").replace("\r", ""))
+
+
+def _send_message_sync(session_name: str, text: str) -> DeliveryResult:
+    sanitized = sanitize_message_text(text)
 
     telemetry = _DeliveryTelemetry(sanitized)
     server = _server_for(session_name)

@@ -23,6 +23,7 @@ import logging
 import sqlite3
 import threading
 import time
+import unicodedata
 import uuid
 from collections import Counter
 from datetime import datetime, timedelta, timezone
@@ -91,6 +92,10 @@ _RECENT_SESSION_SCAN_WINDOW = 4000
 # maior espera medida (366,788 s) com margem, sem deixar a correlação aberta.
 # Depois disso, perder a proveniência é mais seguro que atribuí-la ao texto errado.
 MESSAGE_ORIGIN_MATCH_WINDOW_MS = 600_000
+
+
+def _normalize_origin_text(text: str) -> str:
+    return " ".join(unicodedata.normalize("NFC", text.replace("\r\n", "\n")).split())
 
 
 def _parse_csv_statuses(raw: str | None) -> list[str]:
@@ -970,6 +975,7 @@ class GrupoBorgesDB:
         expected_text: str,
         message_key: str,
         observed_at_ms: int,
+        via: str = "turno",
     ) -> dict[str, Any] | None:
         """Associa uma origem pendente ao eco externo, uma única vez.
 
@@ -983,6 +989,7 @@ class GrupoBorgesDB:
             expected_text,
             message_key,
             observed_at_ms,
+            via,
         )
 
     def _claim_message_origin(
@@ -992,8 +999,11 @@ class GrupoBorgesDB:
         expected_text: str,
         message_key: str,
         observed_at_ms: int,
+        via: str = "turno",
     ) -> dict[str, Any] | None:
         with self._connect() as conn, conn:
+            # Origem e recibo são uma só transação, inclusive em replay concorrente.
+            conn.execute("BEGIN IMMEDIATE")
             existing = conn.execute(
                 """
                 SELECT meta_json FROM message_origins
@@ -1024,41 +1034,57 @@ class GrupoBorgesDB:
             # perda de precisão. O piso evita casar uma origem órfã antiga.
             pending = conn.execute(
                 """
-                SELECT id, meta_json FROM message_origins
+                SELECT id, expected_text, meta_json FROM message_origins
                 WHERE agent_slug = ?
                   AND executor_kind = ?
-                  AND expected_text = ?
                   AND message_key IS NULL
                   AND created_at_ms >= ?
                   AND created_at_ms <= ?
-                ORDER BY created_at_ms ASC
-                LIMIT 1
+                ORDER BY created_at_ms ASC, rowid ASC
                 """,
                 (
                     agent_slug,
                     executor_kind,
-                    expected_text,
                     oldest_match_ms,
                     observed_at_ms + 1000,
                 ),
-            ).fetchone()
-            if pending is None:
-                return None
-
-            updated = conn.execute(
-                """
-                UPDATE message_origins SET message_key = ?
-                WHERE id = ? AND message_key IS NULL
-                """,
-                (message_key, pending["id"]),
-            )
-            if updated.rowcount != 1:
-                return None
-            try:
-                value = json.loads(pending["meta_json"])
-            except (TypeError, json.JSONDecodeError):
-                return None
-            return value if isinstance(value, dict) else None
+            ).fetchall()
+            observed = _normalize_origin_text(expected_text)
+            first_meta = None
+            for origin in pending:
+                expected = _normalize_origin_text(origin["expected_text"])
+                # Texto curto ("ok") cabe dentro de qualquer fala seguinte:
+                # só casa por igualdade, para não confirmar o que não entrou.
+                if not expected or (
+                    expected not in observed if len(expected) >= 12 else expected != observed
+                ):
+                    continue
+                try:
+                    meta = json.loads(origin["meta_json"])
+                except (TypeError, json.JSONDecodeError):
+                    continue
+                if not isinstance(meta, dict):
+                    continue
+                # Um user pode conter várias entradas da fila. Cada ocorrência
+                # só paga uma origem, mesmo que duas tenham o mesmo texto.
+                observed = observed.replace(expected, "\x00", 1)
+                key = message_key if first_meta is None else f"{message_key}:{origin['id']}"
+                conn.execute(
+                    "UPDATE message_origins SET message_key = ? WHERE id = ?",
+                    (key, origin["id"]),
+                )
+                if first_meta is None:
+                    first_meta = meta
+                delivery_id = meta.get("delivery_id")
+                if isinstance(delivery_id, str) and delivery_id:
+                    conn.execute(
+                        """INSERT INTO task_events (agent_slug, kind, payload, created_at)
+                        VALUES (?, 'entrega.confirmada', ?, ?)""",
+                        (agent_slug, json.dumps({
+                            "agent_slug": agent_slug, "delivery_id": delivery_id, "via": via,
+                        }, ensure_ascii=False), int(time.time())),
+                    )
+            return first_meta
 
     async def insert_task_event(
         self,
