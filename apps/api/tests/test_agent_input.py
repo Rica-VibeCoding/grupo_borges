@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import ANY, AsyncMock, patch
+from uuid import UUID
 
 import pytest
 
@@ -169,7 +170,7 @@ def test_input_stt_preserves_voice_origin_without_exposing_marker_in_draft(
         agent_slug="daniel",
         executor_kind="tmux",
         expected_text="🎙 texto revisado",
-        meta={"kind": "stt", "raw_text": "🎙 texto revisado"},
+        meta={"kind": "stt", "raw_text": "🎙 texto revisado", "delivery_id": ANY},
     )
 
 
@@ -196,7 +197,7 @@ def test_input_voz_chega_com_marca_propria_da_tela_de_voz(tmp_path: Path) -> Non
         agent_slug="daniel",
         executor_kind="tmux",
         expected_text="🗣 como está o deploy",
-        meta={"kind": "stt", "raw_text": "🗣 como está o deploy"},
+        meta={"kind": "stt", "raw_text": "🗣 como está o deploy", "delivery_id": ANY},
     )
 
 
@@ -230,6 +231,7 @@ def test_input_returns_additive_event_boundary_before_tmux_send(tmp_path: Path) 
         "tmux_delivered": True,
         "sent_at": body["sent_at"],
         "event_boundary_id": 37,
+        "delivery_id": ANY,
     }
     assert isinstance(body["sent_at"], int)
     assert order == ["boundary", "send"]
@@ -264,6 +266,8 @@ def test_input_returns_structured_409_when_delivery_fails(
                 "delivery_outcome": desfecho,
                 "reason": motivo,
                 "safe_to_resend": seguro_reenviar,
+                "delivery_id": ANY,
+                "event_boundary_id": ANY,
             }
 
 
@@ -280,6 +284,56 @@ def test_input_returns_tmux_delivered_true(tmp_path: Path) -> None:
             body = response.json()
             assert body["tmux_delivered"] is True
             assert isinstance(body["sent_at"], int)
+
+
+@pytest.mark.parametrize("resultado", [tmux_driver.DELIVERED, _INCERTO,
+    tmux_driver.DeliveryResult(outcome="uncertain", reason="envio_incerto"), _RECUSADO])
+@pytest.mark.parametrize("origem,prefixo", [("text", ""), ("stt", "🎙 "), ("voz", "🗣 ")])
+def test_input_records_origin_before_send_and_keeps_uncertain(
+    tmp_path: Path, resultado: tmux_driver.DeliveryResult, origem: str, prefixo: str,
+) -> None:
+    app = _build_app(tmp_path)
+    recorded = []
+
+    async def send_message(_session: str, _text: str):
+        with app.state.db._connect() as conn:
+            recorded.extend(dict(row) for row in conn.execute("SELECT * FROM message_origins"))
+        return resultado
+
+    with patch("routers.agents.tmux_driver.send_message", side_effect=send_message):
+        with TestClient(app) as client:
+            response = client.post("/api/agents/daniel/input", json={
+                "text": "olá\r\nlinha\x00\x1b", "idempotency_key": "origem", "origin": origem,
+            })
+
+    assert response.status_code == (200 if resultado.delivered else 409)
+    assert len(recorded) == 1, "a origem precisa existir antes de o JSONL poder chegar"
+    row = recorded[0]
+    assert row["expected_text"] == prefixo + "olá\nlinha"
+    meta = json.loads(row["meta_json"])
+    UUID(meta["delivery_id"])
+    body = response.json() if resultado.delivered else response.json()["detail"]
+    assert body["delivery_id"] == meta["delivery_id"]
+    assert isinstance(body["event_boundary_id"], int)
+    with app.state.db._connect() as conn:
+        remaining = conn.execute("SELECT count(*) FROM message_origins").fetchone()[0]
+    assert remaining == (0 if resultado.outcome == "refused" else 1)
+
+
+def test_input_origin_matches_expanded_encerrar(tmp_path: Path) -> None:
+    app = _build_app(tmp_path)
+    with patch("routers.agents.expandir_encerrar", return_value="ritual\r\nexpandido\x00"), patch(
+        "routers.agents.tmux_driver.send_message", return_value=_INCERTO,
+    ):
+        with TestClient(app) as client:
+            response = client.post("/api/agents/daniel/input", json={
+                "text": "/encerrar", "idempotency_key": "encerrar",
+            })
+    assert response.status_code == 409
+    with app.state.db._connect() as conn:
+        row = conn.execute("SELECT expected_text FROM message_origins").fetchone()
+    assert row is not None
+    assert row["expected_text"] == "ritual\nexpandido"
 
 
 def test_input_clear_arma_rename_apos_clear_em_background(tmp_path: Path) -> None:

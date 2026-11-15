@@ -65,7 +65,6 @@ from orchestrator.jsonl_watcher import (
     subagent_status_events_since,
 )
 from orchestrator.synthetic_message import (
-    SyntheticMeta,
     detect_synthetic_kind,
     explicit_synthetic_meta,
 )
@@ -823,7 +822,7 @@ async def list_agent_commands(slug: str, request: Request) -> list[dict[str, str
 
 
 class _InputOrigin(NamedTuple):
-    meta: SyntheticMeta
+    meta: dict[str, Any]
 
 
 async def _send_tmux_result_or_409(
@@ -841,7 +840,7 @@ async def _send_tmux_result_or_409(
         origin_id = await db.create_message_origin(
             agent_slug=agent_slug,
             executor_kind="tmux",
-            expected_text=text,
+            expected_text=tmux_driver.sanitize_message_text(text),
             meta=input_origin.meta,
         )
     try:
@@ -850,11 +849,7 @@ async def _send_tmux_result_or_409(
         if origin_id is not None:
             await db.discard_message_origin(origin_id)
         raise HTTPException(status_code=409, detail="agent_tmux_busy") from exc
-    except Exception:
-        if origin_id is not None:
-            await db.discard_message_origin(origin_id)
-        raise
-    if not result.delivered and origin_id is not None:
+    if getattr(result, "outcome", None) == "refused" and origin_id is not None:
         await db.discard_message_origin(origin_id)
     return result
 
@@ -2614,6 +2609,7 @@ class InputResponse(BaseModel):
     tmux_delivered: bool
     sent_at: int
     event_boundary_id: int
+    delivery_id: str
 
 
 class RelaunchRequest(BaseModel):
@@ -3408,11 +3404,11 @@ async def send_agent_input(
             )
         except (OSError, UnicodeError) as exc:
             raise HTTPException(status_code=409, detail="encerrar_ritual_indisponivel") from exc
-    input_origin = (
-        _InputOrigin(meta={"kind": "stt", "raw_text": delivered_text})
-        if prefixo
-        else None
-    )
+    delivery_id = str(uuid.uuid4())
+    input_origin = _InputOrigin(meta={
+        "delivery_id": delivery_id,
+        **({"kind": "stt", "raw_text": delivered_text} if prefixo else {}),
+    })
     nome_apos_clear = (
         _nome_apos_clear(payload.text, agent["name"])
         if payload.origin == "text"
@@ -3434,6 +3430,8 @@ async def send_agent_input(
                 "delivery_outcome": result.outcome,
                 "reason": result.reason,
                 "safe_to_resend": result.safe_to_resend,
+                "delivery_id": delivery_id,
+                "event_boundary_id": event_boundary_id,
             },
         )
     if nome_apos_clear:
@@ -3445,6 +3443,7 @@ async def send_agent_input(
         tmux_delivered=True,
         sent_at=int(time.time()),
         event_boundary_id=event_boundary_id,
+        delivery_id=delivery_id,
     )
 
 

@@ -1,7 +1,7 @@
 /**
- * A observação do stream depois do POST: abre o `/messages/stream` a partir da
- * fronteira que o servidor devolveu, entrega ao controle cada texto do Rica que
- * volta (eco `user` ou recibo da fila) e reconecta quando a conexão cai. O
+ * A observação depois do POST: abre `/messages/stream` para o eco e, se a
+ * entrega ficar incerta, `/api/stream` para o recibo com delivery_id. Começa
+ * na fronteira do POST e reconecta quando a conexão cai. O
  * cursor, a fonte e o timer de reconexão são dela; o que fazer com o texto, e
  * quando parar, quem decide é o controle (`controle-envio.ts`).
  */
@@ -27,12 +27,13 @@ export type OpcoesDaObservacao = {
   /** Um texto do Rica voltou pelo stream. Devolve se a observação cumpriu o
    *  papel — aí o stream fecha. */
   aoTexto: (item: { id: number; papel: 'user' | 'fila'; texto: string }) => boolean;
+  aoEntrega: (deliveryId: string, id: number) => boolean;
   /** Na reconexão: de onde retomar, ou `undefined` se não há eco a esperar. */
   retomarDe: () => FronteiraEnvio | undefined;
 };
 
 export type ObservacaoDoEco = {
-  observar(fronteira: FronteiraEnvio): void;
+  observar(fronteira: FronteiraEnvio, deliveryId?: string): void;
   /** Fecha o stream e desarma a reconexão. */
   encerrar(): void;
 };
@@ -54,15 +55,33 @@ export function criaObservacaoDoEco(opcoes: OpcoesDaObservacao): ObservacaoDoEco
     fonte = null;
   }
 
-  function observar(fronteira: FronteiraEnvio): void {
+  function observar(fronteira: FronteiraEnvio, deliveryId?: string): void {
     if (opcoes.descartado() || !FonteEventos) return;
     fecharFonte();
-    cursor = Math.max(cursor, fronteira.id);
+    // O recibo pode preceder o item JSONL que já avançou o cursor do eco.
+    cursor = deliveryId ? fronteira.id : Math.max(cursor, fronteira.id);
     const parametros = new URLSearchParams({ since_id: String(cursor), limit: '500' });
     const atual = new FonteEventos(
-      `/api/agents/${encodeURIComponent(agentSlug)}/messages/stream?${parametros}`,
+      deliveryId ? `/api/stream?${parametros}` :
+        `/api/agents/${encodeURIComponent(agentSlug)}/messages/stream?${parametros}`,
     );
     fonte = atual;
+
+    atual.addEventListener('entrega.confirmada', (evento) => {
+      if (opcoes.descartado() || fonte !== atual || !deliveryId) return;
+      try {
+        const recibo = JSON.parse(evento.data);
+        if (!Number.isSafeInteger(recibo.id) || recibo.id <= cursor ||
+            recibo.agent_slug !== agentSlug || recibo.payload?.agent_slug !== agentSlug ||
+            recibo.payload?.delivery_id !== deliveryId ||
+            !['turno', 'fila', 'absorvida'].includes(recibo.payload?.via)) return;
+        cursor = recibo.id;
+        if (opcoes.aoEntrega(deliveryId, recibo.id)) {
+          limparTimerReconexao();
+          fecharFonte();
+        }
+      } catch { /* Recibo malformado não confirma nem move o cursor. */ }
+    });
 
     atual.addEventListener('message', (evento) => {
       if (opcoes.descartado() || fonte !== atual) return;
@@ -86,12 +105,8 @@ export function criaObservacaoDoEco(opcoes: OpcoesDaObservacao): ObservacaoDoEco
       fecharFonte();
       timerReconexao = agendar(() => {
         timerReconexao = undefined;
-        // O endpoint reexecuta o replay a partir deste cursor. Ainda assim, se
-        // o servidor algum dia não conseguir reter/replayar o intervalo da
-        // queda, um eco pode ser perdido e o envio ficará
-        // `nao-confirmado`. Não há reconciliação adicional nesta rodada.
         const retomada = opcoes.retomarDe();
-        if (retomada !== undefined) observar(retomada);
+        if (retomada !== undefined) observar(retomada, deliveryId);
       }, atrasoReconexaoMs);
     };
   }

@@ -361,6 +361,7 @@ export type ChatModelSlug = 'fable' | 'opus' | 'sonnet' | 'haiku';
 export type AgentInputResponse = {
   tmux_delivered: boolean;
   sent_at: number;
+  delivery_id?: string;
   /**
    * `true` no 202: o servidor guardou o texto na fila dele em vez de entregar
    * agora, porque o motor do outro lado não enfileira sozinho. O
@@ -391,6 +392,8 @@ export class AgentInputError extends Error {
   readonly deliveryOutcome: 'refused' | 'uncertain' | null;
   readonly reason: string | null;
   readonly safeToResend: boolean | null;
+  readonly deliveryId: string | null;
+  readonly eventBoundaryId: number | null;
 
   constructor(
     message: string,
@@ -400,6 +403,8 @@ export class AgentInputError extends Error {
       outcome: 'refused' | 'uncertain';
       reason: string | null;
       safeToResend: boolean;
+      deliveryId?: string;
+      eventBoundaryId?: number;
     },
   ) {
     super(message);
@@ -409,6 +414,8 @@ export class AgentInputError extends Error {
     this.deliveryOutcome = delivery?.outcome ?? null;
     this.reason = delivery?.reason ?? null;
     this.safeToResend = delivery?.safeToResend ?? null;
+    this.deliveryId = delivery?.deliveryId ?? null;
+    this.eventBoundaryId = delivery?.eventBoundaryId ?? null;
   }
 }
 
@@ -460,6 +467,9 @@ async function agentInputError(res: Response): Promise<AgentInputError> {
         outcome: detail.delivery_outcome,
         reason: detail.reason,
         safeToResend: detail.safe_to_resend,
+        deliveryId: typeof detail.delivery_id === 'string' ? detail.delivery_id : undefined,
+        eventBoundaryId: Number.isSafeInteger(detail.event_boundary_id) && detail.event_boundary_id >= 0
+          ? detail.event_boundary_id : undefined,
       });
     }
   } catch {

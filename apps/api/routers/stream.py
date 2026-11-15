@@ -27,11 +27,14 @@ async def _event_generator(request: Request) -> AsyncGenerator[dict, None]:
 
     # Honra Last-Event-ID do EventSource pra reconnect sem gap.
     last_id_header = request.headers.get("last-event-id")
+    # O POST pode terminar depois de o watcher publicar a confirmação. O
+    # since_id explícito inclui esse intervalo; reconexão honra Last-Event-ID.
+    since_id = request.query_params.get("since_id")
     try:
-        last_id = int(last_id_header) if last_id_header is not None else 0
+        last_id = int(last_id_header or since_id or 0)
     except ValueError:
         last_id = 0
-    if last_id <= 0:
+    if last_id <= 0 and since_id is None:
         last_id = await db.max_event_id()
 
     while True:

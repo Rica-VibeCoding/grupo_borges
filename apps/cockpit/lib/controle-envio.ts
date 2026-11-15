@@ -132,14 +132,17 @@ export function createControleEnvio(
       if (cumpriu) limparTimerPrazo();
       return cumpriu;
     },
+    aoEntrega: (deliveryId, id) => {
+      publicar({ tipo: 'entrega-confirmada', deliveryId, id });
+      const cumpriu = estado.fase === 'confirmado';
+      if (cumpriu) limparTimerPrazo();
+      return cumpriu;
+    },
     retomarDe: () => {
-      // Confirmado pela fila também reconecta: o eco da drenagem ainda vem.
       const aguardandoEco =
         estado.fase === 'aceito' ||
         estado.fase === 'nao-confirmado' ||
         (estado.fase === 'confirmado' && estado.fila === true);
-      // `'fronteira' in estado` em vez de confiar na fase: o `aguardandoEco`
-      // é uma disjunção composta, e o TS não estreita o union por ela.
       return aguardandoEco && 'fronteira' in estado ? estado.fronteira : undefined;
     },
   });
@@ -168,6 +171,9 @@ export function createControleEnvio(
         return;
       }
       publicar({ tipo: 'tempo-passou', agoraMs: agora() });
+      if (estado.fase === 'nao-confirmado' && estado.deliveryId && estado.fronteira) {
+        eco.observar(estado.fronteira, estado.deliveryId);
+      }
     }, atrasoMs);
   }
 
@@ -225,10 +231,12 @@ export function createControleEnvio(
         publicar({
           tipo: 'nao-confirmar',
           erro: new Error('O backend não conseguiu provar a entrega no pane — o texto pode ter entrado'),
+          fronteira: leitura.fronteira, deliveryId: leitura.deliveryId,
         });
+        if (leitura.deliveryId) eco.observar(leitura.fronteira, leitura.deliveryId);
         return;
       }
-      publicar({ tipo: 'aceitar', agoraMs: agora(), fronteira: leitura.fronteira });
+      publicar({ ...leitura, tipo: 'aceitar', agoraMs: agora() });
       eco.observar(leitura.fronteira);
       armarPrazo();
     } catch (erro) {
@@ -244,17 +252,16 @@ export function createControleEnvio(
         }, leitura.atrasoMs);
         return;
       }
-      // Só aqui a máquina SABE que não saiu — é o único gatilho correto para
-      // desfazer uma pendência otimista registrada antes do POST. Em
-      // `nao-confirmado` o texto pode ter entrado mesmo assim (ver
-      // `leRespostaDoEnvio`), então a pendência segue esperando o rollout
-      // confirmar ou expirar sozinha.
+      // Só `falhou` prova que não saiu; `nao-confirmado` mantém a pendência.
       if (leitura.tipo === 'falhou') aoFalhar?.();
       publicar(
         leitura.tipo === 'falhou'
           ? { tipo: 'falhar', erro }
-          : { tipo: 'nao-confirmar', erro },
+          : { ...leitura, tipo: 'nao-confirmar', erro },
       );
+      if (leitura.tipo === 'incerto' && leitura.deliveryId && leitura.fronteira) {
+        eco.observar(leitura.fronteira, leitura.deliveryId);
+      }
     }
   }
 
