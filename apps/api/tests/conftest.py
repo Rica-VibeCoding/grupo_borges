@@ -25,6 +25,16 @@ from services import desligamento_deliberado
 
 
 @pytest.fixture(autouse=True)
+def banco_fora_da_frota(monkeypatch, tmp_path):
+    from db.store import GrupoBorgesDB
+
+    caminho = tmp_path / "grupo-borges.db"
+    monkeypatch.setenv("GB_DB_PATH", str(caminho))
+    GrupoBorgesDB(str(caminho))._apply_schema()
+    return caminho
+
+
+@pytest.fixture(autouse=True)
 def carimbo_fora_do_home(monkeypatch, tmp_path):
     alvo = tmp_path / "carimbo" / ".desligados-de-proposito.json"
     monkeypatch.setattr(desligamento_deliberado, "CAMINHO", alvo)

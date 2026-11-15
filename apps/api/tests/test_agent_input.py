@@ -240,6 +240,8 @@ def test_input_returns_additive_event_boundary_before_tmux_send(tmp_path: Path) 
     [
         (_RECUSADO, "refused", "sessao_ausente", True),
         (_INCERTO, "uncertain", "envio_nao_confirmado", False),
+        (tmux_driver.DeliveryResult(outcome="uncertain", reason="envio_incerto"),
+         "uncertain", "envio_incerto", False),
     ],
 )
 def test_input_returns_structured_409_when_delivery_fails(

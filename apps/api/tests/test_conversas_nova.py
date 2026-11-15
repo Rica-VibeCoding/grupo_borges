@@ -49,6 +49,7 @@ class AgenteFalso:
         self.recusa: str | None = None
         #: Prefixo cujo envio volta `uncertain` — mas chega ao agente.
         self.incerto: str | None = None
+        self.motivo_incerto = "envio_nao_confirmado"
         #: O `/clear` cria o JSONL da conversa nova.
         self.clear_pega = True
         self.passos: list[str] = []
@@ -68,7 +69,7 @@ class AgenteFalso:
             if self.clear_pega:
                 (self.bancada.pasta / f"{ID_NOVA}.jsonl").write_text("")
         if self.incerto and texto.startswith(self.incerto):
-            return tmux_driver.DeliveryResult(outcome="uncertain", reason="envio_nao_confirmado")
+            return tmux_driver.DeliveryResult(outcome="uncertain", reason=self.motivo_incerto)
         return tmux_driver.DELIVERED
 
     async def _estacionar(self) -> None:
@@ -301,22 +302,35 @@ async def test_clear_recusado_vira_fase_erro_legivel(palco) -> None:
     assert de_novo.status_code == 200
 
 
-async def test_clear_incerto_com_conversa_nova_no_disco_segue_pronta(palco) -> None:
+@pytest.mark.parametrize("motivo", ["envio_nao_confirmado", "envio_incerto"])
+async def test_clear_incerto_com_conversa_nova_no_disco_segue_pronta(palco, motivo) -> None:
     """F11: o CC limpa a tela no Enter e a prova some; a troca tinha acontecido."""
     palco.agente.incerto = "/clear"
+    palco.agente.motivo_incerto = motivo
     r = await palco.cliente.post("/api/agents/pavan/conversas/nova", json={})
     assert r.status_code == 200, r.text
     assert r.json()["fase"] == "pronta"
     assert palco.agente.enviados[1:] == ["/clear", "/rename José Pavan"]
 
 
-async def test_clear_incerto_sem_conversa_nova_e_erro_de_entrega(palco) -> None:
+@pytest.mark.parametrize("motivo", ["envio_nao_confirmado", "envio_incerto"])
+async def test_clear_incerto_sem_conversa_nova_e_erro_de_entrega(palco, motivo) -> None:
     palco.agente.incerto = "/clear"
+    palco.agente.motivo_incerto = motivo
     palco.agente.clear_pega = False
     r = await palco.cliente.post("/api/agents/pavan/conversas/nova", json={})
     assert r.status_code == 502
     assert "/clear não chegou" in r.json()["detalhe"]
     assert not any(t.startswith("/rename") for t in palco.agente.enviados)
+
+
+async def test_rename_com_envio_incerto_mantem_fase_erro(palco) -> None:
+    palco.agente.incerto = "/rename"
+    palco.agente.motivo_incerto = "envio_incerto"
+    r = await palco.cliente.post("/api/agents/pavan/conversas/nova", json={})
+    assert r.status_code == 502
+    assert r.json()["fase"] == "erro"
+    assert "Não deu para confirmar — confira na conversa" in r.json()["detalhe"]
 
 
 async def test_conversa_nova_que_nao_aparece_e_erro_sem_rename(palco) -> None:

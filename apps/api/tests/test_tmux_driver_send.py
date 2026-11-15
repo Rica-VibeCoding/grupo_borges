@@ -3,9 +3,12 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import hashlib
 import logging
+import sqlite3
 import sys
 import threading
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -542,6 +545,109 @@ def test_send_retries_unknown_snapshots_until_input_stabilizes() -> None:
     assert _send(pane) is True
     assert pane.paste_count == 1
     assert pane.enter_count == 1
+
+
+def test_delivery_telemetry_uses_temporary_database(tmp_path: Path) -> None:
+    from config import get_settings
+
+    caminho = Path(get_settings().db_path)
+    # Falha antes de qualquer envio se a cerca da bancada regredir.
+    assert caminho.is_relative_to(tmp_path)
+    assert _send(_FakePane("mensagem de teste")) is True
+    with sqlite3.connect(caminho) as conn:
+        assert conn.execute(
+            "SELECT session_name, outcome FROM delivery_attempts"
+        ).fetchall() == [("pane-teste", "entregue")]
+
+
+@pytest.mark.parametrize("modo", ["entregue", "armado", "alheio", "ocupado"])
+def test_delivery_telemetry_records_metadata_without_message_text(modo: str) -> None:
+    from config import get_settings
+
+    raw = "pedido privado\r\ncom acentuação\x1b"
+    sanitized = "pedido privado\ncom acentuação"
+    alheio = "sugestão " * 25
+    pane = _FakePane(
+        sanitized,
+        enter_succeeds_on=2 if modo == "entregue" else None,
+        replacement_on_enter=alheio if modo == "alheio" else None,
+    )
+    if modo == "ocupado":
+        pane.state = "armed"
+        pane.visible_text = alheio
+    resultado = _entrega(pane, raw)
+
+    with sqlite3.connect(get_settings().db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = dict(conn.execute("SELECT * FROM delivery_attempts").fetchone())
+    assert row["text_hash"] == hashlib.sha256(sanitized.encode()).hexdigest()[:16]
+    assert row["text_length"] == len(sanitized)
+    assert row["is_multiline"] == 1
+    assert row["enter_attempts"] == pane.enter_count == {
+        "entregue": 2, "armado": 3, "alheio": 1, "ocupado": 0,
+    }[modo]
+    assert row["reason"] == resultado.reason
+    assert row["last_snapshot_state"] == ("empty" if modo == "entregue" else "armed")
+    assert row["last_snapshot_excerpt"] == {
+        "entregue": "", "armado": "[payload omitido]",
+        "alheio": alheio[:120], "ocupado": alheio[:120],
+    }[modo]
+    assert "pedido privado" not in repr(row)
+
+
+def test_delivery_telemetry_omits_partial_payload_from_snapshot() -> None:
+    from config import get_settings
+
+    texto = "conteúdo privado da mensagem " * 15
+    telemetry = tmux_driver._DeliveryTelemetry(texto)
+    telemetry.observe(tmux_driver._PaneInputSnapshot("armed", texto[:100]))
+    tmux_driver._anota_tentativa("parcial", "incerto", "paste_nao_confirmado", telemetry)
+
+    with sqlite3.connect(get_settings().db_path) as conn:
+        assert conn.execute("SELECT last_snapshot_excerpt FROM delivery_attempts").fetchone() == (
+            "[payload omitido]",
+        )
+
+
+def test_send_waits_through_foreign_content_after_multiline_submission() -> None:
+    class _SuggestionThenEmptyPane(_FakePane):
+        suggestion_frames = 0
+
+        def capture_pane(self, **kwargs: object) -> list[str]:
+            if self.enter_count:
+                self.suggestion_frames += 1
+                if self.suggestion_frames >= 4:
+                    self.state = "empty"
+                    self.visible_text = ""
+            return super().capture_pane(**kwargs)
+
+    pane = _SuggestionThenEmptyPane(
+        "primeira linha\nsegunda linha", replacement_on_enter="sugestão do Claude"
+    )
+    # Dublê também protege o banco ao rodar a reprodução sem a fixture.
+    with patch("services.delivery_log.registra_tentativa", return_value=True):
+        resultado = _entrega(pane)
+
+    assert resultado.delivered is True
+    assert pane.enter_count == 1
+    assert pane.clear_count == 0
+
+
+def test_send_foreign_content_until_deadline_returns_envio_incerto() -> None:
+    pane = _FakePane(
+        "primeira linha\nsegunda linha", replacement_on_enter="mensagem enfileirada"
+    )
+    inicio = time.monotonic()
+    with patch("services.delivery_log.registra_tentativa", return_value=True):
+        resultado = _entrega(pane)
+
+    assert time.monotonic() - inicio >= 0.25
+    assert (resultado.outcome, resultado.reason) == ("uncertain", "envio_incerto")
+    assert resultado.safe_to_resend is False
+    assert resultado.message == "Não deu para confirmar — confira na conversa"
+    assert pane.enter_count == 1
+    assert pane.clear_count == 0
+    assert pane.visible_text == "mensagem enfileirada"
 
 
 def test_encerrar_em_codex_nativo_entrega_texto() -> None:

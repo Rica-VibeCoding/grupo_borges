@@ -16,17 +16,9 @@ from services import delivery_log
 
 def _banco(tmp_path: Path) -> str:
     caminho = str(tmp_path / "teste.db")
-    conn = sqlite3.connect(caminho)
-    with conn:
-        conn.execute(
-            "CREATE TABLE delivery_attempts ("
-            " id INTEGER PRIMARY KEY AUTOINCREMENT,"
-            " session_name TEXT NOT NULL,"
-            " outcome TEXT NOT NULL,"
-            " reason TEXT,"
-            " at_ms INTEGER NOT NULL)"
-        )
-    conn.close()
+    from db.store import GrupoBorgesDB
+
+    GrupoBorgesDB(caminho)._apply_schema()
     return caminho
 
 
@@ -52,6 +44,35 @@ def test_grava_sucesso_e_recusa_com_o_motivo(tmp_path: Path) -> None:
         ("daniel", "entregue", None),
         ("canarinho", "recusado", "input_nao_observavel"),
     ]
+
+
+def test_migracao_preserva_tentativas_antigas_e_e_idempotente(tmp_path: Path) -> None:
+    from db.store import GrupoBorgesDB
+
+    caminho = str(tmp_path / "antigo.db")
+    with sqlite3.connect(caminho) as conn:
+        conn.executescript(
+            "CREATE TABLE delivery_attempts (id INTEGER PRIMARY KEY AUTOINCREMENT,"
+            " session_name TEXT NOT NULL, outcome TEXT NOT NULL, reason TEXT, at_ms INTEGER NOT NULL);"
+            "INSERT INTO delivery_attempts VALUES (1, 'antiga', 'entregue', NULL, 1);"
+        )
+    db = GrupoBorgesDB(caminho)
+    db._apply_schema()
+    db._apply_schema()
+
+    assert delivery_log.registra_tentativa(
+        caminho, "nova", "incerto", "envio_incerto", text_hash="0123456789abcdef",
+        text_length=42, is_multiline=True, enter_attempts=1,
+        last_snapshot_state="armed", last_snapshot_excerpt="sugestão " * 30,
+    )
+    antiga, nova = _linhas(caminho)
+    assert (antiga["session_name"], antiga["at_ms"], antiga["text_hash"]) == ("antiga", 1, None)
+    assert nova["text_hash"] == "0123456789abcdef"
+    assert nova["text_length"] == 42
+    assert nova["is_multiline"] == 1
+    assert nova["enter_attempts"] == 1
+    assert nova["last_snapshot_state"] == "armed"
+    assert nova["last_snapshot_excerpt"] == ("sugestão " * 30)[:120]
 
 
 def test_separa_recusado_de_incerto(tmp_path: Path) -> None:

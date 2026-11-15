@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import hashlib
 import json
 import logging
 import os
@@ -98,6 +99,7 @@ _DELIVERY_FAILURE_MESSAGES = {
     "paste_falhou": "O canal não conseguiu colocar a mensagem no campo do agente.",
     "paste_nao_confirmado": "O canal não confirmou a mensagem no campo do agente.",
     "envio_nao_confirmado": "O canal não confirmou o envio da mensagem ao agente.",
+    "envio_incerto": "Não deu para confirmar — confira na conversa",
     "erro_tmux": "O canal perdeu acesso à sessão do agente.",
 }
 # Motivos que provam que o pane não foi tocado: a recusa aconteceu antes de
@@ -153,8 +155,19 @@ class DeliveryResult:
 DELIVERED = DeliveryResult(outcome="delivered")
 
 
+@dataclass(slots=True)
+class _DeliveryTelemetry:
+    text: str
+    enter_attempts: int = 0
+    last_snapshot: _PaneInputSnapshot | None = None
+
+    def observe(self, snapshot: _PaneInputSnapshot) -> None:
+        self.last_snapshot = snapshot
+
+
 def _anota_tentativa(
-    session_name: str, desfecho: delivery_log.Desfecho, motivo: str | None
+    session_name: str, desfecho: delivery_log.Desfecho, motivo: str | None,
+    telemetry: _DeliveryTelemetry | None = None,
 ) -> None:
     """Grava a tentativa pro denominador. Aditivo — nunca atrapalha a entrega.
 
@@ -164,14 +177,36 @@ def _anota_tentativa(
     try:
         from config import get_settings
 
+        details = {}
+        if telemetry is not None:
+            snapshot = telemetry.last_snapshot
+            # A caixa ainda pode conter o pedido. Guarde o estado, nunca o
+            # texto da mensagem, nem quando o terminal o apresenta refluído.
+            excerpt = None if snapshot is None else snapshot.content
+            visible = _normalize_visible_text(excerpt or "")
+            if snapshot is not None and (
+                _snapshot_contains_payload(snapshot, telemetry.text)
+                or (visible and visible in _normalize_visible_text(telemetry.text))
+            ):
+                excerpt = "[payload omitido]"
+            details = {
+                "text_hash": hashlib.sha256(telemetry.text.encode("utf-8")).hexdigest()[:16],
+                "text_length": len(telemetry.text),
+                "is_multiline": "\n" in telemetry.text,
+                "enter_attempts": telemetry.enter_attempts,
+                "last_snapshot_state": None if snapshot is None else snapshot.state,
+                "last_snapshot_excerpt": excerpt,
+            }
         delivery_log.registra_tentativa(
-            get_settings().db_path, session_name, desfecho, motivo
+            get_settings().db_path, session_name, desfecho, motivo, **details
         )
     except Exception:  # noqa: BLE001 — telemetria não derruba mensagem do Rica
         log.exception("falhei ao anotar a tentativa de entrega: session=%s", session_name)
 
 
-def _record_delivery_refusal(session_name: str, reason: str) -> DeliveryResult:
+def _record_delivery_refusal(
+    session_name: str, reason: str, telemetry: _DeliveryTelemetry | None = None,
+) -> DeliveryResult:
     """Memoriza, alarma e devolve a recusa com o motivo que já era calculado."""
     now = time.time()
     with _DELIVERY_CHANNEL_RECORDS_GUARD:
@@ -203,11 +238,15 @@ def _record_delivery_refusal(session_name: str, reason: str) -> DeliveryResult:
         consecutive_refusals,
         blocked_for_seconds,
     )
-    _anota_tentativa(session_name, "recusado" if outcome == "refused" else "incerto", reason)
+    _anota_tentativa(
+        session_name, "recusado" if outcome == "refused" else "incerto", reason, telemetry
+    )
     return DeliveryResult(outcome=outcome, reason=reason)
 
 
-def _record_delivery_success(session_name: str) -> DeliveryResult:
+def _record_delivery_success(
+    session_name: str, telemetry: _DeliveryTelemetry | None = None,
+) -> DeliveryResult:
     now = time.time()
     with _DELIVERY_CHANNEL_RECORDS_GUARD:
         _DELIVERY_CHANNEL_RECORDS[session_name] = _DeliveryChannelRecord(
@@ -217,7 +256,7 @@ def _record_delivery_success(session_name: str) -> DeliveryResult:
             blocked_since=None,
             last_attempt_at=now,
         )
-    _anota_tentativa(session_name, "entregue", None)
+    _anota_tentativa(session_name, "entregue", None, telemetry)
     return DELIVERED
 
 
@@ -1040,11 +1079,14 @@ def _wait_for_input(
     deadline: float,
     *,
     incompatible: Callable[[_PaneInputSnapshot], bool] | None = None,
+    on_snapshot: Callable[[_PaneInputSnapshot], None] | None = None,
 ) -> _PaneInputSnapshot | None:
     """Espera um snapshot útil; ``unknown`` sempre permanece transitório."""
     incompativel_desde: float | None = None
     while time.monotonic() < deadline:
         snapshot = _capture_input_snapshot(pane)
+        if on_snapshot is not None:
+            on_snapshot(snapshot)
         if predicate(snapshot):
             return snapshot
         if snapshot.state != "unknown" and incompatible and incompatible(snapshot):
@@ -2369,18 +2411,24 @@ def _confirm_armed_submission(
     prior_prompt_count: int | None,
     deadline: float,
     max_enter_attempts: int,
-) -> tuple[bool, int]:
-    """Pressiona Enter e só confirma por input vazio ou prompt transcrito."""
+    telemetry: _DeliveryTelemetry | None = None,
+) -> tuple[bool | None, int]:
+    """Confirma por caixa vazia/transcrição; None é conteúdo alheio até o prazo."""
     enter_attempts = 0
+    foreign_content = False
     while enter_attempts < max_enter_attempts and time.monotonic() < deadline:
         if not _send_key(pane, "Enter"):
             return False, enter_attempts
         enter_attempts += 1
+        if telemetry is not None:
+            telemetry.enter_attempts = enter_attempts
         retry_at = min(deadline, time.monotonic() + _SUBMIT_ENTER_RETRY_INTERVAL_S)
 
         while time.monotonic() < deadline:
             time.sleep(_SUBMIT_POLL_INTERVAL_S)
             snapshot = _capture_input_snapshot(pane)
+            if telemetry is not None:
+                telemetry.observe(snapshot)
             current_prompt_count = _count_payload_prompt_lines(pane, text)
             if (
                 prior_prompt_count is not None
@@ -2392,28 +2440,32 @@ def _confirm_armed_submission(
                 continue
             if snapshot.state == "empty":
                 return True, enter_attempts
-            if not _snapshot_contains_payload(snapshot, text):
+            foreign_content = not _snapshot_contains_payload(snapshot, text)
+            if foreign_content:
                 # Texto diferente apareceu: pode ser humano. Nunca toque nele.
-                return False, enter_attempts
+                # Redesenho/sugestão após o Enter também ocupa a caixa por
+                # alguns quadros: espere a janela inteira antes de concluir.
+                continue
             # Só repete Enter depois de uma janela real e enquanto o snapshot
             # atual ainda prova que o mesmo payload continua armado. unknown
             # nunca autoriza um Enter extra.
             if time.monotonic() >= retry_at:
                 break
 
-    return False, enter_attempts
+    return None if foreign_content else False, enter_attempts
 
 
 def _send_message_sync(session_name: str, text: str) -> DeliveryResult:
-    server = _server_for(session_name)
-    if not server.has_session(session_name):
-        return _record_delivery_refusal(session_name, "sessao_ausente")
-
     # \r solto vira ruído no buffer tmux; \r\n vira \n; \n é preservado pra
     # multilinha funcionar como paste real (envelope do Cockpit tem 30+ linhas).
     # Control chars (exceto \n e \t) removidos pra evitar sequência ANSI inesperada
     # consumida pelo terminal do pane.
     sanitized = _CONTROL_CHARS.sub("", text.replace("\r\n", "\n").replace("\r", ""))
+
+    telemetry = _DeliveryTelemetry(sanitized)
+    server = _server_for(session_name)
+    if not server.has_session(session_name):
+        return _record_delivery_refusal(session_name, "sessao_ausente", telemetry)
 
     lock = _acquire_dispatch_lock(session_name)
     try:
@@ -2425,14 +2477,14 @@ def _send_message_sync(session_name: str, text: str) -> DeliveryResult:
         # envelope como comando.
         current_cmd = (pane.pane_current_command or "").lower()
         if current_cmd not in _EXPECTED_PANE_COMMANDS:
-            return _record_delivery_refusal(session_name, "pane_incompativel")
+            return _record_delivery_refusal(session_name, "pane_incompativel", telemetry)
 
         try:
             # load-buffer não toca o pane e pode levar até 5s. Faça-o antes de
             # provar vazio para não abrir uma janela de concatenação humana.
             buf_name = _load_tmux_buffer(server, sanitized)
             if buf_name is None:
-                return _record_delivery_refusal(session_name, "buffer_indisponivel")
+                return _record_delivery_refusal(session_name, "buffer_indisponivel", telemetry)
 
             paste_ok = False
             try:
@@ -2442,9 +2494,11 @@ def _send_message_sync(session_name: str, text: str) -> DeliveryResult:
                     lambda snapshot: snapshot.state == "empty",
                     pre_paste_deadline,
                     incompatible=lambda snapshot: snapshot.state == "armed",
+                    on_snapshot=telemetry.observe,
                 )
                 if empty_snapshot is None:
                     final_snapshot = _capture_input_snapshot(pane)
+                    telemetry.observe(final_snapshot)
                     reason = (
                         "input_ocupado_ou_travado"
                         if final_snapshot.state == "armed"
@@ -2454,12 +2508,13 @@ def _send_message_sync(session_name: str, text: str) -> DeliveryResult:
                         "tmux input indisponível ou armado antes do paste: session=%s",
                         session_name,
                     )
-                    return _record_delivery_refusal(session_name, reason)
+                    return _record_delivery_refusal(session_name, reason, telemetry)
 
                 prior_prompt_count = _count_payload_prompt_lines(pane, sanitized)
                 # Segunda leitura imediatamente antes do paste fecha a corrida
                 # entre a observação anterior e uma digitação humana.
                 latest_snapshot = _capture_input_snapshot(pane)
+                telemetry.observe(latest_snapshot)
                 if latest_snapshot.state != "empty":
                     log.warning("tmux input mudou antes do paste: session=%s", session_name)
                     reason = (
@@ -2467,22 +2522,24 @@ def _send_message_sync(session_name: str, text: str) -> DeliveryResult:
                         if latest_snapshot.state == "armed"
                         else "input_nao_observavel"
                     )
-                    return _record_delivery_refusal(session_name, reason)
+                    return _record_delivery_refusal(session_name, reason, telemetry)
                 if not _paste_loaded_buffer(pane, buf_name):
-                    return _record_delivery_refusal(session_name, "paste_falhou")
+                    return _record_delivery_refusal(session_name, "paste_falhou", telemetry)
                 paste_ok = True
                 paste_deadline = time.monotonic() + _SUBMIT_CONFIRM_TIMEOUT_S
                 pasted = _wait_for_input(
                     pane,
                     lambda snapshot: _snapshot_contains_payload(snapshot, sanitized),
                     paste_deadline,
+                    on_snapshot=telemetry.observe,
                 )
                 if pasted is None:
                     final_snapshot = _capture_input_snapshot(pane)
+                    telemetry.observe(final_snapshot)
                     if _snapshot_proves_owned_payload(final_snapshot, sanitized):
                         _send_key(pane, "C-u")
                     log.warning("tmux paste não observado no input: session=%s", session_name)
-                    return _record_delivery_refusal(session_name, "paste_nao_confirmado")
+                    return _record_delivery_refusal(session_name, "paste_nao_confirmado", telemetry)
 
                 submit_deadline = time.monotonic() + _SUBMIT_CONFIRM_TIMEOUT_S
                 confirmed, enter_attempts = _confirm_armed_submission(
@@ -2491,14 +2548,16 @@ def _send_message_sync(session_name: str, text: str) -> DeliveryResult:
                     prior_prompt_count=prior_prompt_count,
                     deadline=submit_deadline,
                     max_enter_attempts=_SUBMIT_MAX_ENTER_ATTEMPTS,
+                    telemetry=telemetry,
                 )
                 if confirmed:
                     with _ULTIMO_ENTREGUE_GUARD:
                         _ULTIMO_ENTREGUE[session_name] = sanitized
-                    return _record_delivery_success(session_name)
+                    return _record_delivery_success(session_name, telemetry)
 
                 # Só limpa quando a pane ainda prova que o texto é o nosso.
                 final_snapshot = _capture_input_snapshot(pane)
+                telemetry.observe(final_snapshot)
                 if _snapshot_proves_owned_payload(final_snapshot, sanitized):
                     _send_key(pane, "C-u")
                 log.warning(
@@ -2506,14 +2565,15 @@ def _send_message_sync(session_name: str, text: str) -> DeliveryResult:
                     session_name,
                     enter_attempts,
                 )
-                return _record_delivery_refusal(session_name, "envio_nao_confirmado")
+                reason = "envio_incerto" if confirmed is None else "envio_nao_confirmado"
+                return _record_delivery_refusal(session_name, reason, telemetry)
             finally:
                 # paste-buffer -d descarta no caminho feliz. Em falha anterior
                 # ao paste, o buffer ainda existe e precisa de cleanup.
                 if not paste_ok:
                     _delete_tmux_buffer(server, buf_name)
         except libtmux_exc.LibTmuxException:
-            return _record_delivery_refusal(session_name, "erro_tmux")
+            return _record_delivery_refusal(session_name, "erro_tmux", telemetry)
     finally:
         lock.release()
 

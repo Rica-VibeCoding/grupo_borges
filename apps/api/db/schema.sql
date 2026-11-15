@@ -277,7 +277,13 @@ CREATE TABLE IF NOT EXISTS delivery_attempts (
     session_name  TEXT NOT NULL,
     outcome       TEXT NOT NULL,
     reason        TEXT,
-    at_ms         INTEGER NOT NULL
+    at_ms         INTEGER NOT NULL,
+    text_hash     TEXT,
+    text_length   INTEGER,
+    is_multiline  INTEGER,
+    enter_attempts INTEGER,
+    last_snapshot_state TEXT,
+    last_snapshot_excerpt TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_delivery_attempts_at ON delivery_attempts (at_ms);
 

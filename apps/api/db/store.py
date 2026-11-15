@@ -341,6 +341,15 @@ class GrupoBorgesDB:
             # Migrações idempotentes: `executescript` fez commit implícito → ALTERs abaixo
             # rodam em autocommit. `_add_column_if_missing` engole "duplicate column" caso
             # dois startups concorrentes (ex: dev reload) racem na mesma coluna.
+            for col, definition in (
+                ("text_hash", "TEXT"),
+                ("text_length", "INTEGER"),
+                ("is_multiline", "INTEGER"),
+                ("enter_attempts", "INTEGER"),
+                ("last_snapshot_state", "TEXT"),
+                ("last_snapshot_excerpt", "TEXT"),
+            ):
+                self._add_column_if_missing(conn, "delivery_attempts", col, definition)
             self._add_column_if_missing(
                 conn, "faxina_item", "jev_probabilidade", "REAL CHECK (jev_probabilidade BETWEEN 0 AND 1)",
             )

@@ -48,6 +48,12 @@ def registra_tentativa(
     motivo: str | None = None,
     *,
     agora_ms: int | None = None,
+    text_hash: str | None = None,
+    text_length: int | None = None,
+    is_multiline: bool | None = None,
+    enter_attempts: int | None = None,
+    last_snapshot_state: str | None = None,
+    last_snapshot_excerpt: str | None = None,
 ) -> bool:
     """Grava uma tentativa. Devolve se gravou — nunca levanta.
 
@@ -61,9 +67,13 @@ def registra_tentativa(
         try:
             with conn:
                 conn.execute(
-                    "INSERT INTO delivery_attempts (session_name, outcome, reason, at_ms)"
-                    " VALUES (?, ?, ?, ?)",
-                    (session_name, desfecho, motivo, quando),
+                    "INSERT INTO delivery_attempts (session_name, outcome, reason, at_ms,"
+                    " text_hash, text_length, is_multiline, enter_attempts,"
+                    " last_snapshot_state, last_snapshot_excerpt)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (session_name, desfecho, motivo, quando, text_hash, text_length,
+                     is_multiline, enter_attempts, last_snapshot_state,
+                     last_snapshot_excerpt[:120] if last_snapshot_excerpt is not None else None),
                 )
             with _guarda:
                 _gravacoes_desde_a_apara += 1
