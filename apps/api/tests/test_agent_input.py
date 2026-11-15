@@ -237,6 +237,64 @@ def test_input_returns_additive_event_boundary_before_tmux_send(tmp_path: Path) 
     assert order == ["boundary", "send"]
 
 
+@pytest.mark.parametrize("fase", ["estacionando", "religando"])
+def test_input_recusa_durante_troca_sem_criar_origem_ou_tocar_tmux(
+    tmp_path: Path, banco_fora_da_frota: Path, fase: str,
+) -> None:
+    app = _build_app(tmp_path)
+    app.state.db.max_event_id = AsyncMock(return_value=37)
+    with patch(
+        "routers.agents.operacao_conversa.estado",
+        return_value=SimpleNamespace(fase=fase),
+    ), patch(
+        "routers.agents.tmux_driver.send_message", return_value=tmux_driver.DELIVERED,
+    ) as send_message, patch.object(
+        app.state.db, "create_message_origin", new=AsyncMock(),
+    ) as create_origin, patch.object(agents_router, "uuid") as uuid_module:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/agents/daniel/input",
+                json={"text": "oi", "idempotency_key": "durante-troca"},
+            )
+
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"] == {
+        "code": "agent_pane_unavailable",
+        "delivery_outcome": "refused",
+        "reason": "troca_de_conversa_em_curso",
+        "safe_to_resend": True,
+        "event_boundary_id": 37,
+    }
+    send_message.assert_not_called()
+    create_origin.assert_not_called()
+    uuid_module.uuid4.assert_not_called()
+    with GrupoBorgesDB(str(banco_fora_da_frota))._connect() as conn:
+        rows = conn.execute("SELECT session_name, outcome, reason FROM delivery_attempts").fetchall()
+    assert [tuple(row) for row in rows] == [
+        ("daniel", "recusado", "troca_de_conversa_em_curso"),
+    ]
+
+
+@pytest.mark.parametrize("fase", ["pronta", "erro", None])
+def test_input_segue_normal_sem_troca_em_curso(tmp_path: Path, fase: str | None) -> None:
+    app = _build_app(tmp_path)
+    with patch(
+        "routers.agents.operacao_conversa.estado",
+        return_value=SimpleNamespace(fase=fase) if fase is not None else None,
+    ), patch(
+        "routers.agents.tmux_driver.send_message", return_value=tmux_driver.DELIVERED,
+    ) as send_message:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/agents/daniel/input",
+                json={"text": "oi", "idempotency_key": "apos-troca"},
+            )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["tmux_delivered"] is True
+    send_message.assert_awaited_once_with("daniel", "oi")
+
+
 @pytest.mark.parametrize(
     ("resultado", "desfecho", "motivo", "seguro_reenviar"),
     [

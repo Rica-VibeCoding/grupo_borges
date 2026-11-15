@@ -91,6 +91,7 @@ class _DeliveryChannelRecord(NamedTuple):
 _DELIVERY_CHANNEL_RECORDS: dict[str, _DeliveryChannelRecord] = {}
 _DELIVERY_CHANNEL_RECORDS_GUARD = threading.Lock()
 _DELIVERY_FAILURE_MESSAGES = {
+    "troca_de_conversa_em_curso": "Abrindo conversa nova — mande de novo quando ela terminar",
     "sessao_ausente": "A sessão do agente não está disponível.",
     "pane_incompativel": "A tela ativa do agente não aceita mensagens.",
     "buffer_indisponivel": "O canal não conseguiu preparar a mensagem.",
