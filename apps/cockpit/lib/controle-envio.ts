@@ -139,13 +139,10 @@ export function createControleEnvio(
       return cumpriu;
     },
     retomarDe: () => {
-      // Confirmado pela fila também reconecta: o eco da drenagem ainda vem.
       const aguardandoEco =
         estado.fase === 'aceito' ||
         estado.fase === 'nao-confirmado' ||
         (estado.fase === 'confirmado' && estado.fila === true);
-      // `'fronteira' in estado` em vez de confiar na fase: o `aguardandoEco`
-      // é uma disjunção composta, e o TS não estreita o union por ela.
       return aguardandoEco && 'fronteira' in estado ? estado.fronteira : undefined;
     },
   });
@@ -255,11 +252,7 @@ export function createControleEnvio(
         }, leitura.atrasoMs);
         return;
       }
-      // Só aqui a máquina SABE que não saiu — é o único gatilho correto para
-      // desfazer uma pendência otimista registrada antes do POST. Em
-      // `nao-confirmado` o texto pode ter entrado mesmo assim (ver
-      // `leRespostaDoEnvio`), então a pendência segue esperando o rollout
-      // confirmar ou expirar sozinha.
+      // Só `falhou` prova que não saiu; `nao-confirmado` mantém a pendência.
       if (leitura.tipo === 'falhou') aoFalhar?.();
       publicar(
         leitura.tipo === 'falhou'
