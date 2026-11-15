@@ -3392,6 +3392,21 @@ async def send_agent_input(
     agent = await _get_agent_or_404(request, slug)
     db: GrupoBorgesDB = request.app.state.db
     event_boundary_id = await db.max_event_id()
+    if _operacao_em_curso(slug):
+        reason = "troca_de_conversa_em_curso"
+        await asyncio.to_thread(
+            tmux_driver._anota_tentativa, agent["tmux_session"], "recusado", reason,
+        )
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "agent_pane_unavailable",
+                "delivery_outcome": "refused",
+                "reason": reason,
+                "safe_to_resend": True,
+                "event_boundary_id": event_boundary_id,
+            },
+        )
     prefixo = {"stt": "🎙 ", "voz": "🗣 "}.get(payload.origin, "")
     delivered_text = f"{prefixo}{payload.text}"
     if payload.origin == "text":
