@@ -510,6 +510,12 @@ def vigiar_telegram(a, pane, pane_pid):
 
         try:
             aguardar_prompt(time.monotonic() + 180)
+            # O prompt fica ocioso antes de o plugin gravar o bot.pid (medido: 0,2 s
+            # depois). Digitar /mcp nessa janela disputa o teclado com o /rename da
+            # Nova conversa e deixava o menu aberto, com a linha surda (15/11).
+            limite = time.monotonic() + 30
+            while not telegram_pid(a) and time.monotonic() < limite:
+                time.sleep(0.5)
             if telegram_pid(a):
                 reconnect_log(a, f"ok pid={telegram_pid(a)} teclas=0")
                 return
@@ -543,11 +549,14 @@ def vigiar_telegram(a, pane, pane_pid):
         except (ValueError, OSError, subprocess.SubprocessError) as exc:
             reconnect_log(a, f"parado {exc} teclas={teclas}")
         finally:
-            if dono_menu:
+            # O menu pode abrir DEPOIS da desistência; sem esta espera ele ficava na
+            # tela e travava a fila da linha até alguém apertar Esc.
+            limite = time.monotonic() + 10
+            while dono_menu and time.monotonic() < limite:
                 try:
                     fechar_menu()
                 except (ValueError, OSError, subprocess.SubprocessError):
-                    pass
+                    time.sleep(0.5)
 
 
 def ligar(a, resume=None, nova=False, _locked=False):
