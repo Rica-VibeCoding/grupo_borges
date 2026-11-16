@@ -17,6 +17,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
+from uuid import uuid4
 
 Fase = Literal["estacionando", "religando", "pronta", "erro"]
 EM_CURSO: frozenset[str] = frozenset({"estacionando", "religando"})
@@ -54,6 +55,8 @@ async def dormir(segundos: float) -> None:
 class Operacao:
     fase: Fase
     desde: int  # epoch ms
+    id: str
+    session_id: str | None = None
     detalhe: str | None = None
     #: Sessão que esperava o `/estacionar`; `None` fora da espera.
     aguardando: str | None = None
@@ -76,12 +79,12 @@ def estado(slug: str) -> Operacao | None:
     return _operacoes.get(slug)
 
 
-def comecar(slug: str) -> Operacao:
+def comecar(slug: str, operacao_id: str | None = None) -> Operacao:
     """Abre a operação na fase `estacionando`. Sem `await` no meio: é atômico."""
     atual = _operacoes.get(slug)
     if atual is not None and atual.fase in EM_CURSO:
         raise OperacaoEmCurso(atual.fase)
-    op = Operacao(fase="estacionando", desde=_agora_ms())
+    op = Operacao(fase="estacionando", desde=_agora_ms(), id=operacao_id or str(uuid4()))
     _operacoes[slug] = op
     return op
 

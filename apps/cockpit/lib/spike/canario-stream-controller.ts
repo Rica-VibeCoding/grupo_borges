@@ -30,6 +30,7 @@ const TETO_RESULTADO_CHARS = 32_000;
 
 export const INITIAL_CANARIO_STREAM_STATE: CanarioStreamState = {
   messages: [],
+  sessaoResolvida: null,
   isRunning: false,
   isLoading: false,
   status: 'connecting',
@@ -174,11 +175,16 @@ export function createCanarioStream(
     const isCurrent = () =>
       !disposed && generation === connectionGeneration && source === nextSource;
 
-    nextSource.addEventListener('replay-start', () => {
+    nextSource.addEventListener('replay-start', (event) => {
       if (!isCurrent()) return;
       coalescer.beginReplay();
       prazo.cancela();
-      publish({ ...state, isLoading: true, status: 'replaying' });
+      let sessaoResolvida: string | null = null;
+      try {
+        const dado = JSON.parse(event.data);
+        if (typeof dado.session_id === 'string') sessaoResolvida = dado.session_id;
+      } catch { /* Replay sem sessão não prova a chegada ao destino. */ }
+      publish({ ...state, sessaoResolvida, isLoading: true, status: 'replaying' });
       armWatchdog();
     });
 

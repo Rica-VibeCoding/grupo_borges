@@ -15,6 +15,7 @@ import type { MessagePayload } from '@grupo_borges/cockpit-core/messages-types';
 
 
 export type ConversaTrocada = {
+  operacaoId?: string | null;
   /** A conversa que entrou. */
   sessionId: string;
   /** A que saiu, quando a API sabe. */
@@ -40,6 +41,7 @@ export function leConversaTrocada(cru: unknown): ConversaTrocada | null {
   if (!sessionId || (o.motivo !== 'retomar' && o.motivo !== 'nova')) return null;
   return {
     sessionId,
+    operacaoId: texto(o.operacao_id),
     de: texto(o.de),
     deTitulo: texto(o.de_titulo),
     motivo: o.motivo,
@@ -104,6 +106,7 @@ export function marcoGuardado(guarda: Guarda | null, slug: string): ConversaTroc
     const o = JSON.parse(cru) as Partial<ConversaTrocada>;
     return leConversaTrocada({
       session_id: o.sessionId,
+      operacao_id: o.operacaoId,
       de: o.de,
       de_titulo: o.deTitulo,
       motivo: o.motivo,

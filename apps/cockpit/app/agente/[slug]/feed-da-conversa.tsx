@@ -75,7 +75,7 @@ const FeedClaudeCode = memo(function FeedClaudeCode({
   // Ela vira `key` lá embaixo (padrão react.dev de reset): Feed, virtualizador
   // e classificador incremental remontam no MESMO commit em que a lista zera —
   // sem frame com conteúdo velho, sem frame vazio no meio.
-  const { messages, isRunning, status, geracao, troca } = useCanarioStream({
+  const { messages, isRunning, status, geracao, troca, sessaoResolvida } = useCanarioStream({
     slug: agentSlug,
     limit: HISTORICO_PADRAO,
     recentes: true,
@@ -200,7 +200,7 @@ const FeedClaudeCode = memo(function FeedClaudeCode({
 
   // A TROCA DE CONVERSA (F13): o turno do cockpit vira uma linha, o marco
   // costura as duas conversas, e durante a troca a lista fecha com "trocando".
-  const { emCurso, marco } = usaTrocaNoChat(agentSlug, troca, messages);
+  const { emCurso, marco } = usaTrocaNoChat(agentSlug, troca, messages, sessaoResolvida);
 
   const itens = useMemo<readonly ItemDoFeed[]>(() => {
     let lista = dobraPedidosDoCockpit(itensBase) as ItemDoFeed[];

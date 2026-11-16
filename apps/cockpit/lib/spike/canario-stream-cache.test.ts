@@ -224,3 +224,25 @@ test('conversa-trocada recomeça o stream com o cursor zerado e deixa o marco (F
   assert.equal(stream.getSnapshot().troca?.sessionId, 'a5b2f30c', 'o marco sobrevive ao replay');
   cache.disposeAll();
 });
+
+test('6: reconexão resolve a sessão nova mesmo com replay vazio e sem conversa-trocada', () => {
+  const clock = timers();
+  const fake = eventSources();
+  const cache = createCanarioStreamCache();
+  const stream = cache.get({ slug: 'pavan', eventSourceConstructor: fake.EventSource,
+    setTimeoutFn: clock.setTimeout, clearTimeoutFn: clock.clearTimeout });
+  const solta = stream.subscribe(() => {});
+  try {
+    fake.instances[0].emit('replay-start', { session_id: 'velha', total: 0 });
+    fake.instances[0].emit('replay-end');
+    fake.instances[0].onerror?.();
+    clock.advanceBy(1_000);
+    fake.instances[1].emit('replay-start', { session_id: 'nova', total: 0 });
+    fake.instances[1].emit('replay-end');
+    assert.equal(stream.getSnapshot().sessaoResolvida, 'nova');
+    assert.deepEqual(stream.getSnapshot().messages, []);
+  } finally {
+    solta();
+    cache.disposeAll();
+  }
+});

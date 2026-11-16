@@ -14,7 +14,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 
 import { textosDoMarco, type ConversaTrocada } from '@/lib/conversa-trocada.ts';
-import { publicaTrocaNoChat, type TrocaNoChat } from '@/lib/troca-em-curso.ts';
+import { dispensaTroca, type TrocaNoChat } from '@/lib/troca-em-curso.ts';
 import { Chevron } from '../renderers/linha-execucao';
 import { formataDataHora } from './data-hora';
 import type { PedidoDoCockpit } from './grupo-ferramentas.ts';
@@ -115,7 +115,7 @@ export function TrocaEmAndamentoView({ troca, agentSlug }: { troca: TrocaNoChat;
         {t.alerta && agentSlug ? (
           <button
             type="button"
-            onClick={() => publicaTrocaNoChat(agentSlug, null)}
+            onClick={() => dispensaTroca(agentSlug)}
             className="ck-veil self-start"
             style={{ minHeight: 'var(--ck-touch-min)', padding: '0 var(--ck-space-3)', marginLeft: 'calc(var(--ck-space-3) * -1)', borderRadius: 'var(--ck-radius-chip)', ...TEXTO_SM, color: 'var(--ck-text-primary)' }}
           >

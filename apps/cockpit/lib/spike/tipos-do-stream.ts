@@ -11,6 +11,7 @@ export type CanarioStreamStatus =
 
 export type CanarioStreamState = {
   messages: MessagePayload[];
+  sessaoResolvida: string | null;
   isRunning: boolean;
   isLoading: boolean;
   status: CanarioStreamStatus;

@@ -87,7 +87,6 @@ export function PainelDeConversas({ agentSlug, fecharHref }: { agentSlug: string
     agentSlug,
     nome,
     atual: carga.fase === 'pronto' ? (atual?.id ?? null) : undefined,
-    releLista: () => ler(undefined, true),
     aoMudarLinha: () => {
       ler(undefined, true);
       relePainel();

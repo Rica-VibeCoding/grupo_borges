@@ -27,7 +27,7 @@ import { fetchConversas, postConversaTitulo, type Conversa, type ConversasRespon
 
 import { formataDataHora } from '../components/feed/data-hora.ts';
 
-import { assinaTrocaNoChat, leTrocaNoChat } from './troca-em-curso.ts';
+import { assinaTrocaFeita } from './troca-em-curso.ts';
 import { assinaTurnoVivo, leTurnoVivo } from './turno-vivo.ts';
 
 export type ConversaEmUso = {
@@ -161,16 +161,7 @@ export function usaConversaEmUso(agentSlug: string): ConversaEmUso | null {
   }, [agentSlug, reler]);
 
   // A troca acabou: quem está em uso é outra conversa.
-  const assinaDaTroca = useMemo(() => (fn: () => void) => assinaTrocaNoChat(agentSlug, fn), [agentSlug]);
-  useEffect(() => {
-    let antes = leTrocaNoChat(agentSlug);
-    return assinaDaTroca(() => {
-      const agora = leTrocaNoChat(agentSlug);
-      const acabou = antes !== null && agora === null;
-      antes = agora;
-      if (acabou) reler();
-    });
-  }, [agentSlug, assinaDaTroca, reler]);
+  useEffect(() => assinaTrocaFeita(agentSlug, reler), [agentSlug, reler]);
 
   // O turno caiu: a API acabou de gravar o título tirado da primeira fala.
   const assinaDoTurno = useMemo(() => (fn: () => void) => assinaTurnoVivo(agentSlug, fn), [agentSlug]);

@@ -8,17 +8,15 @@
  * vem âmbar e o toque interrompe; a frota dizia parado e a API respondeu 409
  * `ocupado`, o botão vira âmbar e espera o segundo toque.
  *
- * Aceita a troca, quem acompanha é o chat (`usa-troca-no-chat.ts`): este hook
- * publica a "trocando" e larga. Sem o Histórico montado, o chat lê o
- * `/operacao` sozinho até o stream trazer a conversa nova.
+ * O pedido entra no store antes do POST para identificar o aviso do stream.
+ * A espera do chat e a leitura do `/operacao` são compartilhadas com o Histórico.
  */
-import { useEffect, useRef, useState } from 'react';
-
-import { ErroDeConversa, fetchConversaOperacao, postConversaNova, postConversaRetomar, type RespostaDaTroca } from '@grupo_borges/cockpit-core/api';
-
+import { useEffect, useRef } from 'react';
+import { ErroDeConversa, postConversaNova, postConversaRetomar } from '@grupo_borges/cockpit-core/api';
 import type { EtapaDoCheio } from './acao-de-conversa';
-import { explicaRecusa, leOperacao, type Troca } from './acoes-de-conversa';
-import { publicaTrocaNoChat } from '../../lib/troca-em-curso';
+import { explicaRecusa, type Troca } from './acoes-de-conversa';
+import { usaTrocaEmCurso } from '../../lib/usa-troca-em-curso';
+import { comecarTroca, dispensaTroca, leTroca, postMorreu, postRecusado, postRespondeu, trocaBloqueia } from '../../lib/troca-em-curso';
 
 export type EstadoDaTrocaDireta = { fase: 'livre' } | { fase: 'enviando' } | { fase: 'ocupado' } | { fase: 'falhou'; texto: string };
 
@@ -35,77 +33,46 @@ export type PedidoDireto = {
 };
 
 export function usaTrocaDireta(agentSlug: string, nome: string) {
-  const [estado, setEstado] = useState<EstadoDaTrocaDireta>({ fase: 'livre' });
-  const vivo = useRef(true);
-  useEffect(() => {
-    vivo.current = true;
-    return () => {
-      vivo.current = false;
-    };
-  }, []);
-
-  // O POST só volta no fim da troca (até 90 s): enquanto ele corre, o
-  // `/operacao` diz a etapa, e é ela que anda o cheio do botão.
-  const [etapa, setEtapa] = useState<EtapaDoCheio>('pedindo');
-  const enviando = estado.fase === 'enviando';
-  useEffect(() => {
-    if (!enviando) return;
-    setEtapa('pedindo');
-    const controlador = new AbortController();
-    const le = () =>
-      fetchConversaOperacao(agentSlug, controlador.signal)
-        .then((op) => {
-          const leitura = leOperacao(op);
-          if (leitura.tipo === 'segue') setEtapa(leitura.etapa);
-        })
-        .catch(() => {});
-    const relogio = setInterval(le, 700);
-    return () => {
-      clearInterval(relogio);
-      controlador.abort();
-    };
-  }, [agentSlug, enviando]);
-
-  function aceita(p: PedidoDireto, forcar: boolean, resposta: RespostaDaTroca | null) {
-    publicaTrocaNoChat(agentSlug, {
-      fase: 'trocando',
-      tipo: p.tipo,
-      alvoTitulo: p.alvoTitulo ?? null,
-      etapa: p.desligado ? 'religando' : 'estacionando',
-      inicio: Date.now(),
-      desligado: p.desligado ?? false,
-      forcar,
-    });
-    const leitura = resposta ? leOperacao(resposta) : null;
-    if (leitura?.tipo === 'pronta') publicaTrocaNoChat(agentSlug, { fase: 'pronta', emMs: Date.now() });
-    if (leitura?.tipo === 'erro') publicaTrocaNoChat(agentSlug, { fase: 'falhou', texto: leitura.texto });
-    if (vivo.current) setEstado({ fase: 'livre' });
-    p.aoAceitar?.();
-  }
+  const troca = usaTrocaEmCurso(agentSlug);
+  const local = troca?.tipo === 'nova' ? troca : null;
+  const mostrada = useRef(local);
+  mostrada.current = local;
+  useEffect(() => () => {
+    if (mostrada.current) dispensaTroca(agentSlug, mostrada.current.clienteId);
+  }, [agentSlug]);
+  const enviando = local?.post === 'pendente' && trocaBloqueia(local);
+  const recusou = local?.fase === 'recusada' && local.recusa === 'ocupado' && !local.forcar;
+  const estado: EstadoDaTrocaDireta = recusou ? { fase: 'ocupado' }
+    : local?.fase === 'recusada' ? { fase: 'falhou', texto: explicaRecusa(local.recusa!, nome) }
+    : local?.fase === 'falhou' ? { fase: 'falhou', texto: local.erro! }
+    : enviando ? { fase: 'enviando' } : { fase: 'livre' };
+  const etapa: EtapaDoCheio = local && (local.viuId || local.viuEtapa) ? local.etapa : 'pedindo';
 
   async function pede(p: PedidoDireto) {
-    if (estado.fase === 'enviando') return;
-    const forcar = !p.desligado && (p.interrompe || estado.fase === 'ocupado');
-    setEstado({ fase: 'enviando' });
-    let resposta: RespostaDaTroca;
-    try {
-      resposta = p.tipo === 'nova' ? await postConversaNova(agentSlug, forcar) : await postConversaRetomar(agentSlug, p.alvo ?? '', forcar);
-    } catch (erro) {
-      // Rede caída ou troca já correndo: a troca pode seguir, e o chat decide pelo `/operacao`.
-      if (!(erro instanceof ErroDeConversa) || erro.codigo === 'operacao_em_curso') return aceita(p, forcar, null);
-      if (!vivo.current) return;
-      if (erro.codigo === 'ocupado' && !forcar) return setEstado({ fase: 'ocupado' });
-      return setEstado({ fase: 'falhou', texto: explicaRecusa(erro.codigo, nome) });
+    const corrente = leTroca(agentSlug);
+    if (trocaBloqueia(corrente)) {
+      if (corrente?.post !== 'pendente') p.aoAceitar?.();
+      return;
     }
-    aceita(p, forcar, resposta);
+    const recusada = corrente?.tipo === p.tipo && corrente.alvo === p.alvo
+      && corrente.fase === 'recusada' && corrente.recusa === 'ocupado' && !corrente.forcar;
+    const forcar = !p.desligado && (p.interrompe || recusada);
+    const id = comecarTroca(agentSlug, { tipo: p.tipo, alvo: p.alvo, alvoTitulo: p.alvoTitulo,
+      forcar, desligado: p.desligado ?? false });
+    let aceitou = true;
+    try {
+      const resposta = p.tipo === 'nova' ? await postConversaNova(agentSlug, forcar, id)
+        : await postConversaRetomar(agentSlug, p.alvo ?? '', forcar, id);
+      postRespondeu(agentSlug, id, resposta);
+    } catch (erro) {
+      if (erro instanceof ErroDeConversa && [400, 404, 409].includes(erro.status)) {
+        postRecusado(agentSlug, id, erro.codigo);
+        aceitou = erro.codigo === 'operacao_em_curso';
+      } else postMorreu(agentSlug, id);
+    }
+    if (aceitou) p.aoAceitar?.();
   }
-
-  return {
-    estado,
-    etapa,
-    pede: (p: PedidoDireto) => void pede(p),
-    /** O botão está âmbar porque a API recusou com 409? */
-    recusou: estado.fase === 'ocupado',
-    larga: () => setEstado((e) => (e.fase === 'enviando' ? e : { fase: 'livre' })),
-  };
+  return { estado, etapa, pede: (p: PedidoDireto) => void pede(p), recusou,
+    /** Erro e recusa fecham; uma troca em andamento continua acompanhada. */
+    larga: () => { if (local) dispensaTroca(agentSlug, local.clienteId); } };
 }

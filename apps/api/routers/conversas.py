@@ -412,16 +412,19 @@ async def post_estacionar(
 
 
 class OperacaoResposta(BaseModel):
+    id: str | None
+    session_id: str | None = None
     fase: Literal["estacionando", "religando", "pronta", "erro"] | None
     desde: int | None  # epoch ms da entrada na fase
     detalhe: str | None = None
 
 
-def _operacao_resposta(slug: str) -> OperacaoResposta:
-    op = operacao.estado(slug)
+def _operacao_resposta(slug: str, op: operacao.Operacao | None = None) -> OperacaoResposta:
+    op = op or operacao.estado(slug)
     if op is None:
-        return OperacaoResposta(fase=None, desde=None)
-    return OperacaoResposta(fase=op.fase, desde=op.desde, detalhe=op.detalhe)
+        return OperacaoResposta(id=None, fase=None, desde=None)
+    return OperacaoResposta(id=op.id, session_id=op.session_id,
+                            fase=op.fase, desde=op.desde, detalhe=op.detalhe)
 
 
 @router.get("/{slug}/conversas/operacao", response_model=OperacaoResposta)
@@ -433,6 +436,7 @@ async def get_operacao(request: Request, slug: str) -> OperacaoResposta:
 
 class NovaPedido(BaseModel):
     forcar: bool = False
+    operacao_id: str | None = None
 
 
 class NovaResposta(OperacaoResposta):
@@ -598,18 +602,19 @@ async def _conduzir_nova(
                 motivo = entrega.message or entrega.outcome
                 raise _Falha(f"o /clear não chegou ao agente ({motivo})")
             raise _Falha("o /clear foi enviado, mas a conversa nova não apareceu")
-        nova = next(iter(novas)) if len(novas) == 1 else None
-        if nova is not None:
-            operacao.registrar_troca(slug, sessao_antes, nova)
+        if len(novas) != 1:
+            raise _Falha("mais de uma conversa apareceu durante a troca")
+        nova = novas.pop()
+        operacao.registrar_troca(slug, sessao_antes, nova)
         await _gravar_anterior(db, slug, sessao_antes)
         # A conversa nova nasce sem nome e sem `agent-name` (F1/M2). Ela recebe o do agente, que é o que
         # o rodapé do card (`session_name`) mostra.
         entrega = await tmux_driver.send_message(tmux_session, f"/rename {agent['name']}")
+        # A troca já ocorreu; o chat precisa dela mesmo se o nome falhar.
+        await _publicar_troca(app, agent, op, de=sessao_antes, entrou=nova, motivo="nova")
         if not entrega.delivered:
             motivo = entrega.message or entrega.outcome
             raise _Falha(f"a conversa nova abriu, mas o /rename não chegou ({motivo})")
-        if nova is not None:
-            await _publicar_troca(app, agent, op, de=sessao_antes, entrou=nova, motivo="nova")
         operacao.avancar(op, "pronta")
     except _Falha as exc:
         operacao.avancar(op, "erro", str(exc))
@@ -648,7 +653,7 @@ async def post_nova(request: Request, slug: str, pedido: NovaPedido | None = Non
     if ocupado and not forcar:
         raise HTTPException(status_code=409, detail="ocupado")
     try:
-        op = operacao.comecar(slug)
+        op = operacao.comecar(slug, pedido.operacao_id if pedido else None)
     except operacao.OperacaoEmCurso as exc:
         raise HTTPException(status_code=409, detail="operacao_em_curso") from exc
 
@@ -825,10 +830,12 @@ async def _publicar_troca(
             nota = (meta or {}).get("nota") or None
         except Exception:  # noqa: BLE001
             logger.exception("conversas: título da retomada %s em %s", entrou, slug)
+    op.session_id = entrou
     operacao.publicar_troca(
         slug,
         {
             "session_id": entrou,
+            "operacao_id": op.id,
             "de": de,
             "de_titulo": op.titulo,
             "motivo": motivo,
@@ -894,7 +901,7 @@ async def post_retomar(
     if ocupado and not forcar:
         raise HTTPException(status_code=409, detail="ocupado")
     try:
-        op = operacao.comecar(slug)
+        op = operacao.comecar(slug, pedido.operacao_id if pedido else None)
     except operacao.OperacaoEmCurso as exc:
         raise HTTPException(status_code=409, detail="operacao_em_curso") from exc
 
@@ -920,7 +927,7 @@ async def _responder(slug: str, op: operacao.Operacao, tarefa: asyncio.Task):
         pass
 
     corpo = NovaResposta(
-        **_operacao_resposta(slug).model_dump(), titulo=op.titulo, nota=op.estacionou
+        **_operacao_resposta(slug, op).model_dump(), titulo=op.titulo, nota=op.estacionou
     )
     if op.fase == "erro":
         return JSONResponse(status_code=502, content=corpo.model_dump())

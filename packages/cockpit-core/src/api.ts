@@ -1133,6 +1133,8 @@ export function postConversaTitulo(
 export type FaseDaOperacao = 'estacionando' | 'religando' | 'pronta' | 'erro';
 
 export type OperacaoDeConversa = {
+  id: string | null;
+  session_id: string | null;
   fase: FaseDaOperacao | null;
   desde: number | null;
   detalhe: string | null;
@@ -1152,24 +1154,25 @@ export class ErroDeConversa extends Error {
   }
 }
 
-async function trocaDeConversa(url: string, forcar: boolean): Promise<RespostaDaTroca> {
+async function trocaDeConversa(url: string, forcar: boolean, operacaoId?: string): Promise<RespostaDaTroca> {
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ forcar }),
+    body: JSON.stringify({ forcar, operacao_id: operacaoId }),
   });
   if (res.ok || res.status === 502) return res.json();
   throw new ErroDeConversa(res.status, await errorDetail(res, `HTTP ${res.status}`));
 }
 
-export function postConversaNova(slug: string, forcar: boolean): Promise<RespostaDaTroca> {
-  return trocaDeConversa(`/api/agents/${encodeURIComponent(slug)}/conversas/nova`, forcar);
+export function postConversaNova(slug: string, forcar: boolean, operacaoId?: string): Promise<RespostaDaTroca> {
+  return trocaDeConversa(`/api/agents/${encodeURIComponent(slug)}/conversas/nova`, forcar, operacaoId);
 }
 
-export function postConversaRetomar(slug: string, id: string, forcar: boolean): Promise<RespostaDaTroca> {
+export function postConversaRetomar(slug: string, id: string, forcar: boolean, operacaoId?: string): Promise<RespostaDaTroca> {
   return trocaDeConversa(
     `/api/agents/${encodeURIComponent(slug)}/conversas/${encodeURIComponent(id)}/retomar`,
     forcar,
+    operacaoId,
   );
 }
 

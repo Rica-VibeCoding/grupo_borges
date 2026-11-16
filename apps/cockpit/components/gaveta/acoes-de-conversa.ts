@@ -9,20 +9,9 @@
  * de um turno, uma linha diz quem está trabalhando e o botão já nasce âmbar,
  * interrompendo. A espera é uma barra, sem etapa nem contagem.
  */
-import type { FaseDaOperacao, OperacaoDeConversa } from '@grupo_borges/cockpit-core/api';
-
-export type Troca = {
-  tipo: 'retomar' | 'nova';
-  /** Conversa pedida no Retomar; `null` na Nova. */
-  alvo: string | null;
-  forcar: boolean;
-  /** Agente desligado: o Retomar sobe direto, sem estacionar. */
-  desligado: boolean;
-  /** A atual no pedido: a Nova se prova quando o cartão sai dela. */
-  antes?: string | null;
-};
-
-export type EtapaEmCurso = Extract<FaseDaOperacao, 'estacionando' | 'religando'>;
+import type { Troca, EtapaEmCurso } from '../../lib/regua-da-troca.ts';
+export type { Troca, EtapaEmCurso } from '../../lib/regua-da-troca.ts';
+export { SEM_CONTATO } from '../../lib/regua-da-troca.ts';
 
 export type EstadoDaAcao =
   | { fase: 'livre' }
@@ -59,15 +48,8 @@ export function ondeMostra(estado: EstadoDaAcao): string | null {
   }
 }
 
-export function trocaEmCurso(estado: EstadoDaAcao): boolean {
+export function trocaEmCurso(estado: EstadoDaAcao): estado is Extract<EstadoDaAcao, { fase: 'esperando' | 'conferindo' }> {
   return estado.fase === 'esperando' || estado.fase === 'conferindo';
-}
-
-/** O chat segue escurecido? Só até a API dizer pronta: a conferência da lista
- *  é do Histórico, e o aviso do stream sai antes da pronta. Com erro, o chat
- *  espera a conferência dizer se a troca aconteceu mesmo. */
-export function trocaSegueNoChat(estado: EstadoDaAcao): boolean {
-  return estado.fase === 'esperando' || (estado.fase === 'conferindo' && estado.erro !== null);
 }
 
 /** O nome do botão de troca: claro parado, âmbar no meio de um turno. */
@@ -97,92 +79,5 @@ export function explicaRecusa(codigo: string, nome: string): string {
       return 'Essa conversa não existe mais no servidor. A lista foi lida de novo.';
     default:
       return codigo;
-  }
-}
-
-export const SEM_CONTATO =
-  'Perdi o contato com o servidor no meio da troca. Ela pode ter seguido: abra Conversas de novo em instantes.';
-
-/** O que fazer com a leitura do `/operacao` durante a espera. */
-export type Leitura =
-  | { tipo: 'segue'; etapa: EtapaEmCurso }
-  | { tipo: 'pronta' }
-  | { tipo: 'erro'; texto: string }
-  /** `fase: null` — a API reiniciou e a operação morreu junto. */
-  | { tipo: 'sumiu' };
-
-export function leOperacao(op: OperacaoDeConversa): Leitura {
-  if (op.fase === 'estacionando' || op.fase === 'religando') return { tipo: 'segue', etapa: op.fase };
-  if (op.fase === 'pronta') return { tipo: 'pronta' };
-  if (op.fase === 'erro') return { tipo: 'erro', texto: op.detalhe ?? 'A troca de conversa falhou.' };
-  return { tipo: 'sumiu' };
-}
-
-// A CONFERÊNCIA (F12). O fim da troca na API não é o fim na tela: o cartão
-// "Em uso agora" só muda quando a lista relida aponta a conversa nova, e a
-// primeira releitura pode vir velha. E a API às vezes dá erro com a troca
-// feita — o envio do `/clear` volta "não confirmado" e o `/clear` chegou (F11).
-// Então a espera fica na tela relendo a lista até ela mostrar a troca; mostrou,
-// vale a lista, com ou sem erro. Não mostrou no prazo, o erro aparece.
-export const CONFERE_PRONTA_MS = 20_000;
-export const CONFERE_ERRO_MS = 10_000;
-
-/** A lista já mostra a troca? `atual` `undefined` = lista ainda não lida. */
-export function trocaRefletida(troca: Troca, atual: string | null | undefined): boolean {
-  if (!atual) return false;
-  if (troca.tipo === 'retomar') return atual === troca.alvo;
-  return atual !== (troca.antes ?? null);
-}
-
-type Fim = Exclude<Leitura, { tipo: 'segue' }>;
-
-/** Depois do fim na API: conferir na lista, ou encerrar já (troca sem alvo
- *  conhecido — a tela recarregou sem saber o que foi pedido). */
-export function depoisDaTroca(leitura: Fim, troca: Troca | null, inicio: number, agora: number): EstadoDaAcao {
-  const erro = leitura.tipo === 'erro' ? leitura.texto : null;
-  if (!troca || (troca.tipo === 'nova' && troca.antes === undefined)) {
-    return erro ? { fase: 'falhou', onde: troca?.alvo ?? ATUAL, texto: erro } : { fase: 'livre' };
-  }
-  return { fase: 'conferindo', troca, inicio, ate: agora + (erro ? CONFERE_ERRO_MS : CONFERE_PRONTA_MS), erro };
-}
-
-/** O fim da conferência, ou `null` enquanto ela segue. */
-export function fimDaConferencia(
-  estado: Extract<EstadoDaAcao, { fase: 'conferindo' }>,
-  atual: string | null | undefined,
-  agora: number,
-): EstadoDaAcao | null {
-  if (trocaRefletida(estado.troca, atual)) return { fase: 'livre' };
-  if (agora < estado.ate) return null;
-  return estado.erro ? { fase: 'falhou', onde: estado.troca.alvo ?? ATUAL, texto: estado.erro } : { fase: 'livre' };
-}
-
-// A troca pedida fica guardada na aba: se a tela recarregar no meio, a espera
-// volta no lugar certo (a linha da conversa pedida) e um erro que chegue
-// depois ainda é mostrado. Sem ela, a espera volta no cartão "Em uso agora".
-const CHAVE = (slug: string) => `ck-conversa-troca:${slug}`;
-
-type Guarda = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
-
-export function guardaTroca(guarda: Guarda | null, slug: string, troca: Troca | null): void {
-  try {
-    if (troca) guarda?.setItem(CHAVE(slug), JSON.stringify(troca));
-    else guarda?.removeItem(CHAVE(slug));
-  } catch {
-    // Safari privado recusa escrita; a espera só perde o lugar ao recarregar.
-  }
-}
-
-export function trocaGuardada(guarda: Guarda | null, slug: string): Troca | null {
-  try {
-    const cru = guarda?.getItem(CHAVE(slug));
-    if (!cru) return null;
-    const t = JSON.parse(cru) as Partial<Troca>;
-    if (t.tipo !== 'retomar' && t.tipo !== 'nova') return null;
-    const troca: Troca = { tipo: t.tipo, alvo: typeof t.alvo === 'string' ? t.alvo : null, forcar: !!t.forcar, desligado: !!t.desligado };
-    if (typeof t.antes === 'string' || t.antes === null) troca.antes = t.antes;
-    return troca;
-  } catch {
-    return null;
   }
 }

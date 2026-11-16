@@ -13,6 +13,7 @@ import {
 } from './conversa-trocada.ts';
 
 const CRU = {
+  operacao_id: 'operacao-cliente',
   session_id: 'a5b2f30c',
   de: 'aacb8488',
   de_titulo: 'Estacionar e retomar',
@@ -34,6 +35,7 @@ describe('conversa-trocada — o evento do stream vira marco (F13)', () => {
   it('lê o evento da API', () => {
     const t = leConversaTrocada(CRU);
     assert.equal(t?.sessionId, 'a5b2f30c');
+    assert.equal(t?.operacaoId, CRU.operacao_id);
     assert.equal(t?.deTitulo, 'Estacionar e retomar');
     assert.equal(t?.emMs, CRU.at);
   });
