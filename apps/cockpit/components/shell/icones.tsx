@@ -15,9 +15,10 @@
  */
 import type { SVGProps } from 'react';
 
-type IconeProps = SVGProps<SVGSVGElement> & { tamanho?: number };
+export type IconeProps = SVGProps<SVGSVGElement> & { tamanho?: number };
 
-function Tracado({ tamanho = 16, children, ...props }: IconeProps) {
+/** Exportado para os ícones de tela própria (`aprendizado/icones.tsx`) seguirem a mesma régua. */
+export function Tracado({ tamanho = 16, children, ...props }: IconeProps) {
   return (
     <svg
       width={tamanho}
