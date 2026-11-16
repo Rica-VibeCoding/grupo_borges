@@ -178,10 +178,15 @@ Base: `/api/agents/{slug}/conversas`.
   conversa for a atual ou estiver 🔒.
 - `POST /estacionar {titulo, nota}`: chamado **pelo agente**. Grava os dois para a conversa
   atual dele.
-- `POST /nova {forcar}` e `POST /{id}/retomar {forcar}`:
-  - Resposta síncrona com teto de 90 s. Se o cliente cair, a operação continua no servidor.
-  - `GET /operacao` devolve a fase em curso: `{fase: estacionando|religando|pronta|erro|null,
-    desde}`, para a tela mostrar os passos da espera (pedido da F8; entra na F5 e na F6).
+- `POST /nova {forcar, operacao_id}` e `POST /{id}/retomar {forcar, operacao_id}`:
+  - Resposta síncrona com teto de 90 s (o proxy do Next corta em 30 s: 5xx/rede não é recusa,
+    a tela confirma no `/operacao`). Se o cliente cair, a operação continua no servidor.
+  - `operacao_id` é gerado pela tela; `GET /operacao` devolve `{id, session_id, fase:
+    estacionando|religando|pronta|erro|null, desde, detalhe}` e o `conversa-trocada` do stream
+    leva o mesmo `operacao_id`. A tela só aceita fim e troca com o id dela — o servidor guarda a
+    última operação, e ler o fim da anterior soltava o chat cedo (16/11).
+  - Na tela, a troca tem dono único: `apps/cockpit/lib/troca-em-curso.ts` (estado e aba),
+    `regua-da-troca.ts` (regras puras, com teste) e `leitor-da-troca.ts` (um leitor por agente).
   - Agente no meio de um turno: 409 `ocupado`. Com `forcar`, interrompe e segue sem a nota.
 - `GET /{id}/briefing`: só devolve texto para uma conversa que **acabou de ser retomada pelo
   cockpit**. A marca vale 10 minutos e é consumida uma vez. Fora disso, vazio.
