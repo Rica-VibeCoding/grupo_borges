@@ -85,7 +85,10 @@ WIKI = re.compile(r"\[\[([^\]|]+)(?:\|[^\]]+)?\]\]")
 
 
 def points_to(value: str, index: Path, target: Path) -> bool:
-    url = urlsplit(value)
+    try:
+        url = urlsplit(value)
+    except ValueError:
+        return False
     if url.scheme or url.netloc:
         return False
     path = unquote(url.path)
@@ -101,10 +104,15 @@ def prune_index(text: str, index: Path, target: Path) -> str:
             if not name.endswith(".md"):
                 name += ".md"
             links.append((match, points_to(name, index, target)))
+        # Examina apenas destinos fora dos links reconhecidos. Um link para
+        # anota.md (ou outra/nota.md) não é uma referência a nota.md.
+        unknown = line
+        for match, _ in sorted(links, key=lambda pair: pair[0].start(), reverse=True):
+            unknown = unknown[:match.start()] + " " + unknown[match.end():]
+        candidates = re.findall(r"[^\s<>()\[\]\"'`,;·]+", unknown)
+        if any(points_to(value.rstrip(".:!?"), index, target) for value in candidates):
+            raise Conflict("referência no MEMORY.md exige conferência manual")
         if not any(hit for _, hit in links):
-            # Formato que não entendemos: recusar evita deixar ponteiro quebrado.
-            if target.name in unquote(line):
-                raise Conflict("referência no MEMORY.md exige conferência manual")
             output.append(line)
             continue
         if all(hit for _, hit in links):
@@ -161,28 +169,32 @@ def move(source: Path, destination: Path) -> None:
 def archive_memory(reader: Aprendizado, asset: Asset, node_id: str) -> dict:
     if asset.tipo != "memoria" or not permitted(asset.relative):
         raise ValueError("somente memória individual pode ser apagada")
+    if asset.path.is_relative_to(reader.repo.resolve()):
+        raise Conflict("memória dentro do monorepo é somente leitura; a poda exige operação com Git")
     with locked(reader, asset.agente):
         source = asset.path
+        root = asset.root
+        directory = str(Path(asset.relative).parent)
         raw = read_content(asset.root, asset.relative)
-        index_relative = f"memory-{asset.agente}/MEMORY.md"
-        index = safe_path(reader.memory_root, index_relative)
-        before = read_content(reader.memory_root, index_relative)
+        index_relative = f"{directory}/MEMORY.md"
+        index = safe_path(root, index_relative)
+        before = read_content(root, index_relative)
         if "\ufffd" in before:
             raise Conflict("MEMORY.md contém texto inválido; conferir antes de reescrever")
         after = prune_index(before, index, source)
-        archived_relative = f"memory-{asset.agente}/arquivo/{source.name}"
-        destination = safe_path(reader.memory_root, archived_relative)
+        archived_relative = f"{directory}/arquivo/{source.name}"
+        destination = safe_path(root, archived_relative)
         if destination.exists():
             raise Conflict("destino arquivado já existe")
         destination.parent.mkdir(mode=0o700, exist_ok=True)
         mode = index.stat().st_mode
         record = dict(operacao_id=f"memoria-{uuid.uuid4().hex}", tipo="memoria", status="preparado",
                       agente=asset.agente, caminho=str(source), arquivado_para=str(destination),
-                      relative=asset.relative, node_id=node_id, criado_em=int(time.time()),
+                      relative=f"memory-{asset.agente}/{source.name}", node_id=node_id, criado_em=int(time.time()),
                       before=before, after=after, digest=hashlib.sha256(raw.encode()).hexdigest())
         save(reader, record)
         try:
-            if read_content(asset.root, asset.relative) != raw or read_content(reader.memory_root, index_relative) != before:
+            if read_content(asset.root, asset.relative) != raw or read_content(root, index_relative) != before:
                 raise Conflict("memória ou índice mudou durante a poda")
             atomic(index, after, mode)
             move(source, destination)
@@ -191,9 +203,9 @@ def archive_memory(reader: Aprendizado, asset: Asset, node_id: str) -> dict:
         except BaseException:
             # Reverte só o que escrevemos, sem apagar edição alheia.
             if not source.exists() and destination.exists():
-                if read_content(reader.memory_root, archived_relative) == raw:
+                if read_content(root, archived_relative) == raw:
                     move(destination, source)
-            if read_content(reader.memory_root, index_relative) == after:
+            if read_content(root, index_relative) == after:
                 atomic(index, before, mode)
             raise
         reader.invalidate()
@@ -216,28 +228,31 @@ def undo_memory(reader: Aprendizado, operation_id: str) -> dict:
             return summary(record)
         if record["status"] != "arquivado":
             raise Conflict("operação interrompida; conferir journal antes de desfazer")
-        source = safe_path(reader.memory_root, relative)
-        archived_relative = f"memory-{slug}/arquivo/{source.name}"
-        archived = safe_path(reader.memory_root, archived_relative)
+        root, directory = reader.memory_location(slug)
+        source = safe_path(root, f"{directory}/{Path(relative).name}")
+        if str(source) != record["caminho"]:
+            raise Conflict("pasta de memória mudou; conferir antes de desfazer")
+        archived_relative = f"{directory}/arquivo/{source.name}"
+        archived = safe_path(root, archived_relative)
         if source.exists():
             raise Conflict("origem já existe; não será sobrescrita")
-        raw = read_content(reader.memory_root, archived_relative)
+        raw = read_content(root, archived_relative)
         if hashlib.sha256(raw.encode()).hexdigest() != record["digest"]:
             raise Conflict("memória arquivada mudou; não será sobrescrita")
-        index_relative = f"memory-{slug}/MEMORY.md"
-        index = safe_path(reader.memory_root, index_relative)
-        current = read_content(reader.memory_root, index_relative)
+        index_relative = f"{directory}/MEMORY.md"
+        index = safe_path(root, index_relative)
+        current = read_content(root, index_relative)
         restored = restore_index(record["before"], record["after"], current)
         mode = index.stat().st_mode
         move(archived, source)
         try:
-            if read_content(reader.memory_root, index_relative) != current:
+            if read_content(root, index_relative) != current:
                 raise Conflict("índice mudou durante restauração")
             atomic(index, restored, mode)
             record["status"] = "restaurado"
             save(reader, record)
         except BaseException:
-            if read_content(reader.memory_root, index_relative) == restored:
+            if read_content(root, index_relative) == restored:
                 atomic(index, current, mode)
             move(source, archived)
             raise

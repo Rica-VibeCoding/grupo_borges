@@ -325,3 +325,101 @@ def test_pedido_manual_nao_reaproveita_item_de_outro_tipo(env):
     response = client.post(f"/api/aprendizado/{node['id']}/arquivar", json={'confirmar': True})
     assert response.status_code == 409
     assert asyncio.run(db.get_faxina_item(item['id']))['status'] == 'pendente'
+
+
+def test_memoria_alias_versionada_sobral_recusa_poda_sem_alterar_git(env):
+    reader, _, client = env
+    note = write(reader.repo, 'sobral/memory/nota.md', '# Memória Sobral\n')
+    index = write(reader.repo, 'sobral/memory/MEMORY.md', '- [Nota](nota.md)\n')
+    git(reader.repo, 'add', '--', 'sobral/memory')
+    git(reader.repo, 'commit', '-qm', 'memória versionada')
+    (reader.memory_root / 'memory-sobral').symlink_to(note.parent)
+    node = nodes(client, agente='sobral')[0]
+    response = delete(client, node)
+    assert response.status_code == 409 and 'Git' in response.json()['detail']
+    assert note.read_text() == '# Memória Sobral\n'
+    assert index.read_text() == '- [Nota](nota.md)\n'
+    assert not (note.parent / 'arquivo').exists()
+    assert git(reader.repo, 'status', '--porcelain') == ''
+
+
+@pytest.mark.parametrize('inner_link', [None, 'memoria', 'indice', 'arquivo'])
+def test_memoria_alias_fora_repo_poda_e_desfaz_sem_seguir_links_internos(env, tmp_path, inner_link):
+    reader, _, client = env
+    note = write(tmp_path, 'memorias-sobral/nota.md', '# Memória externa\n')
+    index = write(tmp_path, 'memorias-sobral/MEMORY.md', '- [Nota](nota.md)\n')
+    (reader.memory_root / 'memory-sobral').symlink_to(note.parent)
+    reader.cache_seconds = 60
+    node = nodes(client, agente='sobral')[0]
+    if inner_link:
+        outside = write(tmp_path, 'fora/nota.md', 'preservar\n')
+        target = {'memoria': note, 'indice': index, 'arquivo': note.parent / 'arquivo'}[inner_link]
+        if target.exists():
+            target.unlink()
+        target.symlink_to(outside.parent if inner_link == 'arquivo' else outside)
+        assert delete(client, node).status_code == 403
+        assert outside.read_text() == 'preservar\n'
+        return
+    result = delete(client, node)
+    assert result.status_code == 200, result.text
+    assert not note.exists() and (note.parent / 'arquivo/nota.md').exists()
+    # O journal basta para restaurar depois de reiniciar o leitor.
+    client.app.state.aprendizado = Aprendizado(reader.memory_root, reader.repo, reader.dream_root, [])
+    assert undo(client, result.json()['operacao_id']).status_code == 200
+    assert note.read_text() == '# Memória externa\n' and index.read_text() == '- [Nota](nota.md)\n'
+
+
+@pytest.mark.parametrize('recreated', [False, True])
+def test_skill_arquivada_restaurada_ou_recriada_enfileira_novo_pedido(env, recreated):
+    reader, db, client = env
+    listed = nodes(client, tipo='skill')
+    url = f"/api/aprendizado/{listed[0]['id']}/arquivar"
+    first = client.post(url, json={'confirmar': True}).json()
+    archived = executor.run_once(db.db_path, reader.repo)[0]
+    assert archived['status'] == 'arquivado'
+    folder = 'pavan/.claude/skills/rotina'
+    if recreated:
+        write(reader.repo, f'{folder}/SKILL.md', '# Rotina nova\n')
+        git(reader.repo, 'add', '--', folder)
+        git(reader.repo, 'commit', '-qm', 'recriada com mesmo nome')
+    else:
+        git(reader.repo, 'mv', archived['arquivado_para'], folder)
+        git(reader.repo, 'commit', '-qm', 'restaurada manualmente')
+    response = client.post(url, json={'confirmar': True})
+    assert response.status_code == 200, response.text
+    second = response.json()
+    assert second['status'] == 'arquivar_pedido'
+    assert second['operacao_id'] != first['operacao_id']
+    assert client.post(url, json={'confirmar': True}).json() == second
+    old = asyncio.run(db.get_faxina_item(first['faxina_item']['id']))
+    assert old['status'] == 'mantido' and old['commit_sha'] == archived['commit_sha']
+    assert len(asyncio.run(db.list_faxina('todos'))['itens']) == 2
+    result = executor.run_once(db.db_path, reader.repo)[0]
+    # Recriação mantém o arquivo antigo: executor continua recusando colisão.
+    assert result['status'] == ('erro' if recreated else 'arquivado')
+
+
+@pytest.mark.parametrize('other', ['[Outra](anota.md)', '[Outra](%61nota.md)',
+                                   '[Outra](outra/nota.md)', 'anota.md', 'outra/nota.md'])
+def test_indice_com_nome_semelhante_ou_outro_destino_nao_conflita(env, other):
+    _, _, client = env
+    node = nodes(client, agente='pavan', tipo='memoria')[0]
+    index = Path(node['caminho']).parent / 'MEMORY.md'
+    before = f'- {other}\n'
+    index.write_text(before + '- [Nota](nota.md)\n')
+    result = delete(client, node)
+    assert result.status_code == 200, result.text
+    assert index.read_text() == before
+    assert undo(client, result.json()['operacao_id']).status_code == 200
+    assert index.read_text() == before + '- [Nota](nota.md)\n'
+
+
+def test_poda_por_qualquer_no_da_skill_tem_mesmo_efeito(env):
+    reader, db, client = env
+    listed = nodes(client, tipo='skill')
+    responses = [client.post(f"/api/aprendizado/{n['id']}/arquivar", json={'confirmar': True}) for n in listed]
+    assert all(response.status_code == 200 for response in responses)
+    assert listed[0]['alvo_id'] == listed[1]['alvo_id']
+    assert responses[0].json() == responses[1].json()
+    assert len(asyncio.run(db.list_faxina('todos'))['itens']) == 1
+    assert executor.run_once(db.db_path, reader.repo)[0]['status'] == 'arquivado'

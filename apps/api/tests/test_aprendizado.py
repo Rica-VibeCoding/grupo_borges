@@ -5,6 +5,8 @@ import hashlib
 import json
 import os
 import subprocess
+from collections import Counter
+from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
@@ -13,6 +15,7 @@ from fastapi.testclient import TestClient
 from db.store import GrupoBorgesDB
 from routers import aprendizado
 from services.aprendizado import Aprendizado
+from services import aprendizado as inventory
 from services.faxina import CONTENT_LIMIT
 
 
@@ -186,3 +189,133 @@ def test_cache_inventario_mas_conteudo_sempre_fresco(env, monkeypatch):
     reader.invalidate()
     assert nodes(client, agente='pavan', tipo='memoria')[0]['titulo'] == 'Conteúdo novo'
     assert len(calls) == 2
+
+
+def test_memoria_com_pasta_alias_leitura_canonica_e_links_internos_bloqueados(env, tmp_path):
+    reader, _, client = env
+    note = write(reader.repo, 'sobral/memory/nota.md', '# Memória Sobral\n')
+    (reader.memory_root / 'memory-sobral').symlink_to(note.parent)
+    outside = write(tmp_path, 'fora/segredo.md', 'não expor\n')
+    (note.parent / 'link.md').symlink_to(outside)
+    listed = nodes(client, agente='sobral', tipo='memoria')
+    assert len(listed) == 1
+    assert listed[0]['caminho'] == str(note)
+    response = client.get(f"/api/aprendizado/{listed[0]['id']}/conteudo")
+    assert response.status_code == 200 and 'Memória Sobral' in response.json()['texto']
+    # Revalida também um arquivo substituído por link após preencher o cache.
+    reader.cache_seconds = 60
+    reader.invalidate()
+    node = nodes(client, agente='sobral')[0]
+    note.unlink()
+    note.symlink_to(outside)
+    assert client.get(f"/api/aprendizado/{node['id']}/conteudo").status_code == 403
+
+
+def test_contagens_globais_aplicam_so_tipo_e_contam_nos(env):
+    _, _, client = env
+    expected = dict(Counter(n['agente'] for n in nodes(client)))
+    response = client.get('/api/aprendizado', params={
+        'agente': 'inexistente', 'desde': 1, 'ate': 1, 'offset': 90, 'limite': 1,
+    }).json()
+    assert response['itens'] == [] and response['total'] == 0
+    assert response['por_agente'] == expected == {'pavan': 3, 'daniel': 1, 'ze-shared': 1}
+    assert response['total_geral'] == 5
+    for tipo in ['memoria', 'skill', 'memoria_compartilhada']:
+        expected = dict(Counter(n['agente'] for n in nodes(client, tipo=tipo)))
+        page = client.get('/api/aprendizado', params={
+            'tipo': tipo, 'agente': 'daniel', 'offset': 100, 'limite': 1,
+        }).json()
+        assert page['por_agente'] == expected
+        assert page['total_geral'] == sum(expected.values())
+
+
+def test_contagens_sem_teto_de_paginas_e_inventario_vazio(env, monkeypatch):
+    reader, _, client = env
+    listed = [dict(id=str(i), agente='sobral', tipo='memoria', data=1) for i in range(3007)]
+    monkeypatch.setattr(reader, 'snapshot', lambda: (listed, {}))
+    page = client.get('/api/aprendizado?limite=1').json()
+    assert len(page['itens']) == 1 and page['proximo_offset'] == 1
+    assert page['por_agente'] == {'sobral': 3007} and page['total_geral'] == 3007
+    listed.clear()
+    page = client.get('/api/aprendizado').json()
+    assert page['por_agente'] == {} and page['total_geral'] == 0
+
+
+def test_alvo_id_estavel_por_arquivo_nos_e_aliases(env):
+    reader, _, client = env
+    shared = 'ze-shared/memory/shared_regra.md'
+    write(reader.repo, shared, '# Regra revisada\n')
+    git(reader.repo, 'add', '--', shared)
+    git(reader.repo, 'commit', '-qm', 'revisa compartilhada', when='2026-03-01T10:00:00Z')
+    targets = set()
+    for tipo in ['skill', 'memoria_compartilhada']:
+        listed = nodes(client, tipo=tipo)
+        assert len(listed) == 2 and len({n['id'] for n in listed}) == 2
+        assert len({n['alvo_id'] for n in listed}) == 1
+        assert len(listed[0]['alvo_id']) == 32
+        targets.add(listed[0]['alvo_id'])
+    assert len(targets) == 2
+    node = nodes(client, tipo='memoria', agente='pavan')[0]
+    write(reader.memory_root, 'memory-pavan/nota.md', '# Editada\n')
+    assert nodes(client, tipo='memoria', agente='pavan')[0]['alvo_id'] == node['alvo_id']
+    folder = reader.repo / 'daniel/.claude/skills'
+    folder.mkdir(parents=True)
+    (folder / 'alias').symlink_to(reader.repo / 'pavan/.claude/skills/rotina')
+    assert {n['alvo_id'] for n in nodes(client, tipo='skill')} <= targets
+
+
+@pytest.mark.parametrize('failure', [RuntimeError('git falhou'), subprocess.TimeoutExpired('git', 30)])
+def test_git_indisponivel_nao_derruba_get_nem_poda(env, monkeypatch, caplog, failure):
+    _, _, client = env
+
+    def fail(*args):
+        raise failure
+
+    monkeypatch.setattr(inventory, 'git_dates', fail)
+    listed = nodes(client)
+    assert len(listed) == 4  # Sem Git: um nó por arquivo com a data local.
+    assert all(n['fonte_data'] != 'git' for n in listed)
+    note = next(n for n in listed if n['agente'] == 'pavan' and n['tipo'] == 'memoria')
+    assert client.post(f"/api/aprendizado/{note['id']}/apagar", json={'confirmar': True}).status_code == 200
+    assert 'histórico Git indisponível' in caplog.text
+
+
+def test_arquivo_grande_com_stat_falhando_nao_derruba_outros_itens_nem_poda(env, monkeypatch, caplog):
+    reader, _, client = env
+    bad = write(reader.memory_root, 'memory-daniel/grande.md', 'a' * (CONTENT_LIMIT + 1))
+    original_stat = Path.stat
+
+    def fail_stat(path, *args, **kwargs):
+        if path == bad:
+            raise FileNotFoundError('arquivo sumiu depois da leitura')
+        return original_stat(path, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, 'stat', fail_stat)
+        listed = nodes(client)
+        assert len(listed) == 5 and not any(n['caminho'] == str(bad) for n in listed)
+        note = next(n for n in listed if n['agente'] == 'pavan' and n['tipo'] == 'memoria')
+        assert client.post(f"/api/aprendizado/{note['id']}/apagar", json={'confirmar': True}).status_code == 200
+    assert 'arquivo de aprendizado ignorado' in caplog.text
+
+
+def test_aplicacoes_carregadas_uma_vez_por_scan(env, monkeypatch):
+    reader, _, client = env
+    for i in range(8):
+        write(reader.memory_root, f'memory-pavan/nota-{i}.md', '# Outra\n')
+    round_id = '20261114T060003.205761Z'
+    write(reader.dream_root, f'dream-pavan/backup/{round_id}/aplicacao.json',
+          json.dumps({'ids': [1], 'ts': '2026-11-14T07:00:00Z'}))
+    write(reader.dream_root, f'dream-pavan/propostas/{round_id}/manifesto.json',
+          json.dumps({'propostas': [], 'arquivos': {}}))
+    reads = Counter()
+    original_read = inventory.read_content
+
+    def measured(root, relative):
+        if relative.endswith(('aplicacao.json', 'manifesto.json')):
+            reads[relative] += 1
+        return original_read(root, relative)
+
+    monkeypatch.setattr(inventory, 'read_content', measured)
+    assert len(nodes(client, agente='pavan', tipo='memoria')) == 9
+    assert len(reads) == 2 and set(reads.values()) == {1}

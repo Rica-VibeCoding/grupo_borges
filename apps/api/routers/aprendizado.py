@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+from collections import Counter
 from pathlib import Path
 from typing import Any, Literal
 
@@ -54,12 +55,14 @@ async def timeline(
     offset: int = Query(0, ge=0), limite: int = Query(100, ge=1, le=500),
 ) -> dict:
     nodes, _ = await asyncio.to_thread(service(request).snapshot)
+    counts = Counter(n["agente"] for n in nodes if tipo is None or n["tipo"] == tipo)
     filtered = [n for n in nodes if (agente is None or n["agente"] == agente)
                 and (tipo is None or n["tipo"] == tipo)
                 and (desde is None or n["data"] >= desde)
                 and (ate is None or n["data"] <= ate)]
     end = offset + limite
     return {"itens": filtered[offset:end], "total": len(filtered),
+            "por_agente": dict(sorted(counts.items())), "total_geral": sum(counts.values()),
             "proximo_offset": end if end < len(filtered) else None}
 
 
@@ -116,10 +119,11 @@ async def archive_skill(node_id: str, body: Confirmation, request: Request) -> d
     try:
         item = await request.app.state.db.request_skill_archive(
             caminho=path, workspace=Path(path).parts[0], ultimo_commit=max(dates),
+            original_exists=True,
         )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    if item["status"] not in {"arquivar_pedido", "arquivado"}:
+    if item["status"] != "arquivar_pedido":
         raise HTTPException(status_code=409, detail="pedido existente exige conferência na Faxina")
     return skill_response(item)
 

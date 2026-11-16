@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 import subprocess
 import threading
@@ -14,6 +15,8 @@ from pathlib import Path
 import yaml
 
 from services.faxina import SECRET, read_content, safe_lines, safe_path
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -109,6 +112,12 @@ class Aprendizado:
         with self._lock:
             self._expires = 0.0
 
+    def memory_location(self, slug: str) -> tuple[Path, str]:
+        """Confia só no alias da pasta; safe_path ainda rejeita links abaixo dela."""
+        folder = (self.memory_root / f"memory-{slug}").resolve(strict=True)
+        # O leitor compartilhado exige ao menos dois componentes relativos.
+        return folder.parent, folder.name
+
     def snapshot(self) -> tuple[list[dict], dict[str, Asset]]:
         with self._lock:
             if self._cached is None or time.monotonic() >= self._expires:
@@ -122,10 +131,14 @@ class Aprendizado:
             slug = folder.name.removeprefix("memory-")
             if not re.fullmatch(r"[a-z0-9_-]+", slug):
                 continue
-            for note in sorted(folder.glob("*.md")):
-                relative = str(note.relative_to(self.memory_root))
-                if note.name != "MEMORY.md" and permitted(relative):
-                    assets.append(Asset(self.memory_root, relative, slug, "memoria"))
+            try:
+                root, directory = self.memory_location(slug)
+                for note in sorted((root / directory).glob("*.md")):
+                    relative = f"{directory}/{note.name}"
+                    if note.name != "MEMORY.md" and permitted(relative):
+                        assets.append(Asset(root, relative, slug, "memoria"))
+            except (OSError, ValueError, RuntimeError) as exc:
+                logger.warning("pasta de memória ignorada %s: %s", folder, exc)
         for note in sorted((self.repo / "ze-shared/memory").glob("shared_*.md")):
             relative = str(note.relative_to(self.repo))
             if permitted(relative):
@@ -135,7 +148,11 @@ class Aprendizado:
             alias = str(note.relative_to(self.repo))
             if not permitted(alias):
                 continue
-            canonical = note.resolve()
+            try:
+                canonical = note.resolve()
+            except (OSError, ValueError, RuntimeError) as exc:
+                logger.warning("skill ignorada %s: %s", note, exc)
+                continue
             if not canonical.is_relative_to(self.repo.resolve()):
                 continue
             relative = str(canonical.relative_to(self.repo.resolve()))
@@ -150,75 +167,102 @@ class Aprendizado:
             assets.append(Asset(self.repo, relative, owner, "skill"))
         return assets
 
-    def dreamed(self, asset: Asset, text: str) -> tuple[int, str] | None:
+    def applications(self, agents: set[str]) -> dict:
+        """Lê cada aplicação e manifesto uma vez por varredura, não por memória."""
+        found = {}
+        for agent in sorted(agents):
+            state = self.dream_root / f"dream-{agent}"
+            try:
+                applied_files = list(state.glob("backup/*/aplicacao.json"))
+            except OSError as exc:
+                logger.warning("aplicações de Sonho indisponíveis %s: %s", agent, exc)
+                continue
+            for applied in applied_files:
+                self.load_application(agent, applied, found)
+        return found
+
+    def load_application(self, agent: str, applied: Path, found: dict) -> None:
         """Proposta sozinha não é aplicação; backup + IDs + digest precisam casar."""
-        if asset.tipo != "memoria":
-            return None
-        state = self.dream_root / f"dream-{asset.agente}"
-        found = []
-        for applied in state.glob("backup/*/aplicacao.json"):
+        try:
             round_id = applied.parent.name
             if not re.fullmatch(r"\d{8}T\d{6}\.\d{6}Z", round_id):
-                continue
-            try:
-                application = json.loads(read_content(
-                    self.dream_root, str(applied.relative_to(self.dream_root))))
-                manifest = json.loads(read_content(
-                    self.dream_root,
-                    f"dream-{asset.agente}/propostas/{round_id}/manifesto.json"))
-                name = Path(asset.relative).name
+                return
+            application = json.loads(read_content(
+                self.dream_root, str(applied.relative_to(self.dream_root))))
+            manifest = json.loads(read_content(
+                self.dream_root, f"dream-{agent}/propostas/{round_id}/manifesto.json"))
+            ids = set(application["ids"])
+            generated = {n for p in manifest["propostas"] if p["id"] in ids
+                         for n in p.get("gerados", [])}
+            when = epoch(application.get("ts"))
+            if not when or manifest.get("agente", agent) != agent:
+                return
+            for name in generated:
                 info = manifest.get("arquivos", {}).get(name, {})
-                ids = set(application["ids"])
-                generated = {n for p in manifest["propostas"] if p["id"] in ids
-                             for n in p.get("gerados", [])}
-                when = epoch(application.get("ts"))
-                if (name in generated and set(info.get("ids", [])) <= ids and when
-                        and manifest.get("agente", asset.agente) == asset.agente
-                        and info.get("proposto_sha256") == hashlib.sha256(text.encode()).hexdigest()):
-                    found.append((when, "criou" if name in application.get("novos", []) else "mudou"))
-            except (OSError, ValueError, KeyError, TypeError, OverflowError):
-                continue
-        return max(found) if found else None
+                digest = info.get("proposto_sha256")
+                if digest and set(info.get("ids", [])) <= ids:
+                    action = "criou" if name in application.get("novos", []) else "mudou"
+                    found.setdefault((agent, name, digest), []).append((when, action))
+        except (OSError, ValueError, KeyError, TypeError, OverflowError, AttributeError, RuntimeError) as exc:
+            logger.warning("aplicação de Sonho ignorada %s: %s", applied, exc)
+
+    def dreamed(self, asset: Asset, text: str, applications: dict) -> tuple[int, str] | None:
+        if asset.tipo != "memoria":
+            return None
+        key = asset.agente, Path(asset.relative).name, hashlib.sha256(text.encode()).hexdigest()
+        return max(applications.get(key, []), default=None)
 
     def scan(self) -> tuple[list[dict], dict[str, Asset]]:
         assets = self.inventory()
-        dates = git_dates(self.repo, [a for a in assets if a.root == self.repo])
+        try:
+            dates = git_dates(self.repo, [a for a in assets if a.root == self.repo])
+        except (OSError, RuntimeError, subprocess.TimeoutExpired, ValueError) as exc:
+            logger.warning("histórico Git indisponível; usando datas locais: %s", exc)
+            dates = {}
+        applications = self.applications({a.agente for a in assets if a.tipo == "memoria"})
         nodes, lookup = [], {}
         for asset in assets:
             try:
-                text = read_content(asset.root, asset.relative)
+                try:
+                    text = read_content(asset.root, asset.relative)
+                except OverflowError:
+                    text = ""
                 mtime = int(asset.path.stat().st_mtime)
-            except OverflowError:
-                text, mtime = "", int(asset.path.stat().st_mtime)
-            except (OSError, ValueError):
+                self.add_nodes(asset, text, mtime, dates, applications, nodes, lookup)
+            except (OSError, ValueError, OverflowError, RuntimeError, TypeError, KeyError) as exc:
+                logger.warning("arquivo de aprendizado ignorado %s: %s", asset.root / asset.relative, exc)
                 continue
-            meta = metadata(text)
-            title = meta.get("name") or next((s.lstrip("# ") for s in safe_lines(text)
-                                             if s.startswith("# ")), asset.path.stem)
-            description = meta.get("description", "")
-            title = " ".join(safe_lines(str(title)))[:200] or asset.path.stem
-            description = " ".join(safe_lines(str(description)))[:300]
-            extra = meta.get("metadata")
-            modified = epoch(extra.get("modified")) if isinstance(extra, dict) else None
-            latest, first = dates.get(asset.key, (None, None))
-            events = [("criou", first, "git")] if first else []
-            if latest and latest != first:
-                events.append(("mudou", latest, "git"))
-            if not latest:
-                events = [("mudou", modified or mtime, "metadata.modified" if modified else "mtime")]
-            dreamed = self.dreamed(asset, text)
-            if dreamed:
-                events = [(dreamed[1], dreamed[0], "sonho")]
-            for action, when, source in events:
-                node_id = hashlib.sha256(f"{asset.key}:{action}".encode()).hexdigest()[:32]
-                node = dict(id=node_id, agente=asset.agente, tipo=asset.tipo, acao=action,
-                            data=when, titulo=title, descricao=description,
-                            origem="sonho" if source == "sonho" else "agente",
-                            caminho=str(asset.root / asset.relative), fonte_data=source)
-                nodes.append(node)
-                lookup[node_id] = asset
         nodes.sort(key=lambda n: (-n["data"], n["id"]))
         return nodes, lookup
+
+    def add_nodes(self, asset: Asset, text: str, mtime: int, dates: dict,
+                  applications: dict, nodes: list, lookup: dict) -> None:
+        meta = metadata(text)
+        title = meta.get("name") or next((s.lstrip("# ") for s in safe_lines(text)
+                                         if s.startswith("# ")), asset.path.stem)
+        description = meta.get("description", "")
+        title = " ".join(safe_lines(str(title)))[:200] or asset.path.stem
+        description = " ".join(safe_lines(str(description)))[:300]
+        extra = meta.get("metadata")
+        modified = epoch(extra.get("modified")) if isinstance(extra, dict) else None
+        latest, first = dates.get(asset.key, (None, None))
+        events = [("criou", first, "git")] if first else []
+        if latest and latest != first:
+            events.append(("mudou", latest, "git"))
+        if not latest:
+            events = [("mudou", modified or mtime, "metadata.modified" if modified else "mtime")]
+        dreamed = self.dreamed(asset, text, applications)
+        if dreamed:
+            events = [(dreamed[1], dreamed[0], "sonho")]
+        for action, when, source in events:
+            node_id = hashlib.sha256(f"{asset.key}:{action}".encode()).hexdigest()[:32]
+            target_id = hashlib.sha256(asset.key.encode()).hexdigest()[:32]
+            node = dict(id=node_id, alvo_id=target_id, agente=asset.agente, tipo=asset.tipo, acao=action,
+                        data=when, titulo=title, descricao=description,
+                        origem="sonho" if source == "sonho" else "agente",
+                        caminho=str(asset.root / asset.relative), fonte_data=source)
+            nodes.append(node)
+            lookup[node_id] = asset
 
     def content(self, asset: Asset) -> str:
         if not permitted(asset.relative):

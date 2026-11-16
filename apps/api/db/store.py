@@ -458,18 +458,19 @@ class GrupoBorgesDB:
         )
 
     async def request_skill_archive(
-        self, *, caminho: str, workspace: str, ultimo_commit: int,
+        self, *, caminho: str, workspace: str, ultimo_commit: int, original_exists: bool = False,
     ) -> dict[str, Any]:
         """Pedido humano explícito: dispensa idade/cooldown, mantém o executor único."""
         return await asyncio.to_thread(
             self._create_faxina_item, caminho, workspace, "skill", None,
-            ultimo_commit, [], None, None, None, None, True,
+            ultimo_commit, [], None, None, None, None, True, original_exists,
         )
 
     def _create_faxina_item(
         self, caminho, workspace, tipo, ultima_leitura, ultimo_commit,
         citado_em, jev_veredito, jev_motivo, jev_duplica_de, jev_probabilidade,
         manual_archive=False,
+        original_exists=False,
     ) -> dict[str, Any] | None:
         from services.faxina import validate_relative_path
 
@@ -488,6 +489,15 @@ class GrupoBorgesDB:
             if existing:
                 if manual_archive and existing["tipo"] != "skill":
                     raise ValueError("item existente não é de skill")
+                if manual_archive and original_exists and existing["status"] == "arquivado":
+                    # A rota revalidou a skill no caminho original. Encerra o ciclo
+                    # antigo sem perder seu commit/destino e libera o índice único.
+                    conn.execute(
+                        "UPDATE faxina_item SET status = 'mantido', decidido_em = ? WHERE id = ?",
+                        (now, existing["id"]),
+                    )
+                    existing = None
+            if existing:
                 if manual_archive and existing["status"] == "pendente":
                     existing = conn.execute(
                         "UPDATE faxina_item SET status = 'arquivar_pedido', decidido_em = ?, erro = NULL "
