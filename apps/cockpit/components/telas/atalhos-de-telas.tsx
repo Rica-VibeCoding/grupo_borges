@@ -15,6 +15,8 @@ export type AtalhoDeTela = {
   contagem?: number | null;
   /** Selo vivo, de componente cliente — no lugar da contagem do servidor. */
   selo?: ReactNode;
+  /** `false` para tela pouco usada: sem pré-carga quando o atalho aparece. */
+  prefetch?: boolean;
 };
 
 export function AtalhosDeTelas({ atalhos }: { atalhos: AtalhoDeTela[] }) {
@@ -25,6 +27,7 @@ export function AtalhosDeTelas({ atalhos }: { atalhos: AtalhoDeTela[] }) {
         <Link
           key={atalho.href}
           href={atalho.href}
+          prefetch={atalho.prefetch === false ? false : undefined}
           className="ck-atalho inline-flex items-center"
           style={{
             gap: 'var(--ck-space-2)',

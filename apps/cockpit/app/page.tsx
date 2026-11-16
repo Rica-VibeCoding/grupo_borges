@@ -2,6 +2,7 @@ import type { Viewport } from 'next';
 import { fetchFleet } from '@grupo_borges/cockpit-core/api';
 import { AppShell } from '@/components/shell/app-shell';
 import { SeloDeMaquinas } from '@/components/maquinas/selo-de-maquinas';
+import { IconeBroto } from '@/components/aprendizado/icones';
 import { IconeMaquina, IconeVassoura } from '@/components/shell/icones';
 import { TropaAoVivo } from '@/components/shell/tropa-ao-vivo';
 import { AtalhosDeTelas } from '@/components/telas/atalhos-de-telas';
@@ -97,6 +98,8 @@ export default async function Home() {
                   icone: <IconeMaquina tamanho={16} />,
                   selo: <SeloDeMaquinas />,
                 },
+                // Tela pouco consultada: sem pré-carga e sem dado pedido daqui.
+                { href: '/aprendizado', rotulo: 'Aprendizado', icone: <IconeBroto tamanho={16} />, prefetch: false },
               ]}
             />
           </div>
