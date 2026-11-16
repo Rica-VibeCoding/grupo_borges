@@ -43,26 +43,30 @@ export function LinhaDoTempo({ inicial, filtros, agora }: { inicial: ListaAprend
     setPodas(lerPodas(localStorage.getItem(CHAVE_DAS_PODAS), Math.floor(Date.now() / 1000)));
   }, []);
 
-  function guardar(proximas: Poda[]) {
-    setPodas(proximas);
+  // Poda e Desfazer resolvem fora de ordem (dois POST no ar ao mesmo tempo):
+  // cada mudança se aplica sobre o que já está guardado, nunca sobre o `podas`
+  // deste render — senão a que chega por último apaga a outra. O localStorage
+  // é relido na hora, para valer mesmo se a lista já trocou de filtro.
+  function guardar(mudanca: (podas: Poda[]) => Poda[]) {
+    setPodas(mudanca);
     try {
-      localStorage.setItem(CHAVE_DAS_PODAS, JSON.stringify(proximas));
+      const guardadas = lerPodas(localStorage.getItem(CHAVE_DAS_PODAS), Math.floor(Date.now() / 1000));
+      localStorage.setItem(CHAVE_DAS_PODAS, JSON.stringify(mudanca(guardadas)));
     } catch {
       /* aparelho sem espaço ou modo privado: o Desfazer vale só nesta visita */
     }
   }
 
   const registrar = (poda: Poda) => {
-    guardar([poda, ...podas.filter((p) => p.no_id !== poda.no_id)]);
+    guardar((atuais) => [poda, ...atuais.filter((p) => p.alvo_id !== poda.alvo_id)]);
     setAnuncio(poda.tipo === 'skill' ? 'Arquivamento pedido à Faxina.' : 'Memória apagada.');
   };
-  const esquecer = (noId: string) => {
-    const era = podas.find((p) => p.no_id === noId);
-    guardar(podas.filter((p) => p.no_id !== noId));
-    if (era?.estado === 'apagada') setAnuncio('Memória restaurada.');
+  const esquecer = (poda: Poda) => {
+    guardar((atuais) => atuais.filter((p) => p.alvo_id !== poda.alvo_id));
+    if (poda.estado === 'apagada') setAnuncio('Memória restaurada.');
   };
   const mudar = (poda: Poda) => {
-    guardar(podas.map((p) => (p.no_id === poda.no_id ? poda : p)));
+    guardar((atuais) => atuais.map((p) => (p.alvo_id === poda.alvo_id ? poda : p)));
     if (poda.estado === 'volta_pedida') setAnuncio('Volta pedida à Faxina.');
   };
 
@@ -85,8 +89,8 @@ export function LinhaDoTempo({ inicial, filtros, agora }: { inicial: ListaAprend
     }
   }
 
-  const naTela = new Set(itens.map((n) => n.id));
-  const foraDaTela = podas.filter((p) => !naTela.has(p.no_id));
+  const naTela = new Set(itens.map((n) => n.alvo_id));
+  const foraDaTela = podas.filter((p) => !naTela.has(p.alvo_id));
   const dias = agruparPorDia(itens);
   const restantes = Math.max(0, inicial.total - itens.length);
 
@@ -142,7 +146,7 @@ export function LinhaDoTempo({ inicial, filtros, agora }: { inicial: ListaAprend
                 key={no.id}
                 no={no}
                 ultimoDoDia={i === dia.itens.length - 1}
-                poda={podas.find((p) => p.no_id === no.id) ?? null}
+                poda={podas.find((p) => p.alvo_id === no.alvo_id) ?? null}
                 aoPodar={registrar}
                 aoMudar={mudar}
                 aoEsquecer={esquecer}

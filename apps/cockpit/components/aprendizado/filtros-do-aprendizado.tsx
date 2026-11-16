@@ -1,7 +1,7 @@
 import Link from 'next/link';
 
 import { TRILHO_DA_PASTILHA, MIOLO_ACESO } from '@/components/shell/pastilha-do-chrome';
-import { nomeDoAgente, type Filtros, type TipoAprendizado } from '@/lib/aprendizado';
+import { AGENTE_COMPARTILHADO, nomeDoAgente, type Filtros, type TipoAprendizado } from '@/lib/aprendizado';
 
 // Os dois filtros moram na URL, então cada escolha é um link. Sem prefetch: são
 // até 17 links, e cada pré-carga varreria o inventário da frota inteira à toa.
@@ -35,10 +35,13 @@ export function FiltrosDoAprendizado({
 }) {
   // O agente escolhido pode não ter nada no tipo atual: continua na fileira,
   // com zero, para o Rica ver o que está marcado e poder desmarcar.
-  const lista =
-    filtros.agente && !agentes.some((a) => a.slug === filtros.agente)
-      ? [...agentes, { slug: filtros.agente, nome: nomeDoAgente(filtros.agente), total: 0 }]
-      : agentes;
+  // Entra antes da Frota, que fecha a fileira.
+  const lista = [...agentes];
+  if (filtros.agente && !agentes.some((a) => a.slug === filtros.agente)) {
+    const frota = lista.findIndex((a) => a.slug === AGENTE_COMPARTILHADO);
+    const marcado = { slug: filtros.agente, nome: nomeDoAgente(filtros.agente), total: 0 };
+    lista.splice(frota === -1 ? lista.length : frota, 0, marcado);
+  }
 
   return (
     <div className="flex flex-col" style={{ gap: 'var(--ck-space-2)' }}>

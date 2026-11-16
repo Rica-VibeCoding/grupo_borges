@@ -2009,15 +2009,12 @@ html[data-troca-agente] .ck-palco {
     background: var(--ck-state-attention);
   }
 }
-/* Foco de teclado nas pílulas e no Cancelar: véu e fio interno cinza (§9.17). */
+/* Foco de teclado por véu e fio interno cinza (§9.17 — nunca anel colorido):
+ * pílulas e Cancelar da VPS/Abertos, e todo controle da tela Aprendizado
+ * (`.ck-foco-fio`). `-miolo` acende o `span` de dentro, nas pastilhas de Tipo,
+ * onde o alvo de 44px é maior que o desenho. */
 .ck-vps-botao:focus-visible .ck-vps-pilula,
-.ck-abertos-cancelar:focus-visible {
-  background-image: linear-gradient(var(--ck-overlay-hover), var(--ck-overlay-hover));
-  box-shadow: inset 0 0 0 1px var(--ck-edge-functional);
-}
-/* Tela Aprendizado: o mesmo foco por fio cinza + véu, para todo controle dela
- * (§9.17 — nunca anel colorido). `-miolo` acende o `span` de dentro, nas
- * pastilhas de Tipo, onde o alvo de 44px é maior que o desenho. */
+.ck-abertos-cancelar:focus-visible,
 .ck-foco-fio:focus-visible,
 .ck-foco-fio-miolo:focus-visible > span {
   background-image: linear-gradient(var(--ck-overlay-hover), var(--ck-overlay-hover));

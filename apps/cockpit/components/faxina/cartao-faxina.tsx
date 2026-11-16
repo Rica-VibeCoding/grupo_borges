@@ -6,6 +6,7 @@
 
 import { useState } from 'react';
 
+import { Botao } from '@/components/faxina/botao';
 import {
   acoesPermitidas,
   descreverParado,
@@ -141,42 +142,5 @@ export function CartaoFaxina({ inicial, agora }: { inicial: FaxinaItem; agora: n
         </pre>
       ) : null}
     </li>
-  );
-}
-
-function Botao({
-  rotulo,
-  onClick,
-  destaque = false,
-  desabilitado = false,
-}: {
-  rotulo: string;
-  onClick: () => void;
-  destaque?: boolean;
-  desabilitado?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={desabilitado}
-      className="ck-aperta"
-      style={{
-        minHeight: 'var(--ck-touch-min)',
-        padding: '0 var(--ck-space-4)',
-        borderRadius: 'var(--ck-radius-pill)',
-        fontSize: 'var(--ck-text-sm)',
-        background: destaque ? 'var(--ck-surface-raised)' : 'transparent',
-        color: destaque ? 'var(--ck-text-primary)' : 'var(--ck-text-secondary)',
-        border: '1px solid var(--ck-edge-hairline)',
-        opacity: desabilitado ? 0.5 : 1,
-        // O `transform` do `.ck-aperta` entra junto: transição em linha
-        // vence a da classe, e sem ele o aperto seria de estalo.
-        transition:
-          'background var(--ck-dur-fast) var(--ck-ease), transform calc(var(--ck-dur-fast) * 0.75) var(--ck-ease)',
-      }}
-    >
-      {rotulo}
-    </button>
   );
 }

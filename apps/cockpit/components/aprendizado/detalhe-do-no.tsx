@@ -7,7 +7,7 @@
 
 import { useEffect, useState } from 'react';
 
-import { Botao } from '@/components/aprendizado/botao';
+import { Botao } from '@/components/faxina/botao';
 import {
   fetchConteudo,
   mensagemDeErro,
@@ -55,6 +55,7 @@ export function DetalheDoNo({
     try {
       const r = await postPoda(no);
       aoPodar({
+        alvo_id: no.alvo_id,
         no_id: no.id,
         operacao_id: r.operacao_id,
         tipo: no.tipo === 'skill' ? 'skill' : 'memoria',
@@ -112,13 +113,15 @@ export function DetalheDoNo({
           ) : null}
           <div className="flex flex-wrap" style={{ gap: 'var(--ck-space-2)' }}>
             <Botao
+              fio
               rotulo={poda === 'apagar' ? 'Apagar memória' : 'Arquivar skill'}
               perigo
               focar
-              ocupado={emVoo}
+              desabilitado={emVoo}
               onClick={() => void podar()}
             />
             <Botao
+              fio
               rotulo="Cancelar"
               contorno
               onClick={() => {
@@ -130,9 +133,10 @@ export function DetalheDoNo({
         </div>
       ) : (
         <div className="flex flex-wrap items-center" style={{ gap: 'var(--ck-space-2)' }}>
-          <Botao rotulo="Fechar" onClick={aoFechar} />
+          <Botao fio rotulo="Fechar" onClick={aoFechar} />
           {poda ? (
             <Botao
+              fio
               rotulo={poda === 'apagar' ? 'Apagar…' : 'Arquivar…'}
               contorno
               focar={cancelou}

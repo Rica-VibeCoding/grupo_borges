@@ -6,7 +6,6 @@ import { LinhaDoTempo } from '@/components/aprendizado/linha-do-tempo';
 import { AppShell } from '@/components/shell/app-shell';
 import {
   AGENTE_COMPARTILHADO,
-  contarPorAgente,
   fetchAprendizado,
   lerTipo,
   nomeDoAgente,
@@ -32,17 +31,22 @@ export default async function Aprendizado({ searchParams }: { searchParams: Prom
   const agora = Math.floor(Date.now() / 1000);
 
   let lista: ListaAprendizado | null = null;
-  let porAgente = new Map<string, number>();
   try {
-    [lista, porAgente] = await Promise.all([fetchAprendizado(filtros), contarPorAgente(filtros.tipo)]);
+    lista = await fetchAprendizado(filtros);
   } catch {
     lista = null;
   }
 
-  // A compartilhada não entra na fileira de agentes: o filtro de Tipo já a separa.
-  const agentes = [...porAgente.entries()]
-    .filter(([slug]) => slug !== AGENTE_COMPARTILHADO)
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+  // A contagem vem na própria página (`por_agente`, só com o filtro de tipo).
+  // O que é da frota inteira (`ze-shared`: memória compartilhada e skills de
+  // `ze-shared/.claude/skills`) vira o chip "Frota", no fim da fileira.
+  const agentes = Object.entries(lista?.por_agente ?? {})
+    .sort(
+      (a, b) =>
+        Number(a[0] === AGENTE_COMPARTILHADO) - Number(b[0] === AGENTE_COMPARTILHADO) ||
+        b[1] - a[1] ||
+        a[0].localeCompare(b[0]),
+    )
     .map(([slug, total]) => ({ slug, nome: nomeDoAgente(slug), total }));
 
   return (
@@ -81,7 +85,7 @@ export default async function Aprendizado({ searchParams }: { searchParams: Prom
           {lista ? <FiltrosDoAprendizado
               filtros={filtros}
               agentes={agentes}
-              totalGeral={[...porAgente.values()].reduce((soma, n) => soma + n, 0)}
+              totalGeral={lista.total_geral}
             /> : null}
 
           {lista ? (

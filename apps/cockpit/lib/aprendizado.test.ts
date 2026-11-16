@@ -23,6 +23,7 @@ const PAVAN = 1794805835;
 function no(id: string, data: number): NoAprendizado {
   return {
     id,
+    alvo_id: `alvo-${id}`,
     agente: 'pavan',
     tipo: 'memoria',
     acao: 'mudou',
@@ -91,9 +92,12 @@ test('desfazer de skill antes da Faxina explica a espera', () => {
 });
 
 test('podas guardadas: descarta lixo e o que passou de 7 dias', () => {
-  const ok = { no_id: 'a', operacao_id: 'memoria-1', tipo: 'memoria', titulo: 't', agente: 'pavan', em: PAVAN, estado: 'apagada' };
+  const ok = { alvo_id: 'x', no_id: 'a', operacao_id: 'memoria-1', tipo: 'memoria', titulo: 't', agente: 'pavan', em: PAVAN, estado: 'apagada' };
   const velha = { ...ok, no_id: 'b', em: PAVAN - 8 * 86400 };
   assert.deepEqual(lerPodas(JSON.stringify([ok, velha, { lixo: 1 }]), PAVAN), [ok]);
+  // Guardada antes do `alvo_id`: continua, marcada pelo próprio nó.
+  const { alvo_id: _, ...antiga } = { ...ok, no_id: 'c' };
+  assert.deepEqual(lerPodas(JSON.stringify([antiga]), PAVAN), [{ ...antiga, alvo_id: 'c' }]);
   assert.deepEqual(lerPodas('não é json', PAVAN), []);
   assert.deepEqual(lerPodas(null, PAVAN), []);
 });

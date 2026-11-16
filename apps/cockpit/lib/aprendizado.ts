@@ -11,6 +11,9 @@ export type TipoAprendizado = 'memoria' | 'memoria_compartilhada' | 'skill';
 
 export type NoAprendizado = {
   id: string;
+  /** Estável por arquivo: os nós "criou" e "mudou" do mesmo arquivo o
+   *  compartilham. É por ele que a poda se marca na tela. */
+  alvo_id: string;
   agente: string;
   tipo: TipoAprendizado;
   acao: 'criou' | 'mudou';
@@ -26,6 +29,10 @@ export type NoAprendizado = {
 export type ListaAprendizado = {
   itens: NoAprendizado[];
   total: number;
+  /** Nós do inventário inteiro por agente, só com o filtro de tipo. */
+  por_agente: Record<string, number>;
+  /** Soma de `por_agente`. */
+  total_geral: number;
   proximo_offset: number | null;
 };
 
@@ -34,6 +41,9 @@ export type Filtros = { agente: string | null; tipo: TipoAprendizado | null };
 /** Uma poda feita por esta tela. Guardada no aparelho para o Desfazer
  *  sobreviver ao nó sair da lista e à página recarregar. */
 export type Poda = {
+  /** O arquivo podado: marca todos os nós dele, criou e mudou. */
+  alvo_id: string;
+  /** O nó em que a poda foi feita. */
   no_id: string;
   operacao_id: string;
   tipo: 'memoria' | 'skill';
@@ -95,19 +105,6 @@ async function exigirOk<T>(res: Response): Promise<T> {
 export async function fetchAprendizado(filtros: Filtros, offset = 0, limite = LIMITE_DA_PAGINA) {
   const res = await fetch(`${base()}/api/aprendizado?${consulta(filtros, offset, limite)}`, { cache: 'no-store' });
   return exigirOk<ListaAprendizado>(res);
-}
-
-/** Quantos aprendizados cada agente tem, para o filtro. A API não devolve a
- *  contagem por agente; a varredura sai do cache de 15 s dela, no servidor. */
-export async function contarPorAgente(tipo: TipoAprendizado | null): Promise<Map<string, number>> {
-  const contagem = new Map<string, number>();
-  let offset: number | null = 0;
-  for (let pagina = 0; offset !== null && pagina < 6; pagina++) {
-    const lista: ListaAprendizado = await fetchAprendizado({ agente: null, tipo }, offset, 500);
-    for (const no of lista.itens) contagem.set(no.agente, (contagem.get(no.agente) ?? 0) + 1);
-    offset = lista.proximo_offset;
-  }
-  return contagem;
 }
 
 export async function fetchConteudo(id: string): Promise<{ caminho: string; texto: string }> {
@@ -257,10 +254,13 @@ export function lerPodas(bruto: string | null, agora: number): Poda[] {
   try {
     const lista = JSON.parse(bruto);
     if (!Array.isArray(lista)) return [];
-    return lista.filter(
-      (p): p is Poda =>
-        typeof p?.no_id === 'string' && typeof p?.operacao_id === 'string' && agora - Number(p.em) < VALIDADE_DA_PODA,
-    );
+    return lista
+      .filter(
+        (p): p is Poda =>
+          typeof p?.no_id === 'string' && typeof p?.operacao_id === 'string' && agora - Number(p.em) < VALIDADE_DA_PODA,
+      )
+      // Poda guardada antes do `alvo_id`: o Desfazer continua, em "Podados por você".
+      .map((p) => (typeof p.alvo_id === 'string' ? p : { ...p, alvo_id: p.no_id }));
   } catch {
     return [];
   }

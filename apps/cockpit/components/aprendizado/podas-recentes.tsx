@@ -15,7 +15,7 @@ export function PodasRecentes({
 }: {
   podas: Poda[];
   aoMudar: (poda: Poda) => void;
-  aoEsquecer: (noId: string) => void;
+  aoEsquecer: (poda: Poda) => void;
 }) {
   const router = useRouter();
   return (
@@ -26,7 +26,7 @@ export function PodasRecentes({
       <ul className="flex flex-col" style={{ gap: 'var(--ck-space-2)' }}>
         {podas.map((poda) => (
           <li
-            key={poda.no_id}
+            key={poda.alvo_id}
             style={{
               padding: 'var(--ck-space-3)',
               borderRadius: 'var(--ck-radius-caixa)',
@@ -37,8 +37,8 @@ export function PodasRecentes({
             <AvisoDaPoda
               poda={poda}
               aoMudar={aoMudar}
-              aoEsquecer={(id) => {
-                aoEsquecer(id);
+              aoEsquecer={(p) => {
+                aoEsquecer(p);
                 // A memória voltou ao inventário: a lista do servidor a traz de volta.
                 if (poda.tipo === 'memoria') router.refresh();
               }}

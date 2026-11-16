@@ -35,15 +35,19 @@ export function NoDaLinha({
   poda: Poda | null;
   aoPodar: (poda: Poda) => void;
   aoMudar: (poda: Poda) => void;
-  aoEsquecer: (noId: string) => void;
+  aoEsquecer: (poda: Poda) => void;
 }) {
   const [aberto, setAberto] = useState(false);
   const linha = useRef<HTMLButtonElement>(null);
   // Memória restaurada aqui mesmo: o aviso some e o foco volta para a linha.
+  // Só na linha onde o toque foi — o nó irmão (mesmo arquivo) perde o aviso
+  // junto, mas não puxa o foco.
   const tinhaPoda = useRef(poda !== null);
+  const agiuAqui = useRef(false);
   useEffect(() => {
-    if (tinhaPoda.current && poda === null) linha.current?.focus();
+    if (tinhaPoda.current && poda === null && agiuAqui.current) linha.current?.focus();
     tinhaPoda.current = poda !== null;
+    agiuAqui.current = false;
   }, [poda]);
   const Icone = ICONE[no.tipo];
   const sonho = no.origem === 'sonho';
@@ -72,7 +76,15 @@ export function NoDaLinha({
       <div className="flex min-w-0 flex-1 flex-col" style={{ paddingBottom: 'var(--ck-space-4)' }}>
         {poda ? (
           <div style={{ paddingTop: 'var(--ck-space-3)' }}>
-            <AvisoDaPoda poda={poda} aoMudar={aoMudar} aoEsquecer={aoEsquecer} focar={aberto} />
+            <AvisoDaPoda
+              poda={poda}
+              aoMudar={aoMudar}
+              aoEsquecer={(p) => {
+                agiuAqui.current = true;
+                aoEsquecer(p);
+              }}
+              focar={aberto && poda.no_id === no.id}
+            />
           </div>
         ) : (
           <>

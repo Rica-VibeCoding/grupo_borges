@@ -7,7 +7,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 
-import { Botao } from '@/components/aprendizado/botao';
+import { Botao } from '@/components/faxina/botao';
 import { mensagemDeErro, nomeDoAgente, postDesfazer, tituloLegivel, type Poda } from '@/lib/aprendizado';
 
 function frase(poda: Poda): string {
@@ -30,7 +30,7 @@ export function AvisoDaPoda({
   /** A poda mudou de estado (skill: volta pedida). */
   aoMudar: (poda: Poda) => void;
   /** A poda acabou: memória restaurada ou aviso dispensado. */
-  aoEsquecer: (noId: string) => void;
+  aoEsquecer: (poda: Poda) => void;
 }) {
   const [emVoo, setEmVoo] = useState(false);
   const [falha, setFalha] = useState<string | null>(null);
@@ -44,7 +44,7 @@ export function AvisoDaPoda({
       await postDesfazer(poda.operacao_id);
       setAgiu(true);
       if (poda.tipo === 'skill') aoMudar({ ...poda, estado: 'volta_pedida' });
-      else aoEsquecer(poda.no_id);
+      else aoEsquecer(poda);
     } catch (erro) {
       setFalha(mensagemDeErro(erro, 'desfazer', poda.tipo));
     } finally {
@@ -67,9 +67,9 @@ export function AvisoDaPoda({
       ) : null}
       <div className="flex flex-wrap items-center" style={{ gap: 'var(--ck-space-2)' }}>
         {poda.estado === 'volta_pedida' ? (
-          <Botao rotulo="Fechar aviso" focar={agiu} onClick={() => aoEsquecer(poda.no_id)} />
+          <Botao fio rotulo="Fechar aviso" focar={agiu} onClick={() => aoEsquecer(poda)} />
         ) : (
-          <Botao rotulo="Desfazer" contorno focar={focar} ocupado={emVoo} onClick={() => void desfazer()} />
+          <Botao fio rotulo="Desfazer" contorno focar={focar} desabilitado={emVoo} onClick={() => void desfazer()} />
         )}
         {poda.tipo === 'skill' ? (
           <Link
