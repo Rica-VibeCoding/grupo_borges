@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path, PurePosixPath
 
 ZE_CLAUDE_ROOT = Path("/home/clawd/repos/ze_claude")
 CONTENT_LIMIT = 200 * 1024
 INDEX_NAMES = {"CLAUDE.md", "README.md", "SKILL.md", "MEMORY.md"}
+SECRET = re.compile(r"sk-|sb_secret|token|senha|password|api[ _-]?key|Bearer|[A-Za-z0-9+/]{32,}={0,2}", re.I)
+
+
+def safe_lines(text: str) -> list[str]:
+    return [line for line in text.splitlines() if not SECRET.search(line)]
 
 
 def validate_relative_path(caminho: str) -> PurePosixPath:

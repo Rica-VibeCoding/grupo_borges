@@ -8,9 +8,8 @@ import sqlite3
 import subprocess
 import unicodedata
 
-from services.faxina import read_content, restricted_path, safe_path
+from services.faxina import SECRET, read_content, restricted_path, safe_lines, safe_path
 
-SECRET = re.compile(r"sk-|sb_secret|token|senha|password|api[ _-]?key|Bearer|[A-Za-z0-9+/]{32,}={0,2}", re.I)
 STATE = re.compile(r"status|estado|concluíd|implementad|entregue|desligad|descartável|revogad|substituíd|virou skill|aposentad|fechad", re.I)
 STOP = set("para como com uma uns umas dos das que por mais sobre este esta esse essa seu sua the and for with from this that skill skills docs doc plano planos readme memory claude agents projeto projetos pesquisa arquivo arquivos documentação documentacao implementação implementacao".split())
 
@@ -25,10 +24,6 @@ def permitted(repo: Path, path: str, *, transmitted: bool = True) -> bool:
     except (ValueError, OSError):
         return False
     return True
-
-
-def safe_lines(text: str) -> list[str]:
-    return [line for line in text.splitlines() if not SECRET.search(line)]
 
 
 def document(repo: Path, item: dict) -> str:
