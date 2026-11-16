@@ -35,6 +35,7 @@ import {
   guardaTroca,
   leOperacao,
   trocaGuardada,
+  trocaSegueNoChat,
   type EstadoDaAcao,
   type Leitura,
   type Troca,
@@ -176,7 +177,7 @@ export function usaAcoesDeConversa({
     const vinhaTrocando = antes.fase === 'esperando' || antes.fase === 'conferindo';
     if (vinhaTrocando && estado.fase === 'livre') setTrocouAgora(antes.troca?.tipo ?? 'retomar');
     const noChat = leTrocaNoChat(agentSlug);
-    if (estado.fase === 'esperando' || estado.fase === 'conferindo') {
+    if (trocaSegueNoChat(estado) && (estado.fase === 'esperando' || estado.fase === 'conferindo')) {
       const troca = estado.troca;
       publicaTrocaNoChat(agentSlug, {
         fase: 'trocando',

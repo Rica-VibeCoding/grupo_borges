@@ -27,8 +27,9 @@ export type TrocaNoChat =
   | { fase: 'pronta'; emMs: number }
   | { fase: 'falhou'; texto: string };
 
-/** Depois da pronta, quanto o chat espera o aviso do stream antes de largar. */
-export const ESPERA_DO_STREAM_MS = 20_000;
+/** Depois da pronta, quanto o chat espera o aviso do stream antes de largar.
+ *  O aviso sai antes da pronta: isto é folga de trânsito, não espera. */
+export const ESPERA_DO_STREAM_MS = 2_000;
 
 type Registro = { troca: TrocaNoChat | null; concluidaEm: number; donos: number };
 

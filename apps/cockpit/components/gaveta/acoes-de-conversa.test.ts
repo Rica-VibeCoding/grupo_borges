@@ -15,6 +15,7 @@ import {
   textoDaEspera,
   textoDaTroca,
   trocaEmCurso,
+  trocaSegueNoChat,
   trocaGuardada,
   type Troca,
 } from './acoes-de-conversa.ts';
@@ -135,6 +136,14 @@ describe('conferência depois da troca (F12)', () => {
     const e = depoisDaTroca({ tipo: 'erro', texto: 'o /clear não chegou' }, retomar(), 100, 1_000);
     assert.equal(e.fase === 'conferindo' && e.ate, 1_000 + CONFERE_ERRO_MS);
     assert.equal(trocaEmCurso(e), true);
+  });
+
+  it('pronta solta o chat na hora; erro o segura até a conferência', () => {
+    const p = depoisDaTroca({ tipo: 'pronta' }, novaDe('a'), 0, 0);
+    assert.equal(trocaSegueNoChat(p), false);
+    const e = depoisDaTroca({ tipo: 'erro', texto: 'x' }, novaDe('a'), 0, 0);
+    assert.equal(trocaSegueNoChat(e), true);
+    assert.equal(trocaSegueNoChat({ fase: 'esperando', troca: nova, etapa: 'estacionando', inicio: 0 }), true);
   });
 
   it('sem saber o que foi pedido, encerra na hora como antes', () => {

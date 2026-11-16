@@ -63,6 +63,13 @@ export function trocaEmCurso(estado: EstadoDaAcao): boolean {
   return estado.fase === 'esperando' || estado.fase === 'conferindo';
 }
 
+/** O chat segue escurecido? Só até a API dizer pronta: a conferência da lista
+ *  é do Histórico, e o aviso do stream sai antes da pronta. Com erro, o chat
+ *  espera a conferência dizer se a troca aconteceu mesmo. */
+export function trocaSegueNoChat(estado: EstadoDaAcao): boolean {
+  return estado.fase === 'esperando' || (estado.fase === 'conferindo' && estado.erro !== null);
+}
+
 /** O nome do botão de troca: claro parado, âmbar no meio de um turno. */
 export function textoDaTroca(tipo: Troca['tipo'], interrompe: boolean): string {
   if (tipo === 'nova') return interrompe ? 'Interromper e abrir nova' : 'Nova conversa';
