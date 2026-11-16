@@ -457,9 +457,19 @@ class GrupoBorgesDB:
             ultimo_commit, citado_em or [], jev_veredito, jev_motivo, jev_duplica_de, jev_probabilidade,
         )
 
+    async def request_skill_archive(
+        self, *, caminho: str, workspace: str, ultimo_commit: int,
+    ) -> dict[str, Any]:
+        """Pedido humano explícito: dispensa idade/cooldown, mantém o executor único."""
+        return await asyncio.to_thread(
+            self._create_faxina_item, caminho, workspace, "skill", None,
+            ultimo_commit, [], None, None, None, None, True,
+        )
+
     def _create_faxina_item(
         self, caminho, workspace, tipo, ultima_leitura, ultimo_commit,
         citado_em, jev_veredito, jev_motivo, jev_duplica_de, jev_probabilidade,
+        manual_archive=False,
     ) -> dict[str, Any] | None:
         from services.faxina import validate_relative_path
 
@@ -476,6 +486,13 @@ class GrupoBorgesDB:
                 (caminho,),
             ).fetchone()
             if existing:
+                if manual_archive and existing["tipo"] != "skill":
+                    raise ValueError("item existente não é de skill")
+                if manual_archive and existing["status"] == "pendente":
+                    existing = conn.execute(
+                        "UPDATE faxina_item SET status = 'arquivar_pedido', decidido_em = ?, erro = NULL "
+                        "WHERE id = ? RETURNING *", (now, existing["id"]),
+                    ).fetchone()
                 return self._faxina_row(existing)
             kept = conn.execute(
                 "SELECT MAX(decidido_em) FROM faxina_item WHERE caminho = ? AND status = 'mantido'",
@@ -483,18 +500,21 @@ class GrupoBorgesDB:
             ).fetchone()[0]
             reference = max(ultima_leitura or 0, ultimo_commit or 0, kept or 0) or now
             days = max(0, (now - reference) // 86400)
-            if days < 20:
+            if days < 20 and not manual_archive:
                 return None
             row = conn.execute(
                 """
                 INSERT INTO faxina_item (
                     caminho, workspace, tipo, ultima_leitura, ultimo_commit, dias_parado,
-                    citado_em, jev_veredito, jev_motivo, jev_duplica_de, jev_probabilidade, criado_em
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *
+                    citado_em, jev_veredito, jev_motivo, jev_duplica_de, jev_probabilidade, criado_em,
+                    status, decidido_em
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *
                 """,
                 (caminho, workspace, tipo, ultima_leitura, ultimo_commit, days,
                  json.dumps(citado_em, ensure_ascii=False), jev_veredito, jev_motivo,
-                 jev_duplica_de, jev_probabilidade, now),
+                 jev_duplica_de, jev_probabilidade, now,
+                 "arquivar_pedido" if manual_archive else "pendente",
+                 now if manual_archive else None),
             ).fetchone()
             return self._faxina_row(row)
 
