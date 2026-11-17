@@ -1,0 +1,549 @@
+"""CDP remoto com posse do bh.sh; nenhum Chrome ou lock paralelo na VPS."""
+
+from __future__ import annotations
+
+import asyncio
+import base64
+import contextlib
+import io
+import json
+import os
+import time
+import uuid
+from dataclasses import dataclass, field
+from pathlib import Path
+from urllib.parse import urlsplit
+
+import httpx
+from fastapi import HTTPException
+from PIL import Image
+from websockets.asyncio.client import connect
+
+BH = Path(
+    os.getenv(
+        "TELA_AGENTE_BH",
+        "/home/clawd/repos/ze_claude/ze-shared/.claude/skills/browser-harness/scripts/bh.sh",
+    )
+)
+# Identidades, não portas: estas continuam exclusivamente no case do bh.sh.
+PERFIS = {
+    "agente": "Agente",
+    "campanha": "Campanha",
+    "fluytpos": "Fluyt Pós",
+    "fluytcom": "Fluyt Com",
+    "fluytfin": "Fluyt Fin",
+    "vinicius": "Vinicius",
+}
+CATALOGO = {
+    **{
+        ("arsenal" if p == "agente" else p + "-arsenal"): ("arsenal", "Chrome do " + n)
+        for p, n in PERFIS.items()
+    },
+    **{
+        ("omarchy" if p == "agente" else p): ("note", "Chrome do " + n)
+        for p, n in PERFIS.items()
+        if p != "vinicius"
+    },
+    "fluytpos2": ("note", "Chrome do Fluytpos2"),
+    "pc": ("pc", "Chrome do agente"),
+    "barsi": ("pc", "Chrome do Barsi"),
+    "campanha-pc": ("pc", "Chrome da campanha"),
+}
+INATIVIDADE = 180
+SEM_FLUXO = 20
+FPS = 2
+
+
+async def processo(*args, env=None, limite_s=15):
+    p = await asyncio.create_subprocess_exec(
+        *args, env=env, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL
+    )
+    try:
+        out, _ = await asyncio.wait_for(p.communicate(), limite_s)
+        if p.returncode:
+            raise HTTPException(502, "túnel/configuração do Chrome indisponível")
+        return out.decode().strip()
+    finally:
+        if p.returncode is None:
+            p.kill()
+            await p.wait()
+
+
+async def endereco(chrome):
+    env = {**os.environ, "BH_MAQUINA": chrome}
+    linha = await processo("bash", str(BH), "__cockpit_config", env=env)
+    _, ssh, remota, local = linha.split("\t")
+    base = f"http://127.0.0.1:{int(local)}"
+    async with httpx.AsyncClient(timeout=3, trust_env=False) as client:
+        try:
+            r = await client.get(base + "/json/version")
+            r.raise_for_status()
+        except httpx.HTTPError:
+            await processo(
+                "ssh",
+                "-f",
+                "-N",
+                "-o",
+                "BatchMode=yes",
+                "-o",
+                "ConnectTimeout=5",
+                "-o",
+                "ExitOnForwardFailure=yes",
+                "-o",
+                "ServerAliveInterval=30",
+                "-o",
+                "ServerAliveCountMax=3",
+                "-L",
+                f"{local}:127.0.0.1:{remota}",
+                ssh,
+            )
+            r = await client.get(base + "/json/version")
+            r.raise_for_status()
+        # Chrome anuncia a porta remota. O host é sempre o túnel escolhido por nós.
+        path = urlsplit(r.json()["webSocketDebuggerUrl"]).path
+        return f"ws://127.0.0.1:{int(local)}{path}"
+
+
+class Posse:
+    def __init__(self, p):
+        self.p = p
+
+    @classmethod
+    async def abrir(cls, chrome):
+        p = await asyncio.create_subprocess_exec(
+            "bash",
+            str(BH),
+            "__cockpit_lock",
+            env={**os.environ, "BH_MAQUINA": chrome, "BH_LOCK_WAIT": "0"},
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        posse = cls(p)
+        try:
+            if await asyncio.wait_for(p.stdout.readline(), 18) != b"locked\n":
+                raise HTTPException(409, "Chrome ocupado por outro agente")
+            return posse
+        except BaseException:
+            await posse.fechar()
+            raise
+
+    async def fechar(self):
+        if self.p.stdin:
+            self.p.stdin.close()
+        try:
+            await asyncio.wait_for(self.p.wait(), 3)
+        except TimeoutError:
+            self.p.kill()
+            await self.p.wait()
+
+
+class CDP:
+    def __init__(self, ws):
+        self.ws = ws
+        self.i = 0
+        self.pendentes = {}
+        self.eventos = asyncio.Queue(maxsize=1)
+        self.sid = None
+        self.alvo = None
+        self.reader = asyncio.create_task(self._ler())
+
+    @classmethod
+    async def abrir(cls, chrome):
+        return cls(
+            await connect(
+                await endereco(chrome),
+                max_size=4 * 1024 * 1024,
+                open_timeout=8,
+                close_timeout=2,
+                compression=None,
+                proxy=None,
+            )
+        )
+
+    async def _ler(self):
+        erro = RuntimeError("CDP desconectado")
+        try:
+            async for raw in self.ws:
+                msg = json.loads(raw)
+                if "id" in msg:
+                    f = self.pendentes.get(msg["id"])
+                    if f and not f.done():
+                        if "error" in msg:
+                            f.set_exception(RuntimeError("Chrome recusou o comando"))
+                        else:
+                            f.set_result(msg.get("result", {}))
+                elif (
+                    msg.get("method") == "Page.screencastVisibilityChanged"
+                    and msg.get("sessionId") == self.sid
+                    and not msg["params"]["visible"]
+                ):
+                    if self.eventos.full():
+                        self.eventos.get_nowait()
+                    self.eventos.put_nowait({"trocar_ativa": True})
+                elif msg.get("method") == "Page.screencastFrame":
+                    # ACK sempre, inclusive quadros descartados: fila limitada não trava CDP.
+                    await self.enviar(
+                        "Page.screencastFrameAck",
+                        {"sessionId": msg["params"]["sessionId"]},
+                        msg.get("sessionId"),
+                    )
+                    if msg.get("sessionId") == self.sid:
+                        if self.eventos.full():
+                            self.eventos.get_nowait()
+                        self.eventos.put_nowait({**msg["params"], "_sid": msg.get("sessionId")})
+        except Exception as exc:
+            erro = exc
+        finally:
+            for f in self.pendentes.values():
+                if not f.done():
+                    f.set_exception(erro)
+
+    async def enviar(self, method, params, sid=None):
+        self.i += 1
+        msg = {"id": self.i, "method": method, "params": params}
+        if sid:
+            msg["sessionId"] = sid
+        await self.ws.send(json.dumps(msg))
+        return self.i
+
+    async def cmd(self, method, params=None, *, browser=False):
+        # Não ceder entre reservar id e registrar o future.
+        mid = self.i + 1
+        f = asyncio.get_running_loop().create_future()
+        self.pendentes[mid] = f
+        try:
+            await self.enviar(method, params or {}, None if browser else self.sid)
+            return await asyncio.wait_for(f, 8)
+        finally:
+            self.pendentes.pop(mid, None)
+
+    async def abas(self):
+        r = await self.cmd("Target.getTargets", browser=True)
+        return [
+            {"id": t["targetId"], "titulo": t["title"], "url": t["url"]}
+            for t in r["targetInfos"]
+            if t["type"] == "page"
+        ]
+
+    async def selecionar(self, alvo=None, assumir=False):
+        abas = await self.abas()
+        if not abas:
+            raise HTTPException(409, "Chrome sem abas")
+        if alvo and alvo not in {a["id"] for a in abas}:
+            raise HTTPException(404, "aba não existe")
+        if self.sid:
+            with contextlib.suppress(Exception):
+                await self.cmd("Page.stopScreencast")
+                await self.cmd("Target.detachFromTarget", {"sessionId": self.sid}, browser=True)
+            self.sid = None
+        # CDP não informa 'active' em TargetInfo. Descobre visibilityState sem ativar.
+        visivel = None
+        for aba in [a for a in abas if a["id"] == alvo] if alvo else abas:
+            r = await self.cmd(
+                "Target.attachToTarget", {"targetId": aba["id"], "flatten": True}, browser=True
+            )
+            sid = r["sessionId"]
+            self.sid = sid
+            r = await self.cmd(
+                "Runtime.evaluate",
+                {
+                    "expression": "document.hasFocus() ? 'focused' : document.visibilityState",
+                    "returnByValue": True,
+                },
+            )
+            if alvo or r["result"].get("value") == "focused":
+                self.alvo = aba["id"]
+                break
+            if r["result"].get("value") == "visible" and visivel is None:
+                visivel = aba["id"]
+            await self.cmd("Target.detachFromTarget", {"sessionId": sid}, browser=True)
+            self.sid = None
+        if not self.sid and visivel:
+            self.sid = (
+                await self.cmd(
+                    "Target.attachToTarget", {"targetId": visivel, "flatten": True}, browser=True
+                )
+            )["sessionId"]
+            self.alvo = visivel
+        if not self.sid:
+            # Uma janela minimizada pode não ter página visível; não rouba foco só para ver.
+            raise HTTPException(409, "nenhuma aba visível; abra a janela do Chrome")
+        if assumir:
+            await self.cmd("Page.bringToFront")
+        while not self.eventos.empty():
+            self.eventos.get_nowait()
+        await self.cmd("Page.enable")
+        await self.cmd(
+            "Page.startScreencast",
+            {
+                "format": "jpeg",
+                "quality": 45,
+                "maxWidth": 960,
+                "maxHeight": 960,
+                "everyNthFrame": 1,
+            },
+        )
+
+    async def fechar(self):
+        self.reader.cancel()
+        await self.ws.close()
+        with contextlib.suppress(asyncio.CancelledError):
+            await self.reader
+
+
+@dataclass
+class Sessao:
+    id: str
+    chrome: str
+    dono: str
+    cdp: CDP
+    criada: float = field(default_factory=time.monotonic)
+    atividade: float = field(default_factory=time.monotonic)
+    fluxo_em: float = field(default_factory=time.monotonic)
+    posse: Posse | None = None
+    token: str | None = None
+    fluxo: bool = False
+    fechada: bool = False
+    quadros: dict = field(default_factory=dict)
+    sequencia: int = 0
+    operacao: asyncio.Lock = field(default_factory=asyncio.Lock)
+    vigia: asyncio.Task | None = None
+
+
+class ServicoTela:
+    def __init__(self):
+        self.sessoes = {}
+        self.criando = set()
+
+    async def abrir(self, chrome, dono):
+        if chrome not in CATALOGO:
+            raise HTTPException(404, "Chrome desconhecido")
+        if chrome in self.criando or any(s.chrome == chrome for s in self.sessoes.values()):
+            raise HTTPException(409, "já existe uma tela aberta para este Chrome")
+        self.criando.add(chrome)
+        cdp = None
+        try:
+            cdp = await CDP.abrir(chrome)
+            await cdp.selecionar()
+            s = Sessao(uuid.uuid4().hex, chrome, dono, cdp)
+            self.sessoes[s.id] = s
+            s.vigia = asyncio.create_task(self._vigiar(s))
+            return s
+        except BaseException:
+            if cdp:
+                await cdp.fechar()
+            raise
+        finally:
+            self.criando.discard(chrome)
+
+    def obter(self, sid, dono):
+        s = self.sessoes.get(sid)
+        if not s or s.fechada:
+            raise HTTPException(410, "tela encerrada; abra outra sessão")
+        if s.dono != dono:
+            raise HTTPException(403, "tela de outra identidade")
+        return s
+
+    def controlar(self, s, token):
+        if not token or not s.token or token != s.token or not s.posse:
+            raise HTTPException(403, "assuma antes de enviar entrada")
+        if s.posse.p.returncode is not None:
+            raise HTTPException(409, "a trava foi perdida; devolva e assuma novamente")
+
+    async def assumir(self, s):
+        async with s.operacao:
+            if not s.fluxo or time.monotonic() - s.fluxo_em > SEM_FLUXO:
+                raise HTTPException(409, "conecte os quadros antes de assumir")
+            if s.posse:
+                raise HTTPException(409, "esta tela já está assumida")
+            posse = await Posse.abrir(s.chrome)
+            if s.fechada:
+                await posse.fechar()
+                raise HTTPException(410, "tela encerrada durante a espera da trava")
+            s.posse = posse
+            s.token = uuid.uuid4().hex
+            s.atividade = time.monotonic()
+            try:
+                await s.cdp.cmd("Page.bringToFront")
+            except BaseException:
+                await self.devolver(s)
+                raise
+            return s.token
+
+    async def devolver(self, s):
+        posse, s.posse, s.token = s.posse, None, None
+        if posse:
+            await posse.fechar()
+
+    async def fechar(self, s):
+        if s.fechada:
+            return
+        s.fechada = True
+        import anyio
+
+        with anyio.CancelScope(shield=True):
+            if s.vigia and s.vigia is not asyncio.current_task():
+                s.vigia.cancel()
+            async with s.operacao:
+                await self.devolver(s)
+                await s.cdp.fechar()
+            self.sessoes.pop(s.id, None)
+
+    async def _vigiar(self, s):
+        try:
+            while not s.fechada:
+                await asyncio.sleep(1)
+                agora = time.monotonic()
+                if (
+                    agora - s.fluxo_em > SEM_FLUXO
+                    or (s.posse and agora - s.atividade > INATIVIDADE)
+                    or s.cdp.reader.done()
+                ):
+                    await self.fechar(s)
+        except asyncio.CancelledError:
+            pass
+
+    async def eventos(self, s):
+        ultimo = 0
+        try:
+            while not s.fechada:
+                s.fluxo_em = time.monotonic()
+                try:
+                    frame = await asyncio.wait_for(s.cdp.eventos.get(), 2)
+                except TimeoutError:
+                    yield {
+                        "event": "estado",
+                        "data": json.dumps({"assumido": bool(s.posse), "aba": s.cdp.alvo}),
+                    }
+                    continue
+                agora = time.monotonic()
+                await asyncio.sleep(max(0, ultimo + 1 / FPS - agora))
+                # Durante a espera, prioriza o quadro mais recente.
+                while not s.cdp.eventos.empty():
+                    frame = s.cdp.eventos.get_nowait()
+                ultimo = time.monotonic()
+                async with s.operacao:
+                    if s.fechada:
+                        break
+                    if frame.get("trocar_ativa"):
+                        await s.cdp.selecionar()
+                        s.quadros.clear()
+                        continue
+                    if frame.get("_sid", s.cdp.sid) != s.cdp.sid:
+                        continue
+                    metrics = await s.cdp.cmd("Page.getLayoutMetrics")
+                    viewport = metrics["cssVisualViewport"]
+                    with Image.open(io.BytesIO(base64.b64decode(frame["data"]))) as img:
+                        largura, altura = img.size
+                    s.sequencia += 1
+                    qid = str(s.sequencia)
+                    s.quadros[qid] = (
+                        ultimo,
+                        s.cdp.alvo,
+                        viewport["clientWidth"],
+                        viewport["clientHeight"],
+                    )
+                    s.quadros = dict(list(s.quadros.items())[-4:])
+                    corpo = {
+                        "id": qid,
+                        "aba": s.cdp.alvo,
+                        "jpeg": frame["data"],
+                        "largura": largura,
+                        "altura": altura,
+                        "viewport": {
+                            "largura": viewport["clientWidth"],
+                            "altura": viewport["clientHeight"],
+                        },
+                    }
+                yield {"event": "quadro", "data": json.dumps(corpo, separators=(",", ":"))}
+        finally:
+            # Starlette cancela o gerador ao desconectar; a limpeza precisa sobreviver.
+            import anyio
+
+            with anyio.CancelScope(shield=True):
+                await self.fechar(s)
+
+    async def entrada(self, s, token, pedido):
+        async with s.operacao:
+            self.controlar(s, token)
+            tipo = pedido.tipo
+            if tipo in ("clique", "rolagem"):
+                q = s.quadros.get(pedido.quadro)
+                if (
+                    not q
+                    or q[1] != s.cdp.alvo
+                    or (time.monotonic() - q[0] > 10 and pedido.quadro != str(s.sequencia))
+                ):
+                    raise HTTPException(409, "quadro antigo; espere outro quadro")
+                viewport = (await s.cdp.cmd("Page.getLayoutMetrics"))["cssVisualViewport"]
+                if (
+                    abs(viewport["clientWidth"] - q[2]) > 1
+                    or abs(viewport["clientHeight"] - q[3]) > 1
+                ):
+                    raise HTTPException(409, "viewport mudou; espere outro quadro")
+                x, y = pedido.x * q[2], pedido.y * q[3]
+                if tipo == "clique":
+                    await s.cdp.cmd(
+                        "Input.dispatchMouseEvent",
+                        {
+                            "type": "mousePressed",
+                            "x": x,
+                            "y": y,
+                            "button": "left",
+                            "buttons": 1,
+                            "clickCount": 1,
+                        },
+                    )
+                    await s.cdp.cmd(
+                        "Input.dispatchMouseEvent",
+                        {
+                            "type": "mouseReleased",
+                            "x": x,
+                            "y": y,
+                            "button": "left",
+                            "buttons": 0,
+                            "clickCount": 1,
+                        },
+                    )
+                else:
+                    await s.cdp.cmd(
+                        "Input.dispatchMouseEvent",
+                        {
+                            "type": "mouseWheel",
+                            "x": x,
+                            "y": y,
+                            "deltaX": pedido.delta_x,
+                            "deltaY": pedido.delta_y,
+                        },
+                    )
+            elif tipo == "texto":
+                await s.cdp.cmd("Input.insertText", {"text": pedido.texto})
+            elif tipo == "tecla":
+                codigo = {"Enter": 13, "Tab": 9, "Backspace": 8}[pedido.tecla]
+                for acao in ("keyDown", "keyUp"):
+                    await s.cdp.cmd(
+                        "Input.dispatchKeyEvent",
+                        {
+                            "type": acao,
+                            "key": pedido.tecla,
+                            "code": pedido.tecla,
+                            "windowsVirtualKeyCode": codigo,
+                            **(
+                                {"text": "\r"}
+                                if pedido.tecla == "Enter" and acao == "keyDown"
+                                else {}
+                            ),
+                        },
+                    )
+            elif tipo == "aba":
+                await s.cdp.selecionar(pedido.aba, assumir=True)
+                s.quadros.clear()
+            s.atividade = time.monotonic()
+
+    async def shutdown(self):
+        for s in list(self.sessoes.values()):
+            await self.fechar(s)
+
+
+servico = ServicoTela()

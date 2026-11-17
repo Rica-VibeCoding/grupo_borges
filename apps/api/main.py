@@ -45,6 +45,7 @@ from routers import faxina as faxina_router
 from routers import aprendizado as aprendizado_router
 from routers import hooks as hooks_router
 from routers import maquinas as maquinas_router
+from routers import tela_agente as tela_agente_router
 from routers import stream as stream_router
 from routers import task_commits as task_commits_router
 from routers import tts as tts_router
@@ -136,6 +137,7 @@ async def lifespan(app: FastAPI):
 
     yield
 
+    await tela_agente_router.tela.servico.shutdown()
     aquecimento.cancel()
     if uploads_sweeper is not None:
         await uploads_sweeper.stop()
@@ -244,6 +246,7 @@ app.include_router(stream_router.router, prefix="/api/stream", tags=["stream"])
 app.include_router(tts_router.router, prefix="/api", tags=["tts"])
 app.include_router(vps_router.router, prefix="/api/vps", tags=["vps"])
 app.include_router(maquinas_router.router, prefix="/api/maquinas", tags=["maquinas"])
+app.include_router(tela_agente_router.router, prefix="/api/tela-agente", tags=["tela-agente"])
 app.include_router(energia_router.router, prefix="/api/energia", tags=["energia"])
 
 # Static files: imagens de tasks E os anexos de agente. O diretório é criado
