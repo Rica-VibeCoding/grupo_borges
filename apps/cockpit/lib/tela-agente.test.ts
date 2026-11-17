@@ -72,3 +72,13 @@ test('cada falha diz o que houve e o que fazer', () => {
   assert.match(textoDaFalha('entrada', 409, 'x'), /Toque de novo/);
   assert.match(textoDaFalha('devolver', 403, 'x'), /Assuma de novo/);
 });
+
+test('no controle a página toma a largura do quadro e a altura que sobra na tela', async () => {
+  const { tamanhoDoAparelho, RESERVA_ABAIXO_DO_QUADRO } = await import('./tela-agente.ts');
+  assert.deepEqual(tamanhoDoAparelho(366.4, 260, 844), { largura: 366, altura: 844 - 260 - RESERVA_ABAIXO_DO_QUADRO });
+  // Piso de 320 nos dois lados (o back também aplica) e teto de 4096.
+  assert.deepEqual(tamanhoDoAparelho(280, 600, 700), { largura: 320, altura: 320 });
+  assert.equal(tamanhoDoAparelho(9000, 0, 9000).largura, 4096);
+  // Topo acima da janela (rolou) não soma altura.
+  assert.equal(tamanhoDoAparelho(366, -100, 844).altura, 844 - RESERVA_ABAIXO_DO_QUADRO);
+});

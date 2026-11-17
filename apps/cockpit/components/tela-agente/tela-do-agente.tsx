@@ -13,8 +13,10 @@
 'use client';
 
 import Link from 'next/link';
+import { useRef } from 'react';
 
 import { IconeDescartar } from '@/components/shell/icones';
+import { tamanhoDoAparelho } from '@/lib/tela-agente';
 
 import { BarraDeEstado, FaixaDoPedido } from './barra-de-estado';
 import { QuadroAoVivo } from './quadro-ao-vivo';
@@ -36,9 +38,21 @@ export function TelaDoAgente({
 }) {
   const tela = usaSessaoDaTela(chrome, pedidoDaUrl);
   const noControle = tela.fase === 'controle';
+  const areaDoQuadro = useRef<HTMLDivElement>(null);
+  const rolagem = useRef<HTMLDivElement>(null);
+
+  // Assumir manda a área do quadro neste aparelho: a página do agente passa a ser
+  // desenhada nesse tamanho (no iPhone, em coluna) e volta ao devolver.
+  function assume() {
+    const area = areaDoQuadro.current;
+    const altura = window.visualViewport?.height ?? window.innerHeight;
+    // Topo do quadro com a página no começo: rolada, a conta pediria a janela inteira.
+    const topo = area ? area.getBoundingClientRect().top + (rolagem.current?.scrollTop ?? 0) : 0;
+    void tela.assumir(area ? tamanhoDoAparelho(area.clientWidth, topo, altura) : null);
+  }
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto" style={{ overscrollBehavior: 'contain' }}>
+    <div ref={rolagem} className="min-h-0 flex-1 overflow-y-auto" style={{ overscrollBehavior: 'contain' }}>
       <div
         className="mx-auto flex w-full flex-col"
         style={{
@@ -80,7 +94,7 @@ export function TelaDoAgente({
             fase={tela.fase}
             ocupado={tela.ocupado}
             devolvidoEm={tela.devolvidoEm}
-            aoAssumir={() => void tela.assumir()}
+            aoAssumir={assume}
             aoDevolver={() => void tela.devolver()}
             aoReconectar={tela.reconectar}
           />
@@ -99,13 +113,15 @@ export function TelaDoAgente({
           </p>
         </div>
 
-        <QuadroAoVivo
-          quadro={tela.quadro}
-          noControle={noControle}
-          rotulo={rotulo}
-          enviar={tela.enviar}
-          aoTocarSemControle={() => tela.avisar('Para mexer no Chrome, toque em Assumir. O agente fica esperando até você devolver.')}
-        />
+        <div ref={areaDoQuadro}>
+          <QuadroAoVivo
+            quadro={tela.quadro}
+            noControle={noControle}
+            rotulo={rotulo}
+            enviar={tela.enviar}
+            aoTocarSemControle={() => tela.avisar('Para mexer no Chrome, toque em Assumir. O agente fica esperando até você devolver.')}
+          />
+        </div>
 
         {noControle ? <TecladoDaTela sessao={tela.sessao} abaAtual={tela.quadro?.aba ?? null} enviar={tela.enviar} /> : null}
       </div>

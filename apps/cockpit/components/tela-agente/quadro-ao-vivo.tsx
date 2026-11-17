@@ -56,6 +56,11 @@ export function QuadroAoVivo({
   const pincaEmCurso = useRef<Pinca | null>(null);
   const [vista, setVista] = useState<Vista>(VISTA_INTEIRA);
   const vistaAtual = useRef(vista);
+  // Assumir e devolver mudam a proporção da página: a ampliação de antes não serve mais.
+  const proporcao = quadro ? `${quadro.largura}x${quadro.altura}` : null;
+  useEffect(() => {
+    setVista(VISTA_INTEIRA);
+  }, [proporcao]);
   useEffect(() => {
     vistaAtual.current = vista;
   }, [vista]);

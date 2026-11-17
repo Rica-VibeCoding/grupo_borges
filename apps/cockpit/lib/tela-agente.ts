@@ -92,8 +92,36 @@ export const abrirSessao = (chrome: string, pedido?: string | null) =>
 
 export const urlDosQuadros = (sessao: string) => `${RAIZ}/sessoes/${encodeURIComponent(sessao)}/quadros`;
 
-export const assumir = (sessao: string) =>
-  pede<{ controle: string }>(`/sessoes/${encodeURIComponent(sessao)}/assumir`, { method: 'POST' });
+/** Área do quadro no aparelho, em CSS px: no controle, a página é desenhada nesse tamanho. */
+export type Tamanho = { largura: number; altura: number };
+
+export const assumir = (sessao: string, tamanho?: Tamanho | null) =>
+  pede<{ controle: string }>(`/sessoes/${encodeURIComponent(sessao)}/assumir`, {
+    method: 'POST',
+    body: tamanho ? JSON.stringify(tamanho) : undefined,
+  });
+
+/** O back aceita 1–4096 e põe piso de 320 em cada lado; aqui só arredonda e prende. */
+const LADO_MINIMO = 320;
+const LADO_MAXIMO = 4096;
+/**
+ * O que fica abaixo do quadro no controle (dica da pinça, rótulo, campo, teclas e
+ * o respiro do fim), medido em 390px: ~212px. Com folga para a quebra a 320px.
+ */
+export const RESERVA_ABAIXO_DO_QUADRO = 240;
+
+/**
+ * O tamanho que a página do agente vai ter enquanto o Rica controla: a largura do
+ * quadro na tela dele, e a altura que sobra do topo do quadro até a reserva dos
+ * controles. No iPhone isso dá uma página em coluna, do tamanho do dedo.
+ */
+export function tamanhoDoAparelho(larguraDoQuadro: number, topoDoQuadro: number, alturaDaJanela: number): Tamanho {
+  const prende = (v: number) => Math.max(LADO_MINIMO, Math.min(LADO_MAXIMO, Math.round(v)));
+  return {
+    largura: prende(larguraDoQuadro),
+    altura: prende(alturaDaJanela - Math.max(0, topoDoQuadro) - RESERVA_ABAIXO_DO_QUADRO),
+  };
+}
 
 export const devolver = (sessao: string, controle: string) =>
   pede<{ devolvido: true }>(`/sessoes/${encodeURIComponent(sessao)}/devolver`, { method: 'POST' }, controle);

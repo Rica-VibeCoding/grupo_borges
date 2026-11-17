@@ -25,6 +25,7 @@ import {
   type EstadoDoFluxo,
   type Pedido,
   type Quadro,
+  type Tamanho,
 } from '@/lib/tela-agente';
 
 export type Fase = 'abrindo' | 'vendo' | 'controle' | 'caiu';
@@ -33,6 +34,8 @@ export type Fase = 'abrindo' | 'vendo' | 'controle' | 'caiu';
 export type Aviso = { texto: string; tipo: 'dica' | 'erro' };
 
 const ESPERAS_DA_RECONEXAO_MS = [1500, 4000, 10000];
+/** Teto da espera pela imagem no tamanho novo: depois disso a fase troca mesmo assim (o back recusa toque velho com 409). */
+const ESPERA_DO_AJUSTE_MS = 2500;
 
 export function usaSessaoDaTela(chrome: string, pedidoDaUrl: string | null) {
   const [fase, setFase] = useState<Fase>('abrindo');
@@ -51,6 +54,15 @@ export function usaSessaoDaTela(chrome: string, pedidoDaUrl: string | null) {
   const repetiu = useRef(false);
   /** Estava no controle quando caiu? Sobrevive ao `estado` que limpa o token antes da queda. */
   const tevePosse = useRef(false);
+  /** Por que a posse voltou ao agente. O back fecha a sessão logo depois; o motivo sobrevive à reconexão. */
+  const motivoDaPerda = useRef<string | null>(null);
+  /**
+   * Assumir e devolver trocam o tamanho da página: o quadro velho não vale mais
+   * para tocar. O botão fica ocupado até chegar a imagem de tamanho diferente (ou,
+   * se o tamanho não mudou, até um respiro) — só então a fase troca.
+   */
+  const esperaQuadroNovo = useRef<{ largura: number; altura: number; pronto: () => void } | null>(null);
+  const ultimoQuadro = useRef<Quadro | null>(null);
   const pedidoPendente = useRef<string | null>(pedidoDaUrl);
 
   // Uma geração = uma sessão. Reconectar é subir a geração.
@@ -79,7 +91,7 @@ export function usaSessaoDaTela(chrome: string, pedidoDaUrl: string | null) {
       const tenta = n < ESPERAS_DA_RECONEXAO_MS.length && !document.hidden;
       setAviso({
         tipo: 'erro',
-        texto: [texto, estavaNoControle ? 'O Chrome voltou para o agente.' : null, tenta ? 'Reconectando sozinho…' : 'Toque em Reconectar.']
+        texto: [motivoDaPerda.current ?? texto, estavaNoControle && !motivoDaPerda.current ? 'O Chrome voltou para o agente.' : null, tenta ? 'Reconectando sozinho…' : 'Toque em Reconectar.']
           .filter(Boolean)
           .join(' '),
       });
@@ -102,12 +114,17 @@ export function usaSessaoDaTela(chrome: string, pedidoDaUrl: string | null) {
           if (!vivo) return;
           tentativas.current = 0;
           repetiu.current = false;
-          setQuadro(JSON.parse((e as MessageEvent).data) as Quadro);
+          const novo = JSON.parse((e as MessageEvent).data) as Quadro;
+          const espera = esperaQuadroNovo.current;
+          if (espera && (novo.largura !== espera.largura || novo.altura !== espera.altura)) espera.pronto();
+          ultimoQuadro.current = novo;
+          setQuadro(novo);
           if (primeiro) {
-            // Voltou depois de queda: o aviso dela sai junto.
+            // Voltou depois de queda: o aviso dela sai junto, menos o motivo de ter perdido a posse.
             primeiro = false;
             setFase('vendo');
-            setAviso(null);
+            setAviso(motivoDaPerda.current ? { texto: motivoDaPerda.current, tipo: 'erro' } : null);
+            motivoDaPerda.current = null;
           }
         });
         fonte.addEventListener('estado', (e) => {
@@ -115,10 +132,13 @@ export function usaSessaoDaTela(chrome: string, pedidoDaUrl: string | null) {
           const estado = JSON.parse((e as MessageEvent).data) as EstadoDoFluxo;
           setPedido(estado.pedido);
           // Perdeu a posse do lado de lá (3 min sem toque, por exemplo).
-          if (!estado.assumido && controle.current) {
+          // Durante o Assumir, um `estado` emitido antes dele ainda pode chegar: não conta.
+          if (!estado.assumido && controle.current && !esperaQuadroNovo.current) {
             controle.current = null;
+            tevePosse.current = false;
+            motivoDaPerda.current = 'O Chrome voltou para o agente: 3 minutos sem toque, ou a tela foi fechada em outro lugar. Assuma de novo se precisar.';
             setFase('vendo');
-            setAviso({ texto: 'A posse voltou para o agente: ficou 3 minutos sem toque. Assuma de novo se precisar.', tipo: 'erro' });
+            setAviso({ texto: motivoDaPerda.current, tipo: 'erro' });
           }
         });
         fonte.onerror = () => cai(null);
@@ -165,13 +185,30 @@ export function usaSessaoDaTela(chrome: string, pedidoDaUrl: string | null) {
     pedidoPendente.current = pedido && (pedido.status === 'aguardando' || pedido.status === 'em_atendimento') ? pedido.id : null;
   }, [pedido]);
 
-  const assumir = useCallback(async () => {
+  /** Promessa que cumpre quando chega a imagem no tamanho novo, ou no teto da espera. */
+  const imagemNova = () =>
+    new Promise<void>((cumpre) => {
+      const q = ultimoQuadro.current;
+      if (!q) return cumpre();
+      const pronto = () => {
+        window.clearTimeout(teto);
+        esperaQuadroNovo.current = null;
+        cumpre();
+      };
+      const teto = window.setTimeout(pronto, ESPERA_DO_AJUSTE_MS);
+      esperaQuadroNovo.current = { largura: q.largura, altura: q.altura, pronto };
+    });
+
+  const assumir = useCallback(async (tamanho?: Tamanho | null) => {
     if (!sessao.current) return;
     setOcupado('assumindo');
     setAviso(null);
+    motivoDaPerda.current = null;
     try {
-      const { controle: token } = await postAssumir(sessao.current);
+      const nova = imagemNova();
+      const { controle: token } = await postAssumir(sessao.current, tamanho);
       controle.current = token;
+      await nova;
       tevePosse.current = true;
       setDevolvidoEm(null);
       setFase('controle');
@@ -187,8 +224,10 @@ export function usaSessaoDaTela(chrome: string, pedidoDaUrl: string | null) {
     setOcupado('devolvendo');
     setAviso(null);
     try {
+      const nova = imagemNova();
       await postDevolver(sessao.current, controle.current);
       controle.current = null;
+      await nova;
       tevePosse.current = false;
       setFase('vendo');
       setDevolvidoEm(Date.now());
