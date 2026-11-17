@@ -105,6 +105,13 @@ def _setup_db(path: str, users: dict) -> None:
         )
 
 
+def _session_seconds(config: dict, username: str) -> int:
+    dias = (config.get("users") or {}).get(username, {}).get("sessao_dias")
+    if isinstance(dias, int) and not isinstance(dias, bool) and 1 <= dias <= 400:
+        return dias * 86400
+    return SESSION_SECONDS
+
+
 def _user(config: dict, username: str) -> dict | None:
     with _db(config["session_db"]) as conn:
         row = conn.execute(
@@ -252,11 +259,11 @@ def create_portao_app(config: dict, *, transport_factory=None) -> FastAPI:
                 conn.execute("DELETE FROM sessions WHERE expires<=?", (int(time.time()),))
                 conn.execute("INSERT INTO sessions VALUES (?, ?, ?)",
                              (hashlib.sha256(token.encode()).hexdigest(), username,
-                              int(time.time()) + SESSION_SECONDS))
+                              int(time.time()) + _session_seconds(config, username)))
         if not current or current[0] != encoded:
             return JSONResponse({"detail": "credenciais_invalidas"}, status_code=401)
         response = JSONResponse({"usuario": username, "role": user["role"], "slug": user.get("slug")})
-        response.set_cookie(COOKIE, token, max_age=SESSION_SECONDS, httponly=True, secure=True, samesite="lax")
+        response.set_cookie(COOKIE, token, max_age=_session_seconds(config, username), httponly=True, secure=True, samesite="lax")
         return response
 
     @app.get("/auth/me")

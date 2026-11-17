@@ -309,3 +309,25 @@ async def test_login_em_andamento_nao_cria_sessao_apos_troca(tmp_path, monkeypat
                                       json={"usuario": "ana", "senha": "senha inicial"})
         assert response.status_code == 401
         assert (await browser.get("/auth/me")).status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_sessao_dias_por_usuario(tmp_path):
+    config = {
+        "public_origin": "https://agentes.conectamoveis.net.br",
+        "session_db": str(tmp_path / "sessions.db"),
+        "users": {"kid": {"role": "client", "slug": "a", "password_hash": password_hash("senha boa"),
+                          "sessao_dias": 365, "trocar_senha": False},
+                  "ana": {"role": "client", "slug": "a", "password_hash": password_hash("senha boa"),
+                          "trocar_senha": False}},
+        "clients": {"a": {"socket": "/tmp/a.sock", "token": "a" * 40}},
+        "controller": {"socket": "/tmp/control.sock", "token": "c" * 40},
+    }
+    app = create_portao_app(config)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                 base_url=config["public_origin"]) as browser:
+        for usuario, segundos in (("kid", 365 * 86400), ("ana", 12 * 3600)):
+            r = await browser.post("/auth/login", headers={"origin": config["public_origin"]},
+                                   json={"usuario": usuario, "senha": "senha boa"})
+            assert r.status_code == 200
+            assert f"Max-Age={segundos}" in r.headers["set-cookie"]
