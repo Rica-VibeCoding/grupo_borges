@@ -79,14 +79,15 @@ async def chromes():
 
 
 @router.post("/chromes/{chrome}/sessoes", status_code=201)
-async def abrir(chrome: str, request: Request):
-    s = await executar(tela.servico.abrir(chrome, dono(request)))
+async def abrir(chrome: str, request: Request, pedido: str | None = None):
+    s = await executar(tela.servico.abrir(chrome, dono(request), pedido))
     return {
         "id": s.id,
         "chrome": s.chrome,
         "aba": s.cdp.alvo,
         "inatividade_s": tela.INATIVIDADE,
         "sem_fluxo_s": tela.SEM_FLUXO,
+        "pedido": tela.pedidos.obter(s.pedido_id).corpo() if s.pedido_id else None,
     }
 
 
@@ -123,6 +124,8 @@ async def devolver(sid: str, request: Request, x_tela_controle: Controle = None)
     async with s.operacao:
         tela.servico.controlar(s, x_tela_controle)
         await tela.servico.devolver(s)
+        if s.pedido_id:
+            tela.pedidos.concluir(tela.pedidos.obter(s.pedido_id), "devolvido")
     return {"devolvido": True}
 
 
@@ -138,3 +141,31 @@ async def fechar(sid: str, request: Request):
     s = tela.servico.obter(sid, dono(request))
     await tela.servico.fechar(s)
     return {"encerrada": True}
+
+
+class PedidoHumano(Modelo):
+    chrome: str = Field(min_length=1, max_length=64)
+    motivo: str = Field(min_length=1, max_length=1000)
+    agente: str = Field(min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9_-]+$")
+    prazo_s: int = Field(default=600, ge=2, le=1800)
+
+
+@router.post("/pedidos", status_code=201)
+async def pedir_humano(pedido: PedidoHumano):
+    p = await tela.pedidos.criar(pedido.chrome, pedido.motivo, pedido.agente, pedido.prazo_s)
+    return p.corpo()
+
+
+@router.get("/pedidos/{pid}")
+async def pedido_humano(pid: str):
+    return tela.pedidos.obter(pid).corpo()
+
+
+@router.get("/pedidos/{pid}/esperar")
+async def esperar_humano(pid: str):
+    return EventSourceResponse(
+        tela.pedidos.esperar(tela.pedidos.obter(pid)),
+        ping=5,
+        send_timeout=10,
+        headers={"Cache-Control": "no-store"},
+    )

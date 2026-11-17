@@ -138,6 +138,7 @@ async def lifespan(app: FastAPI):
     yield
 
     await tela_agente_router.tela.servico.shutdown()
+    await tela_agente_router.tela.pedidos.shutdown()
     aquecimento.cancel()
     if uploads_sweeper is not None:
         await uploads_sweeper.stop()

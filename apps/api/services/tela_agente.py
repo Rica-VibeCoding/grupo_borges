@@ -307,6 +307,7 @@ class Sessao:
     fechada: bool = False
     quadros: dict = field(default_factory=dict)
     sequencia: int = 0
+    pedido_id: str | None = None
     operacao: asyncio.Lock = field(default_factory=asyncio.Lock)
     vigia: asyncio.Task | None = None
 
@@ -316,9 +317,12 @@ class ServicoTela:
         self.sessoes = {}
         self.criando = set()
 
-    async def abrir(self, chrome, dono):
+    async def abrir(self, chrome, dono, pedido_id=None):
         if chrome not in CATALOGO:
             raise HTTPException(404, "Chrome desconhecido")
+        pedido = pedidos.obter(pedido_id) if pedido_id else pedidos.pendente(chrome)
+        if pedido and (pedido.chrome != chrome or pedido.terminado.is_set()):
+            raise HTTPException(409, "pedido não está pendente neste Chrome")
         if chrome in self.criando or any(s.chrome == chrome for s in self.sessoes.values()):
             raise HTTPException(409, "já existe uma tela aberta para este Chrome")
         self.criando.add(chrome)
@@ -327,6 +331,7 @@ class ServicoTela:
             cdp = await CDP.abrir(chrome)
             await cdp.selecionar()
             s = Sessao(uuid.uuid4().hex, chrome, dono, cdp)
+            s.pedido_id = pedido.id if pedido else None
             self.sessoes[s.id] = s
             s.vigia = asyncio.create_task(self._vigiar(s))
             return s
@@ -369,6 +374,10 @@ class ServicoTela:
             except BaseException:
                 await self.devolver(s)
                 raise
+            if s.pedido_id:
+                p = pedidos.obter(s.pedido_id)
+                if not p.terminado.is_set():
+                    p.status = "em_atendimento"
             return s.token
 
     async def devolver(self, s):
@@ -389,6 +398,10 @@ class ServicoTela:
                 await self.devolver(s)
                 await s.cdp.fechar()
             self.sessoes.pop(s.id, None)
+            if s.pedido_id:
+                p = pedidos.pedidos.get(s.pedido_id)
+                if p and not p.terminado.is_set():
+                    p.status = "aguardando"
 
     async def _vigiar(self, s):
         try:
@@ -414,7 +427,15 @@ class ServicoTela:
                 except TimeoutError:
                     yield {
                         "event": "estado",
-                        "data": json.dumps({"assumido": bool(s.posse), "aba": s.cdp.alvo}),
+                        "data": json.dumps(
+                            {
+                                "assumido": bool(s.posse),
+                                "aba": s.cdp.alvo,
+                                "pedido": pedidos.obter(s.pedido_id).corpo()
+                                if s.pedido_id
+                                else None,
+                            }
+                        ),
                     }
                     continue
                 agora = time.monotonic()
@@ -456,6 +477,16 @@ class ServicoTela:
                             "altura": viewport["clientHeight"],
                         },
                     }
+                yield {
+                    "event": "estado",
+                    "data": json.dumps(
+                        {
+                            "assumido": bool(s.posse),
+                            "aba": s.cdp.alvo,
+                            "pedido": pedidos.obter(s.pedido_id).corpo() if s.pedido_id else None,
+                        }
+                    ),
+                }
                 yield {"event": "quadro", "data": json.dumps(corpo, separators=(",", ":"))}
         finally:
             # Starlette cancela o gerador ao desconectar; a limpeza precisa sobreviver.
@@ -547,3 +578,127 @@ class ServicoTela:
 
 
 servico = ServicoTela()
+
+
+async def avisar(agente, texto):
+    """Resumo persiste o evento e confirma o envio urgente; sem token neste serviço."""
+    import sys
+
+    resumo = BH.parents[4] / "scripts" / "resumo"
+    codigo = (
+        "import sys;sys.path.insert(0,sys.argv[1]);from resumo import registrar_evento;"
+        "sys.exit(0 if registrar_evento(sys.argv[2],'tela-agente',sys.argv[3],nivel='urgente') else 1)"
+    )
+    try:
+        await processo(sys.executable, "-c", codigo, str(resumo), agente, texto, limite_s=20)
+        return True
+    except (HTTPException, TimeoutError, OSError):
+        return False
+
+
+@dataclass
+class PedidoHumano:
+    id: str
+    chrome: str
+    motivo: str
+    agente: str
+    prazo_s: int
+    criado_em: float = field(default_factory=time.time)
+    status: str = "aguardando"
+    aviso_enviado: bool = False
+    terminado: asyncio.Event = field(default_factory=asyncio.Event)
+    timer: asyncio.Task | None = None
+
+    def corpo(self):
+        maquina = CATALOGO[self.chrome][0]
+        return {
+            "id": self.id,
+            "chrome": self.chrome,
+            "motivo": self.motivo,
+            "agente": self.agente,
+            "prazo_s": self.prazo_s,
+            "expira_em": self.criado_em + self.prazo_s,
+            "status": self.status,
+            "aviso_enviado": self.aviso_enviado,
+            "url": f"https://borges.tailfe77db.ts.net:3446/maquinas/{maquina}/chrome/{self.chrome}?pedido={self.id}",
+        }
+
+
+class PedidosHumanos:
+    def __init__(self):
+        self.pedidos = {}
+
+    def pendente(self, chrome):
+        return next(
+            (p for p in self.pedidos.values() if p.chrome == chrome and not p.terminado.is_set()),
+            None,
+        )
+
+    def obter(self, pid):
+        p = self.pedidos.get(pid)
+        if not p:
+            raise HTTPException(410, "pedido encerrado ou API reiniciada")
+        return p
+
+    async def criar(self, chrome, motivo, agente, prazo_s):
+        if chrome not in CATALOGO:
+            raise HTTPException(404, "Chrome desconhecido")
+        if self.pendente(chrome):
+            raise HTTPException(409, "já existe pedido pendente para este Chrome")
+        p = PedidoHumano(uuid.uuid4().hex, chrome, motivo, agente, prazo_s)
+        # Retenção limitada em memória; o evento urgente é persistido pelo resumo.
+        referenciados = {s.pedido_id for s in servico.sessoes.values()}
+        for antigo in list(self.pedidos.values()):
+            if len(self.pedidos) < 128:
+                break
+            if antigo.terminado.is_set() and antigo.id not in referenciados:
+                self.pedidos.pop(antigo.id, None)
+        self.pedidos[p.id] = p
+        for s in servico.sessoes.values():
+            if s.chrome == chrome:
+                s.pedido_id = p.id
+                if s.posse:
+                    p.status = "em_atendimento"
+        p.timer = asyncio.create_task(self._prazo(p))
+        p.aviso_enviado = await avisar(agente, f"{motivo}\nChrome: {chrome}\n{p.corpo()['url']}")
+        return p
+
+    async def _prazo(self, p):
+        try:
+            try:
+                await asyncio.wait_for(p.terminado.wait(), p.prazo_s)
+                return
+            except TimeoutError:
+                pass
+            # Primeiro libera o Chrome, só então o agente pode sair da espera.
+            for s in list(servico.sessoes.values()):
+                if s.pedido_id == p.id:
+                    await servico.fechar(s)
+            self.concluir(p, "expirado")
+        except asyncio.CancelledError:
+            pass
+
+    def concluir(self, p, status):
+        if p.terminado.is_set():
+            return
+        p.status = status
+        p.terminado.set()
+
+    async def esperar(self, p):
+        while not p.terminado.is_set():
+            yield {"event": "estado", "data": json.dumps(p.corpo())}
+            try:
+                await asyncio.wait_for(p.terminado.wait(), 5)
+            except TimeoutError:
+                pass
+        yield {"event": "terminado", "data": json.dumps(p.corpo())}
+
+    async def shutdown(self):
+        for p in self.pedidos.values():
+            self.concluir(p, "interrompido")
+        await asyncio.gather(
+            *(p.timer for p in self.pedidos.values() if p.timer), return_exceptions=True
+        )
+
+
+pedidos = PedidosHumanos()

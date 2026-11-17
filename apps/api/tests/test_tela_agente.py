@@ -25,6 +25,9 @@ async def bancada(monkeypatch):
     cdp.cmd.return_value = {"cssVisualViewport": {"clientWidth": 1920, "clientHeight": 1080}}
     cdp.abas.return_value = [{"id": "aba-1", "titulo": "Prova", "url": "https://example.org"}]
     monkeypatch.setattr(tela.CDP, "abrir", AsyncMock(return_value=cdp))
+    pedidos = tela.PedidosHumanos()
+    monkeypatch.setattr(tela, "pedidos", pedidos)
+    monkeypatch.setattr(tela, "avisar", AsyncMock(return_value=True))
     servico = tela.ServicoTela()
     monkeypatch.setattr(tela, "servico", servico)
     app = FastAPI()
@@ -34,6 +37,7 @@ async def bancada(monkeypatch):
     ) as c:
         yield c, servico, cdp
     await servico.shutdown()
+    await pedidos.shutdown()
     cdp.reader.cancel()
 
 
@@ -168,6 +172,8 @@ async def test_quadro_e_desconexao_soltam_trava(bancada, monkeypatch):
     await cdp.eventos.put({"data": base64.b64encode(out.getvalue()).decode()})
     gen = svc.eventos(s)
     e = await anext(gen)
+    if e["event"] == "estado":
+        e = await anext(gen)
     q = json.loads(e["data"])
     assert q["largura"] == 960 and q["viewport"]["largura"] == 1920
     await gen.aclose()
@@ -266,3 +272,111 @@ async def test_cdp_ack_descarta_sem_acumular_e_ver_nao_ativa():
         assert len([x for x in wire.sent if x["method"] == "Page.screencastFrameAck"]) == 20
     finally:
         await cdp.fechar()
+
+
+async def criar_pedido(bancada, prazo=60):
+    c, _, _ = bancada
+    r = await c.post(
+        "/api/tela-agente/pedidos",
+        json={
+            "chrome": "campanha-arsenal",
+            "motivo": "TESTE captcha público",
+            "agente": "teste",
+            "prazo_s": prazo,
+        },
+    )
+    assert r.status_code == 201, r.text
+    return tela.pedidos.obter(r.json()["id"])
+
+
+async def test_humano_aguarda_so_devolver_conclui(bancada, monkeypatch):
+    c, svc, cdp = bancada
+    p = await criar_pedido(bancada)
+    tela.avisar.assert_awaited_once()
+    assert p.corpo()["url"].endswith("/maquinas/arsenal/chrome/campanha-arsenal?pedido=" + p.id)
+    s = await nova(bancada)
+    assert s.pedido_id == p.id
+    _, headers = await assumir_fake(s, monkeypatch)
+    assert p.status == "em_atendimento"
+    gen = tela.pedidos.esperar(p)
+    assert (await anext(gen))["event"] == "estado"
+    r = await c.post(f"/api/tela-agente/sessoes/{s.id}/devolver", headers=headers)
+    assert r.status_code == 200
+    fim = await anext(gen)
+    assert fim["event"] == "terminado" and json.loads(fim["data"])["status"] == "devolvido"
+    assert s.posse is None
+    await gen.aclose()
+
+
+async def test_expira_libera_trava_antes_de_acordar_agente(bancada, monkeypatch):
+    p = await criar_pedido(bancada, 2)
+    s = await nova(bancada)
+    posse, _ = await assumir_fake(s, monkeypatch)
+    await asyncio.wait_for(p.terminado.wait(), 3)
+    assert p.status == "expirado" and s.fechada
+    posse.fechar.assert_awaited_once()
+
+
+async def test_queda_da_tela_nao_finge_devolucao(bancada, monkeypatch):
+    _, svc, _ = bancada
+    p = await criar_pedido(bancada)
+    s = await nova(bancada)
+    await assumir_fake(s, monkeypatch)
+    await svc.fechar(s)
+    assert not p.terminado.is_set() and p.status == "aguardando"
+    s2 = await nova(bancada)
+    assert s2.pedido_id == p.id
+
+
+async def test_duplicado_e_pedido_de_outro_chrome(bancada):
+    c, _, _ = bancada
+    p = await criar_pedido(bancada)
+    r = await c.post(
+        "/api/tela-agente/pedidos", json={"chrome": p.chrome, "motivo": "x", "agente": "teste"}
+    )
+    assert r.status_code == 409
+    r = await c.post("/api/tela-agente/chromes/fluytcom-arsenal/sessoes?pedido=" + p.id)
+    assert r.status_code == 409
+
+
+async def test_aviso_falhou_mas_pedido_esta_registrado(bancada, monkeypatch):
+    monkeypatch.setattr(tela, "avisar", AsyncMock(return_value=False))
+    p = await criar_pedido(bancada)
+    assert not p.aviso_enviado
+    await tela.pedidos.shutdown()
+    assert p.status == "interrompido"
+
+
+async def test_pedido_chega_com_tela_ja_assumida(bancada, monkeypatch):
+    s = await nova(bancada)
+    await assumir_fake(s, monkeypatch)
+    p = await criar_pedido(bancada)
+    assert s.pedido_id == p.id and p.status == "em_atendimento"
+
+
+async def test_aviso_usa_resumo_real_sem_credencial_na_api(monkeypatch):
+    stub = AsyncMock(return_value="")
+    monkeypatch.setattr(tela, "processo", stub)
+    assert await tela.avisar("teste", "TESTE aviso")
+    args = stub.call_args.args
+    assert (tela.BH.parents[4] / "scripts" / "resumo" / "resumo.py").is_file()
+    assert args[-3:] == (str(tela.BH.parents[4] / "scripts" / "resumo"), "teste", "TESTE aviso")
+    assert "nivel='urgente'" in args[2]
+
+
+async def test_router_montado_exige_identidade_tailscale(monkeypatch):
+    from types import SimpleNamespace
+
+    from main import app
+
+    monkeypatch.setattr(
+        app.state, "settings", SimpleNamespace(dev_bypass_auth=False), raising=False
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as c:
+        assert (await c.get("/api/tela-agente/chromes")).status_code == 401
+        r = await c.get(
+            "/api/tela-agente/chromes", headers={"Tailscale-User-Login": "teste@example.test"}
+        )
+        assert r.status_code == 200 and any(x["id"] == "campanha-arsenal" for x in r.json())

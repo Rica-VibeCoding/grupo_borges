@@ -2,9 +2,11 @@
 
 Backend na VPS, **um worker**, montado em `/api/tela-agente`; identidade Tailscale
 igual ao resto da API. No front use caminhos relativos pelo rewrite existente.
-SSE + POST: a [doc de rewrites do Next](https://nextjs.org/docs/app/api-reference/config/next-config-js/rewrites)
-descreve proxy HTTP, sem garantir upgrade WS; a consulta ao código via Context7
-mostrou caminhos de upgrade distintos. Não precisamos depender deles.
+SSE + POST mantém o transporte já usado no cockpit. Conferidos a
+[doc de rewrites](https://nextjs.org/docs/app/api-reference/config/next-config-js/rewrites)
+e o [código oficial do Next 16.2.6](https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/server/lib/router-utils/proxy-request.ts):
+o proxy de rewrite **suporta upgrade WS** (`proxy.ws`). A escolha de SSE é por
+compatibilidade com a API atual, sem acrescentar um transporte no front.
 
 ## Entrada em Abertos
 
@@ -20,6 +22,8 @@ Rota da UI a implementar: **`/maquinas/{maquina}/chrome/{chrome}`**, por exemplo
 
 Ver **sem assumir é permitido**, sem lock e sem trazer janela para frente.
 Só uma tela por Chrome, inclusive observador (evita screencasts conflitantes).
+Na abertura prefere a aba com foco; sem foco do SO usa a primeira aba visível.
+A lista de abas permite escolher outra depois de Assumir.
 
 1. `POST /chromes/{chrome}/sessoes` (sem corpo) → 201
    `{id, chrome, aba, inatividade_s:180, sem_fluxo_s:20}`. Guarde `id` em memória.
@@ -72,3 +76,38 @@ quadros repetidos. Medido em campanha/Arsenal: 126165 bytes SSE em 11,54s
 Não é teto universal de bytes: depende da imagem. Erros HTTP: 403 posse/identidade,
 404 Chrome/aba desconhecido, 409 ocupado/quadro inválido, 410 sessão morta,
 422 corpo inválido, 502 Chrome/túnel indisponível. Erro após abrir SSE encerra o fluxo.
+
+## O agente pede ajuda
+
+`bh.sh humano "resolve o captcha"` cria o pedido **antes de pegar qualquer trava**,
+avisa via `registrar_evento(..., nivel="urgente")` e bloqueia por SSE. Não invocar
+de dentro de um heredoc que já segura o Chrome: o wrapper detecta e sai 2.
+`BH_HUMANO_PRAZO_S`: padrão 600, 2–1800s; `BH_AGENTE`: identificação no aviso.
+`BH_COCKPIT_URL`: API, padrão `https://borges.tailfe77db.ts.net:3445`;
+na bancada use `http://127.0.0.1:8015`. Não aponta para :3446 (essa é a UI).
+Saídas: **0** Devolver explícito; **3** prazo; **4** API/rede/reinício interrompeu
+espera; **2** uso inválido. O comando não navega nem fecha aba; ao retomar, o agente
+confere o estado real e usa `BH_ALVO` quando precisa preservar um alvo específico.
+
+- `POST /pedidos` → 201; JSON `{chrome,motivo,agente,prazo_s:600}`.
+- `GET /pedidos/{pedido}` → `{id,chrome,motivo,agente,prazo_s,expira_em,status,
+  aviso_enviado,url}`. `expira_em` é epoch em segundos.
+- `GET /pedidos/{pedido}/esperar` → SSE `estado` (até 5s) e `terminado`.
+  Status: `aguardando`, `em_atendimento`, `devolvido`, `expirado`, `interrompido`.
+
+A URL urgente usa a rota da UI acima com **`?pedido=<id>`**. Na UI, passe esse
+parâmetro ao abrir: `POST /chromes/{chrome}/sessoes?pedido=<id>`.
+Sem ele, a sessão adota o pedido pendente do Chrome, se houver. A resposta de abrir
+e o evento SSE `estado` incluem **`pedido`** (objeto acima ou null): mostre motivo,
+agente e prazo junto de Assumir/Devolver. Um pedido que chega com a tela já aberta
+também entra no `estado`, sem sondagem pelo front. Só um pedido pendente por Chrome.
+Pedido pendente não reserva o Chrome; exclusividade começa ao Assumir.
+
+Devolver explícito primeiro solta a trava e depois conclui o pedido. Queda da tela
+ou inatividade soltam a posse, mantêm o pedido aguardando e permitem reabrir até o
+prazo. Prazo vencido fecha a sessão associada, solta posse e acorda o agente com 3.
+O aviso tem confirmação de entrega em `aviso_enviado`; falha no envio não apaga o
+pedido e o cliente imprime o problema. Pedidos ficam em memória, com retenção
+limitada; reinício é interrupção (4), nunca sucesso. O evento urgente fica persistido
+no resumo. Subir API nova exige carregar também o `bh.sh` atualizado no ze_claude.
+A publicação da API e a implementação da UI ficam pendentes; produção não foi reiniciada.
