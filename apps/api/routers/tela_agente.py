@@ -19,6 +19,11 @@ class Modelo(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
 
+class Aparelho(Modelo):
+    largura: int = Field(strict=True, gt=0, le=4096)
+    altura: int = Field(strict=True, gt=0, le=4096)
+
+
 class Clique(Modelo):
     tipo: Literal["clique"]
     quadro: str
@@ -113,9 +118,10 @@ async def abas(sid: str, request: Request):
 
 
 @router.post("/sessoes/{sid}/assumir")
-async def assumir(sid: str, request: Request):
+async def assumir(sid: str, request: Request, aparelho: Aparelho | None = None):
     s = tela.servico.obter(sid, dono(request))
-    return {"controle": await executar(tela.servico.assumir(s))}
+    viewport = (aparelho.largura, aparelho.altura) if aparelho else None
+    return {"controle": await executar(tela.servico.assumir(s, viewport))}
 
 
 @router.post("/sessoes/{sid}/devolver")
@@ -123,7 +129,7 @@ async def devolver(sid: str, request: Request, x_tela_controle: Controle = None)
     s = tela.servico.obter(sid, dono(request))
     async with s.operacao:
         tela.servico.controlar(s, x_tela_controle)
-        await tela.servico.devolver(s)
+        await executar(tela.servico.devolver(s))
         if s.pedido_id:
             tela.pedidos.concluir(tela.pedidos.obter(s.pedido_id), "devolvido")
     return {"devolvido": True}
@@ -148,11 +154,14 @@ class PedidoHumano(Modelo):
     motivo: str = Field(min_length=1, max_length=1000)
     agente: str = Field(min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9_-]+$")
     prazo_s: int = Field(default=600, ge=2, le=1800)
+    teste: bool = False
 
 
 @router.post("/pedidos", status_code=201)
 async def pedir_humano(pedido: PedidoHumano):
-    p = await tela.pedidos.criar(pedido.chrome, pedido.motivo, pedido.agente, pedido.prazo_s)
+    p = await tela.pedidos.criar(
+        pedido.chrome, pedido.motivo, pedido.agente, pedido.prazo_s, teste=pedido.teste
+    )
     return p.corpo()
 
 

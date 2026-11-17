@@ -30,9 +30,17 @@ A lista de abas permite escolher outra depois de Assumir.
 2. Conecte `EventSource('/api/tela-agente/sessoes/'+id+'/quadros')`.
    Evento `quadro`: `{id, aba, jpeg, largura, altura, viewport:{largura,altura}}`.
    `jpeg` é base64, use `data:image/jpeg;base64,${jpeg}`. `id` do quadro é string.
-   Evento `estado`: `{assumido, aba}` a cada ~2s sem imagem; comentário ping a cada 5s.
+   Evento `estado`: `{assumido, aba, pedido}` ao conectar e a cada ~2s, com ou sem
+   quadros fluindo; também ao encerrar normalmente a sessão. Comentário ping a cada 5s.
 3. `POST /sessoes/{id}/assumir` → `{controle}`. Só funciona com SSE conectado.
    Guarde o token em memória; mande `X-Tela-Controle: <controle>` nas entradas e Devolver.
+   Corpo opcional `{largura:390, altura:700}` em **CSS px do cliente**, inteiros
+   positivos até 4096. Cada dimensão tem piso aplicado de 320px. Sem corpo mantém
+   o viewport atual. Enquanto assumido, a página recebe essa largura/altura via
+   [`Emulation.setDeviceMetricsOverride`](https://chromedevtools.github.io/devtools-protocol/tot/Emulation/#method-setDeviceMetricsOverride)
+   (`deviceScaleFactor:1`, `mobile:false`): muda o layout sem o viewport virtual
+   largo de sites antigos na emulação mobile. A UI precisa mandar as dimensões
+   ao Assumir para obter esse comportamento.
 4. `POST /sessoes/{id}/devolver` → `{devolvido:true}`. Libera posse e mantém a visualização.
 5. Ao sair: `DELETE /sessoes/{id}` → `{encerrada:true}`; feche também o EventSource.
 
@@ -41,6 +49,10 @@ que as invocações locais usam; no PC também a pasta em `%TEMP%` e sua renova�
 Ocupado retorna **409**, sem tomar posse à força. Outra identidade recebe 403.
 Devolver invalida o token. Sem entrada por **180s**, sem fluxo por **20s**, queda CDP,
 fechamento da conexão ou encerramento da API: fecha a sessão e solta a trava.
+O override é retirado **antes** de liberar a trava em Devolver e nesses caminhos
+de encerramento; se a limpeza CDP falhar, fecha a conexão CDP antes da liberação.
+Ao trocar aba, limpa a anterior e aplica na nova enquanto houver controle.
+Aplicar/retirar o ajuste invalida quadros antigos: espere uma imagem nova para tocar.
 SSE/heartbeat não contam como atividade humana. Processo morto fecha pipe/locks;
 a trava PC usa também o mecanismo de dono/expiração já existente no harness.
 
@@ -55,6 +67,8 @@ Uma resposta 200 de entrada confirma CDP, **não** o efeito final do site.
 - Clique/toque: `{tipo:"clique", quadro:"7", x:0.3, y:0.4}`.
   Coordenadas normalizadas **dentro da imagem**, excluindo bordas/faixas de `object-fit`;
   `0 ≤ x,y < 1`. Backend escala para viewport CSS do quadro, inclusive zoom.
+  Durante o override usa `innerWidth/innerHeight`, incluindo a barra de rolagem
+  que aparece no JPEG; o tamanho físico do JPEG pode diferir por causa do zoom.
 - Rolar: `{tipo:"rolagem", quadro:"7", x:0.5, y:0.5, delta_y:300, delta_x:0}`.
   Deltas em pixels CSS, positivo para baixo/direita, limite ±3000 por evento.
 - Digitar: `{tipo:"texto", texto:"Olá"}` — `Input.insertText`, até 4096 caracteres.
@@ -90,6 +104,8 @@ espera; **2** uso inválido. O comando não navega nem fecha aba; ao retomar, o 
 confere o estado real e usa `BH_ALVO` quando precisa preservar um alvo específico.
 
 - `POST /pedidos` → 201; JSON `{chrome,motivo,agente,prazo_s:600}`.
+  Opcional `teste:true` pula apenas o aviso urgente (`aviso_enviado:false`);
+  pedido, prazo, associação à tela e conclusão funcionam igual. Padrão `teste:false`.
 - `GET /pedidos/{pedido}` → `{id,chrome,motivo,agente,prazo_s,expira_em,status,
   aviso_enviado,url}`. `expira_em` é epoch em segundos.
 - `GET /pedidos/{pedido}/esperar` → SSE `estado` (até 5s) e `terminado`.

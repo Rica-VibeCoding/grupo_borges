@@ -52,6 +52,7 @@ CATALOGO = {
 INATIVIDADE = 180
 SEM_FLUXO = 20
 FPS = 2
+ESTADO_INTERVALO = 2
 
 
 async def processo(*args, env=None, limite_s=15):
@@ -146,6 +147,8 @@ class CDP:
         self.eventos = asyncio.Queue(maxsize=1)
         self.sid = None
         self.alvo = None
+        self.viewport = None
+        self.geracao = 0
         self.reader = asyncio.create_task(self._ler())
 
     @classmethod
@@ -191,7 +194,13 @@ class CDP:
                     if msg.get("sessionId") == self.sid:
                         if self.eventos.full():
                             self.eventos.get_nowait()
-                        self.eventos.put_nowait({**msg["params"], "_sid": msg.get("sessionId")})
+                        self.eventos.put_nowait(
+                            {
+                                **msg["params"],
+                                "_sid": msg.get("sessionId"),
+                                "_geracao": self.geracao,
+                            }
+                        )
         except Exception as exc:
             erro = exc
         finally:
@@ -208,6 +217,8 @@ class CDP:
         return self.i
 
     async def cmd(self, method, params=None, *, browser=False):
+        if self.reader.done():
+            raise RuntimeError("CDP desconectado")
         # Não ceder entre reservar id e registrar o future.
         mid = self.i + 1
         f = asyncio.get_running_loop().create_future()
@@ -233,6 +244,9 @@ class CDP:
         if alvo and alvo not in {a["id"] for a in abas}:
             raise HTTPException(404, "aba não existe")
         if self.sid:
+            if self.viewport:
+                # A emulação pertence ao target: nunca deixar ajuste na aba anterior.
+                await self.cmd("Emulation.clearDeviceMetricsOverride")
             with contextlib.suppress(Exception):
                 await self.cmd("Page.stopScreencast")
                 await self.cmd("Target.detachFromTarget", {"sessionId": self.sid}, browser=True)
@@ -271,6 +285,47 @@ class CDP:
             raise HTTPException(409, "nenhuma aba visível; abra a janela do Chrome")
         if assumir:
             await self.cmd("Page.bringToFront")
+        if self.viewport:
+            await self._aplicar_viewport()
+        await self.iniciar_quadros()
+
+    async def _aplicar_viewport(self):
+        largura, altura = self.viewport
+        await self.cmd(
+            "Emulation.setDeviceMetricsOverride",
+            {"width": largura, "height": altura, "deviceScaleFactor": 1, "mobile": False},
+        )
+
+    async def redimensionar(self, viewport):
+        if viewport is None and self.viewport is None:
+            return
+        await self.cmd("Page.stopScreencast")
+        if viewport:
+            # Marca antes do envio: até uma resposta perdida exige limpeza.
+            self.viewport = (max(320, viewport[0]), max(320, viewport[1]))
+            await self._aplicar_viewport()
+        else:
+            await self.cmd("Emulation.clearDeviceMetricsOverride")
+            self.viewport = None
+        # Descarta quadros das métricas anteriores e força quadro de página estática.
+        await self.iniciar_quadros()
+
+    async def viewport_css(self):
+        if self.viewport:
+            # O JPEG inclui a barra; cssVisualViewport.clientWidth a exclui.
+            # innerWidth/Height correspondem à imagem inteira, inclusive com zoom.
+            r = await self.cmd(
+                "Runtime.evaluate",
+                {
+                    "expression": "({clientWidth:innerWidth,clientHeight:innerHeight})",
+                    "returnByValue": True,
+                },
+            )
+            return r["result"]["value"]
+        return (await self.cmd("Page.getLayoutMetrics"))["cssVisualViewport"]
+
+    async def iniciar_quadros(self):
+        self.geracao += 1
         while not self.eventos.empty():
             self.eventos.get_nowait()
         await self.cmd("Page.enable")
@@ -286,10 +341,16 @@ class CDP:
         )
 
     async def fechar(self):
-        self.reader.cancel()
-        await self.ws.close()
-        with contextlib.suppress(asyncio.CancelledError):
-            await self.reader
+        try:
+            if self.viewport:
+                with contextlib.suppress(Exception):
+                    await self.cmd("Emulation.clearDeviceMetricsOverride")
+        finally:
+            # Desanexar também desativa emulação se o comando não teve resposta.
+            await self.ws.close()
+            self.reader.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self.reader
 
 
 @dataclass
@@ -356,7 +417,7 @@ class ServicoTela:
         if s.posse.p.returncode is not None:
             raise HTTPException(409, "a trava foi perdida; devolva e assuma novamente")
 
-    async def assumir(self, s):
+    async def assumir(self, s, viewport=None):
         async with s.operacao:
             if not s.fluxo or time.monotonic() - s.fluxo_em > SEM_FLUXO:
                 raise HTTPException(409, "conecte os quadros antes de assumir")
@@ -371,6 +432,9 @@ class ServicoTela:
             s.atividade = time.monotonic()
             try:
                 await s.cdp.cmd("Page.bringToFront")
+                if viewport:
+                    await s.cdp.redimensionar(viewport)
+                    s.quadros.clear()
             except BaseException:
                 await self.devolver(s)
                 raise
@@ -381,9 +445,22 @@ class ServicoTela:
             return s.token
 
     async def devolver(self, s):
-        posse, s.posse, s.token = s.posse, None, None
-        if posse:
-            await posse.fechar()
+        import anyio
+
+        with anyio.CancelScope(shield=True):
+            try:
+                if s.posse:
+                    try:
+                        await s.cdp.redimensionar(None)
+                    except BaseException:
+                        # Fecha o CDP antes de entregar a trava se a limpeza falhar.
+                        await s.cdp.fechar()
+                        raise
+            finally:
+                posse, s.posse, s.token = s.posse, None, None
+                s.quadros.clear()
+                if posse:
+                    await posse.fechar()
 
     async def fechar(self, s):
         if s.fechada:
@@ -395,13 +472,16 @@ class ServicoTela:
             if s.vigia and s.vigia is not asyncio.current_task():
                 s.vigia.cancel()
             async with s.operacao:
-                await self.devolver(s)
-                await s.cdp.fechar()
-            self.sessoes.pop(s.id, None)
-            if s.pedido_id:
-                p = pedidos.pedidos.get(s.pedido_id)
-                if p and not p.terminado.is_set():
-                    p.status = "aguardando"
+                try:
+                    with contextlib.suppress(Exception):
+                        await self.devolver(s)
+                finally:
+                    await s.cdp.fechar()
+                    self.sessoes.pop(s.id, None)
+                    if s.pedido_id:
+                        p = pedidos.pedidos.get(s.pedido_id)
+                        if p and not p.terminado.is_set():
+                            p.status = "aguardando"
 
     async def _vigiar(self, s):
         try:
@@ -419,24 +499,19 @@ class ServicoTela:
 
     async def eventos(self, s):
         ultimo = 0
+        estado_em = float("-inf")
         try:
             while not s.fechada:
                 s.fluxo_em = time.monotonic()
+                if s.fluxo_em - estado_em >= ESTADO_INTERVALO:
+                    estado_em = s.fluxo_em
+                    yield self.estado(s)
                 try:
-                    frame = await asyncio.wait_for(s.cdp.eventos.get(), 2)
+                    frame = await asyncio.wait_for(
+                        s.cdp.eventos.get(),
+                        max(0.01, estado_em + ESTADO_INTERVALO - time.monotonic()),
+                    )
                 except TimeoutError:
-                    yield {
-                        "event": "estado",
-                        "data": json.dumps(
-                            {
-                                "assumido": bool(s.posse),
-                                "aba": s.cdp.alvo,
-                                "pedido": pedidos.obter(s.pedido_id).corpo()
-                                if s.pedido_id
-                                else None,
-                            }
-                        ),
-                    }
                     continue
                 agora = time.monotonic()
                 await asyncio.sleep(max(0, ultimo + 1 / FPS - agora))
@@ -451,10 +526,12 @@ class ServicoTela:
                         await s.cdp.selecionar()
                         s.quadros.clear()
                         continue
-                    if frame.get("_sid", s.cdp.sid) != s.cdp.sid:
+                    if (
+                        frame.get("_sid", s.cdp.sid) != s.cdp.sid
+                        or frame.get("_geracao", s.cdp.geracao) != s.cdp.geracao
+                    ):
                         continue
-                    metrics = await s.cdp.cmd("Page.getLayoutMetrics")
-                    viewport = metrics["cssVisualViewport"]
+                    viewport = await s.cdp.viewport_css()
                     with Image.open(io.BytesIO(base64.b64decode(frame["data"]))) as img:
                         largura, altura = img.size
                     s.sequencia += 1
@@ -477,23 +554,26 @@ class ServicoTela:
                             "altura": viewport["clientHeight"],
                         },
                     }
-                yield {
-                    "event": "estado",
-                    "data": json.dumps(
-                        {
-                            "assumido": bool(s.posse),
-                            "aba": s.cdp.alvo,
-                            "pedido": pedidos.obter(s.pedido_id).corpo() if s.pedido_id else None,
-                        }
-                    ),
-                }
                 yield {"event": "quadro", "data": json.dumps(corpo, separators=(",", ":"))}
+            yield self.estado(s)
         finally:
             # Starlette cancela o gerador ao desconectar; a limpeza precisa sobreviver.
             import anyio
 
             with anyio.CancelScope(shield=True):
                 await self.fechar(s)
+
+    def estado(self, s):
+        return {
+            "event": "estado",
+            "data": json.dumps(
+                {
+                    "assumido": bool(s.posse) and not s.fechada,
+                    "aba": s.cdp.alvo,
+                    "pedido": pedidos.obter(s.pedido_id).corpo() if s.pedido_id else None,
+                }
+            ),
+        }
 
     async def entrada(self, s, token, pedido):
         async with s.operacao:
@@ -507,7 +587,7 @@ class ServicoTela:
                     or (time.monotonic() - q[0] > 10 and pedido.quadro != str(s.sequencia))
                 ):
                     raise HTTPException(409, "quadro antigo; espere outro quadro")
-                viewport = (await s.cdp.cmd("Page.getLayoutMetrics"))["cssVisualViewport"]
+                viewport = await s.cdp.viewport_css()
                 if (
                     abs(viewport["clientWidth"] - q[2]) > 1
                     or abs(viewport["clientHeight"] - q[3]) > 1
@@ -640,7 +720,7 @@ class PedidosHumanos:
             raise HTTPException(410, "pedido encerrado ou API reiniciada")
         return p
 
-    async def criar(self, chrome, motivo, agente, prazo_s):
+    async def criar(self, chrome, motivo, agente, prazo_s, *, teste=False):
         if chrome not in CATALOGO:
             raise HTTPException(404, "Chrome desconhecido")
         if self.pendente(chrome):
@@ -660,7 +740,10 @@ class PedidosHumanos:
                 if s.posse:
                     p.status = "em_atendimento"
         p.timer = asyncio.create_task(self._prazo(p))
-        p.aviso_enviado = await avisar(agente, f"{motivo}\nChrome: {chrome}\n{p.corpo()['url']}")
+        if not teste:
+            p.aviso_enviado = await avisar(
+                agente, f"{motivo}\nChrome: {chrome}\n{p.corpo()['url']}"
+            )
         return p
 
     async def _prazo(self, p):

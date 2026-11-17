@@ -23,6 +23,7 @@ async def bancada(monkeypatch):
     cdp.eventos = asyncio.Queue(maxsize=1)
     cdp.reader = asyncio.create_task(asyncio.sleep(999))
     cdp.cmd.return_value = {"cssVisualViewport": {"clientWidth": 1920, "clientHeight": 1080}}
+    cdp.viewport_css.return_value = {"clientWidth": 1920, "clientHeight": 1080}
     cdp.abas.return_value = [{"id": "aba-1", "titulo": "Prova", "url": "https://example.org"}]
     monkeypatch.setattr(tela.CDP, "abrir", AsyncMock(return_value=cdp))
     pedidos = tela.PedidosHumanos()
@@ -274,7 +275,7 @@ async def test_cdp_ack_descarta_sem_acumular_e_ver_nao_ativa():
         await cdp.fechar()
 
 
-async def criar_pedido(bancada, prazo=60):
+async def criar_pedido(bancada, prazo=60, *, teste=False):
     c, _, _ = bancada
     r = await c.post(
         "/api/tela-agente/pedidos",
@@ -283,6 +284,7 @@ async def criar_pedido(bancada, prazo=60):
             "motivo": "TESTE captcha público",
             "agente": "teste",
             "prazo_s": prazo,
+            "teste": teste,
         },
     )
     assert r.status_code == 201, r.text
@@ -380,3 +382,310 @@ async def test_router_montado_exige_identidade_tailscale(monkeypatch):
             "/api/tela-agente/chromes", headers={"Tailscale-User-Login": "teste@example.test"}
         )
         assert r.status_code == 200 and any(x["id"] == "campanha-arsenal" for x in r.json())
+
+
+@pytest.mark.parametrize("animada", [False, True])
+async def test_estado_periodico_com_e_sem_quadros(bancada, monkeypatch, animada):
+    _, svc, cdp = bancada
+    monkeypatch.setattr(tela, "ESTADO_INTERVALO", 0.06)
+    monkeypatch.setattr(tela, "FPS", 200)
+    s = await nova(bancada)
+    await assumir_fake(s, monkeypatch)
+    out = io.BytesIO()
+    Image.new("RGB", (96, 54)).save(out, format="JPEG")
+    frame = {"data": base64.b64encode(out.getvalue()).decode()}
+
+    async def animar():
+        while True:
+            if not cdp.eventos.full():
+                cdp.eventos.put_nowait(frame)
+            await asyncio.sleep(0.005)
+
+    produtor = asyncio.create_task(animar()) if animada else None
+    gen = svc.eventos(s)
+    try:
+        assert json.loads((await anext(gen))["data"])["assumido"]
+        p = await criar_pedido(bancada, teste=True)
+        quadros = 0
+        inicio = time.monotonic()
+        while True:
+            e = await asyncio.wait_for(anext(gen), 0.3)
+            if e["event"] == "estado":
+                assert json.loads(e["data"])["pedido"]["id"] == p.id
+                break
+            quadros += 1
+        assert time.monotonic() - inicio >= 0.05
+        assert bool(quadros) == animada
+        await svc.fechar(s)
+        e = await anext(gen)
+        assert e["event"] == "estado" and not json.loads(e["data"])["assumido"]
+    finally:
+        if produtor:
+            produtor.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await produtor
+        await gen.aclose()
+
+
+async def test_pedido_teste_pula_so_aviso_e_conclui_igual(bancada, monkeypatch):
+    c, _, _ = bancada
+    p = await criar_pedido(bancada, teste=True)
+    tela.avisar.assert_not_awaited()
+    assert not p.aviso_enviado and p.timer and not p.terminado.is_set()
+    s = await nova(bancada)
+    _, headers = await assumir_fake(s, monkeypatch)
+    assert p.status == "em_atendimento"
+    r = await c.post(f"/api/tela-agente/sessoes/{s.id}/devolver", headers=headers)
+    assert r.status_code == 200 and p.status == "devolvido" and p.terminado.is_set()
+
+
+class WireViewport(Wire):
+    """Chrome dublado mantém métricas e quadros conforme os comandos de protocolo."""
+
+    def __init__(self):
+        super().__init__()
+        self.tamanho = (1920, 1080)
+        self.falhar_limpeza = False
+        self.fechado = False
+
+    async def send(self, raw):
+        msg = json.loads(raw)
+        method, params = msg["method"], msg["params"]
+        if method == "Emulation.setDeviceMetricsOverride":
+            self.tamanho = (params["width"], params["height"])
+        if method == "Emulation.clearDeviceMetricsOverride":
+            if self.falhar_limpeza:
+                self.sent.append(msg)
+                await self.queue.put({"id": msg["id"], "error": {"message": "desconectado"}})
+                return
+            self.tamanho = (1920, 1080)
+        if method == "Page.getLayoutMetrics":
+            self.sent.append(msg)
+            await self.queue.put(
+                {
+                    "id": msg["id"],
+                    "result": {
+                        "cssVisualViewport": {
+                            "clientWidth": self.tamanho[0] - 15,
+                            "clientHeight": self.tamanho[1],
+                        }
+                    },
+                }
+            )
+            return
+        if method == "Runtime.evaluate" and "innerWidth" in params["expression"]:
+            self.sent.append(msg)
+            await self.queue.put(
+                {
+                    "id": msg["id"],
+                    "result": {
+                        "result": {
+                            "value": {
+                                "clientWidth": self.tamanho[0],
+                                "clientHeight": self.tamanho[1],
+                            }
+                        }
+                    },
+                }
+            )
+            return
+        await super().send(raw)
+        if method == "Page.startScreencast":
+            out = io.BytesIO()
+            Image.new("RGB", self.tamanho).save(out, format="JPEG")
+            await self.queue.put(
+                {
+                    "method": "Page.screencastFrame",
+                    "sessionId": "sid1",
+                    "params": {"sessionId": 1, "data": base64.b64encode(out.getvalue()).decode()},
+                }
+            )
+
+    async def close(self):
+        self.fechado = True
+        self.tamanho = (1920, 1080)
+
+
+@pytest.fixture
+async def viewport_real(bancada):
+    c, svc, _ = bancada
+    s = await nova(bancada)
+    wire = WireViewport()
+    s.cdp = tela.CDP(wire)
+    await s.cdp.selecionar()
+    s.fluxo = True
+    yield c, svc, s, wire
+    await svc.fechar(s)
+
+
+async def assumir_aparelho(c, s, wire, monkeypatch, tamanho=(390, 700)):
+    posse = AsyncMock()
+    posse.p.returncode = None
+
+    async def soltar():
+        # O agente só recebe a trava DEPOIS de restaurar as métricas.
+        assert wire.tamanho == (1920, 1080)
+
+    posse.fechar.side_effect = soltar
+    monkeypatch.setattr(tela.Posse, "abrir", AsyncMock(return_value=posse))
+    r = await c.post(
+        f"/api/tela-agente/sessoes/{s.id}/assumir",
+        json={"largura": tamanho[0], "altura": tamanho[1]},
+    )
+    assert r.status_code == 200, r.text
+    return posse, {"X-Tela-Controle": r.json()["controle"]}
+
+
+@pytest.mark.parametrize("saida", ["devolver", "inatividade", "queda", "sem-fluxo", "cdp"])
+async def test_override_e_retirada_antes_da_trava(viewport_real, monkeypatch, saida):
+    c, svc, s, wire = viewport_real
+    s.quadros["velho"] = (time.monotonic(), "t1", 1920, 1080)
+    posse, headers = await assumir_aparelho(c, s, wire, monkeypatch)
+    assert not s.quadros
+    assert wire.tamanho == (390, 700)
+    override = next(m for m in wire.sent if m["method"] == "Emulation.setDeviceMetricsOverride")
+    assert override["params"] == {
+        "width": 390,
+        "height": 700,
+        "deviceScaleFactor": 1,
+        "mobile": False,
+    }
+    gen = svc.eventos(s)
+    assert (await anext(gen))["event"] == "estado"
+    q = json.loads((await anext(gen))["data"])
+    assert q["largura"] == q["viewport"]["largura"] == 390
+    r = await c.post(
+        f"/api/tela-agente/sessoes/{s.id}/entrada",
+        headers=headers,
+        json={"tipo": "clique", "quadro": q["id"], "x": 0.5, "y": 0.25},
+    )
+    assert r.status_code == 200
+    clique = next(m for m in wire.sent if m["method"] == "Input.dispatchMouseEvent")
+    assert clique["params"]["x"] == 195 and clique["params"]["y"] == 175
+    if saida == "devolver":
+        assert (
+            await c.post(f"/api/tela-agente/sessoes/{s.id}/devolver", headers=headers)
+        ).status_code == 200
+    elif saida == "queda":
+        await gen.aclose()
+    else:
+        if saida == "inatividade":
+            s.atividade -= tela.INATIVIDADE + 1
+        elif saida == "sem-fluxo":
+            s.fluxo_em -= tela.SEM_FLUXO + 1
+        else:
+            await wire.queue.put(None)
+        await asyncio.wait_for(s.vigia, 2)
+    assert wire.tamanho == (1920, 1080) and s.token is None
+    posse.fechar.assert_awaited_once()
+    if saida == "cdp":
+        assert wire.fechado
+    else:
+        assert any(m["method"] == "Emulation.clearDeviceMetricsOverride" for m in wire.sent)
+    await gen.aclose()
+
+
+async def test_override_piso_e_troca_de_aba(viewport_real, monkeypatch):
+    c, svc, s, wire = viewport_real
+    await assumir_aparelho(c, s, wire, monkeypatch, (200, 100))
+    assert wire.tamanho == (320, 320)
+    wire.sent.clear()
+    await svc.entrada(s, s.token, router.Aba(tipo="aba", aba="t1"))
+    methods = [m["method"] for m in wire.sent]
+    assert methods.index("Emulation.clearDeviceMetricsOverride") < methods.index(
+        "Target.detachFromTarget"
+    )
+    assert methods.index("Target.attachToTarget") < methods.index(
+        "Emulation.setDeviceMetricsOverride"
+    )
+    assert wire.tamanho == (320, 320)
+
+
+async def test_limpeza_recusada_fecha_cdp_antes_de_soltar(viewport_real, monkeypatch):
+    c, _, s, wire = viewport_real
+    posse, headers = await assumir_aparelho(c, s, wire, monkeypatch)
+    wire.falhar_limpeza = True
+    r = await c.post(f"/api/tela-agente/sessoes/{s.id}/devolver", headers=headers)
+    assert r.status_code == 502 and wire.fechado
+    posse.fechar.assert_awaited_once()
+
+
+async def test_assumir_sem_corpo_preserva_viewport(viewport_real, monkeypatch):
+    c, _, s, wire = viewport_real
+    posse = AsyncMock()
+    posse.p.returncode = None
+    monkeypatch.setattr(tela.Posse, "abrir", AsyncMock(return_value=posse))
+    base = f"/api/tela-agente/sessoes/{s.id}"
+    r = await c.post(base + "/assumir")
+    assert r.status_code == 200 and wire.tamanho == (1920, 1080)
+    assert (
+        await c.post(base + "/devolver", headers={"X-Tela-Controle": r.json()["controle"]})
+    ).status_code == 200
+    assert not any(m["method"].startswith("Emulation.") for m in wire.sent)
+
+
+async def test_quadro_em_processamento_nao_atravessa_redimensionamento(viewport_real):
+    _, svc, s, _ = viewport_real
+    gen = svc.eventos(s)
+    assert (await anext(gen))["event"] == "estado"
+    try:
+        async with s.operacao:
+            proximo = asyncio.create_task(anext(gen))
+            # O gerador já retirou o quadro antigo e aguarda a operação em curso.
+            await asyncio.sleep(0.02)
+            assert not proximo.done() and s.cdp.eventos.empty()
+            await s.cdp.redimensionar((390, 700))
+        e = await asyncio.wait_for(proximo, 2)
+        q = json.loads(e["data"])
+        assert q["largura"] == q["viewport"]["largura"] == 390
+    finally:
+        await gen.aclose()
+
+
+async def test_assumir_falha_depois_de_aplicar_restaura_e_solta(viewport_real, monkeypatch):
+    c, _, s, wire = viewport_real
+    posse = AsyncMock()
+    posse.p.returncode = None
+
+    async def soltar():
+        assert wire.tamanho == (1920, 1080)
+
+    posse.fechar.side_effect = soltar
+    monkeypatch.setattr(tela.Posse, "abrir", AsyncMock(return_value=posse))
+    iniciar = s.cdp.iniciar_quadros
+    tentativas = 0
+
+    async def falhar_uma_vez():
+        nonlocal tentativas
+        tentativas += 1
+        if tentativas == 1:
+            raise RuntimeError("resposta perdida após aplicar métricas")
+        await iniciar()
+
+    monkeypatch.setattr(s.cdp, "iniciar_quadros", falhar_uma_vez)
+    r = await c.post(
+        f"/api/tela-agente/sessoes/{s.id}/assumir", json={"largura": 390, "altura": 700}
+    )
+    assert r.status_code == 502 and s.token is None
+    posse.fechar.assert_awaited_once()
+    assert s.cdp.viewport is None
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {},
+        {"largura": 390},
+        {"largura": 0, "altura": 700},
+        {"largura": 390.5, "altura": 700},
+        {"largura": 100000, "altura": 700},
+    ],
+)
+async def test_aparelho_invalido_nao_assume(bancada, monkeypatch, body):
+    c, _, _ = bancada
+    s = await nova(bancada)
+    trava = AsyncMock()
+    monkeypatch.setattr(tela.Posse, "abrir", trava)
+    r = await c.post(f"/api/tela-agente/sessoes/{s.id}/assumir", json=body)
+    assert r.status_code == 422
+    trava.assert_not_awaited()
