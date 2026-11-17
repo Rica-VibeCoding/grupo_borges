@@ -13,9 +13,10 @@
  */
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 
 import { IconeCadeado } from '@/components/shell/icones';
+import { caminhoDaTela, fetchChromes, mapaDeTelas } from '@/lib/tela-agente';
 import { agrupa, textoDaFalhaDosAbertos, textoDoGrupo, type Abertos, type GrupoDeItens, type ItemAberto } from '@/lib/maquinas';
 
 import { CabecalhoDasColunas, LinhaAberta, LinhaProtegida, PilulaDaMaquina } from './linha-aberta';
@@ -34,6 +35,18 @@ export function ListaDeAbertos({
   liberados: Liberados;
   aoFechar: (item: ItemAberto, mb: number | null) => void;
 }) {
+  // O catálogo da tela do agente, uma vez por máquina: é ele que diz qual Chrome tem "Ver tela".
+  const [telas, setTelas] = useState<Map<string, string>>(new Map());
+  useEffect(() => {
+    let vivo = true;
+    fetchChromes()
+      .then((c) => vivo && setTelas(mapaDeTelas(c)))
+      .catch(() => undefined);
+    return () => {
+      vivo = false;
+    };
+  }, []);
+
   return (
     <section aria-label="Aberto agora" className="flex flex-col" style={{ gap: 'var(--ck-space-2)', minHeight: '240px' }}>
       {leitura && 'falha' in leitura ? (
@@ -41,7 +54,7 @@ export function ListaDeAbertos({
           {textoDaFalhaDosAbertos(leitura.falha, leitura.status)}
         </p>
       ) : null}
-      {leitura && 'abertos' in leitura ? <Grupos maquina={maquina} leitura={leitura.abertos} liberados={liberados} aoFechar={aoFechar} /> : null}
+      {leitura && 'abertos' in leitura ? <Grupos maquina={maquina} leitura={leitura.abertos} liberados={liberados} telas={telas} aoFechar={aoFechar} /> : null}
     </section>
   );
 }
@@ -50,11 +63,13 @@ function Grupos({
   maquina,
   leitura,
   liberados,
+  telas,
   aoFechar,
 }: {
   maquina: string;
   leitura: Abertos;
   liberados: Liberados;
+  telas: Map<string, string>;
   aoFechar: (item: ItemAberto, mb: number | null) => void;
 }) {
   // O recém-fechado segue na lista até o prazo dele, venha ou não na leitura.
@@ -90,6 +105,7 @@ function Grupos({
                 agora={agora}
                 primeira={i === 0}
                 liberouMb={idsVivos.has(item.id) ? liberados[item.id].mb : undefined}
+                telaHref={telaDaLinha(telas, maquina, item)}
                 aoFechar={aoFechar}
               />
             ))}
@@ -135,4 +151,10 @@ function CartaoDoGrupo({ grupo, children }: { grupo: GrupoDeItens; children: Rea
       </div>
     </section>
   );
+}
+
+function telaDaLinha(telas: Map<string, string>, maquina: string, item: ItemAberto): string | undefined {
+  if (item.grupo !== 'agente') return undefined;
+  const chrome = telas.get(`${maquina}|${item.rotulo}`);
+  return chrome ? caminhoDaTela(maquina, chrome) : undefined;
 }

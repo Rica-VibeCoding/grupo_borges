@@ -18,6 +18,7 @@ import { useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type HTM
 import { IconeCadeado, IconeVisto } from '@/components/shell/icones';
 import { formataTamanho } from '@/components/shell/recursos-da-vps';
 import { CelulaDaAtividade, Medida } from '@/components/maquinas/medida';
+import { PortaDaTela } from '@/components/maquinas/porta-da-tela';
 import { nomeNaLinha, postFechar, textoDoFechado, textoDaCpu, textoDasAbas, type ItemAberto } from '@/lib/maquinas';
 
 type Fase = 'parado' | 'confirmando' | 'fechando';
@@ -123,6 +124,7 @@ export function LinhaAberta({
   agora,
   primeira,
   liberouMb,
+  telaHref,
   aoFechar,
 }: {
   maquina: string;
@@ -132,6 +134,8 @@ export function LinhaAberta({
   primeira: boolean;
   /** Fechou há pouco: quanto liberou. Quem guarda é o painel (`liberados`). */
   liberouMb: number | null | undefined;
+  /** Chrome de agente que a tela do agente conhece: a linha ganha o "Ver tela". */
+  telaHref?: string;
   aoFechar: (item: ItemAberto, mb: number | null) => void;
 }) {
   const [fase, setFase] = useState<Fase>('parado');
@@ -177,7 +181,7 @@ export function LinhaAberta({
             {nome}
           </span>
           {/* No celular os títulos não cabem: fica a contagem; de 640px para cima, tudo. */}
-          {abas ? (
+          {abas && !telaHref ? (
             <>
               <span className="shrink-0 sm:hidden" style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-text-secondary)' }}>
                 {abas.split(':')[0]}
@@ -258,6 +262,7 @@ export function LinhaAberta({
           </>
         )}
       </div>
+      {telaHref && liberouMb === undefined ? <PortaDaTela href={telaHref} rotulo={item.rotulo} abas={abas} /> : null}
       {/* Falha é rara: só ela ganha uma segunda linha. */}
       {falha ? (
         <p style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-state-fail)', paddingBottom: 'var(--ck-space-2)' }}>
