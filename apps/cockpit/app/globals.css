@@ -102,6 +102,17 @@
   --ck-lousa-poeira: oklch(0.95 0.012 95 / 0.35); /* o borrado do giz */
   --ck-lousa-moldura: oklch(0.48 0.06 60);       /* #77563a madeira */
 
+  /* -- o convite para falar (painel do cliente, 18/11) ----------------------
+   * O microfone do cliente é amarelo-sol para rosa, com letra escura: a pílula
+   * "Fala comigo!" (`botao-de-voz-grande.tsx`). Matiz LONGE dos estados — 17°
+   * do âmbar de `attention`, 32° do vermelho de `fail` —, senão o aviso de
+   * áudio longo e o "solte para descartar" sumiriam no convite. Medido: tinta
+   * 11.4:1 no amarelo e 5.9:1 no rosa; o rosa como contorno, 4.9:1 no composer. */
+  --ck-convite-sol: oklch(0.86 0.16 95);         /* #f2cf3b */
+  --ck-convite-rosa: oklch(0.70 0.19 350);       /* #f164af */
+  --ck-convite-tinta: oklch(0.22 0.03 30);       /* #271512 letra e ícone */
+  --ck-convite-fundo: linear-gradient(135deg, var(--ck-convite-sol), var(--ck-convite-rosa));
+
   /* -- bordas: luz, não sombra -------------------------------------------- */
   --ck-edge-functional: oklch(0.60 0 0);         /* #808080  3.29:1 sobre raised —
                                                     ≥3:1 OBRIGATÓRIO: input, botão,
