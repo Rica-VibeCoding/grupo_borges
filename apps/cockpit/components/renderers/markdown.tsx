@@ -1,5 +1,5 @@
-import { memo } from 'react';
-import type { Components } from 'react-markdown';
+import { memo, type ComponentProps } from 'react';
+import type { Components, ExtraProps } from 'react-markdown';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -12,6 +12,8 @@ import {
   type AlertKind,
 } from '../../lib/markdown';
 import { CodeBlock } from './code-block';
+import { ehLousa } from '../../lib/lousa';
+import { Lousa, textoDoPre, useLousaLigada } from './lousa';
 
 export type AssistantMarkdownProps = {
   children: unknown;
@@ -52,6 +54,27 @@ const ALERT_ROTULO: Record<AlertKind, string> = {
   warning: 'Atenção',
   caution: 'Cuidado',
 };
+
+function PreDoMarkdown({ children, node, ...props }: ComponentProps<'pre'> & ExtraProps) {
+  // A LOUSA do Ted: perfil ligado E moldura fechada; fora disso, código (`lousa.tsx`).
+  const bruto = textoDoPre(node);
+  if (useLousaLigada() && ehLousa(bruto)) return <Lousa texto={bruto} />;
+  // A linguagem do fence mora no filho `code` do hast (`pre > code
+  // .language-x`) — o CodeBlock não a enxerga sozinho. Caminho sem plugin:
+  // o override recebe o `node` (o override `blockquote` já o usa acima).
+  // Fence sem linguagem chega sem classe e o cabeçalho mostra só o copiar.
+  const filho = node?.children[0];
+  const classes = filho && filho.type === 'element' ? filho.properties?.className : undefined;
+  const primeira = Array.isArray(classes) ? classes[0] : classes;
+  const texto =
+    typeof primeira === 'string' || typeof primeira === 'number' ? String(primeira) : undefined;
+  const linguagem = texto ? /^language-(\S+)$/.exec(texto)?.[1] : undefined;
+  return (
+    <CodeBlock linguagem={linguagem} {...props}>
+      {children}
+    </CodeBlock>
+  );
+}
 
 const MARKDOWN_COMPONENTS: Components = {
   a({ children, ...props }) {
@@ -166,23 +189,7 @@ const MARKDOWN_COMPONENTS: Components = {
       </ol>
     );
   },
-  pre({ children, node, ...props }) {
-    // A linguagem do fence mora no filho `code` do hast (`pre > code
-    // .language-x`) — o CodeBlock não a enxerga sozinho. Caminho sem plugin:
-    // o override recebe o `node` (o override `blockquote` já o usa acima).
-    // Fence sem linguagem chega sem classe e o cabeçalho mostra só o copiar.
-    const filho = node?.children[0];
-    const classes = filho && filho.type === 'element' ? filho.properties?.className : undefined;
-    const primeira = Array.isArray(classes) ? classes[0] : classes;
-    const texto =
-      typeof primeira === 'string' || typeof primeira === 'number' ? String(primeira) : undefined;
-    const linguagem = texto ? /^language-(\S+)$/.exec(texto)?.[1] : undefined;
-    return (
-      <CodeBlock linguagem={linguagem} {...props}>
-        {children}
-      </CodeBlock>
-    );
-  },
+  pre: PreDoMarkdown,
   table({ children, ...props }) {
     return (
       <div className="max-w-full overflow-x-auto">

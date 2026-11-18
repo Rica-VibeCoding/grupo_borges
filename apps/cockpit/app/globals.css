@@ -93,6 +93,15 @@
   --ck-alert-warning: oklch(0.82 0.14 78);       /* #f6b84d  7.3:1  = state-attention */
   --ck-alert-caution: oklch(0.74 0.16 22);       /* #ff7d7c  5.2:1  = state-fail */
 
+  /* -- a lousa do Ted (painel do cliente, 18/11) ---------------------------
+   * Quadro verde, letra de giz, moldura de madeira — só no bloco emoldurado
+   * do agente de criança (`lib/lousa.ts`). Giz sobre o verde: 9,9:1. Verde
+   * escuro e calmo de propósito: criança autista, nada de verde-limão. */
+  --ck-lousa-fundo: oklch(0.34 0.05 160);        /* #1e402f quadro */
+  --ck-lousa-giz: oklch(0.95 0.012 95);          /* #f1efe6 giz */
+  --ck-lousa-poeira: oklch(0.95 0.012 95 / 0.35); /* o borrado do giz */
+  --ck-lousa-moldura: oklch(0.48 0.06 60);       /* #77563a madeira */
+
   /* -- bordas: luz, não sombra -------------------------------------------- */
   --ck-edge-functional: oklch(0.60 0 0);         /* #808080  3.29:1 sobre raised —
                                                     ≥3:1 OBRIGATÓRIO: input, botão,

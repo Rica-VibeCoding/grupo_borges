@@ -21,6 +21,8 @@ import type { ToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
 
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { indiceDaFalaComCursor } from '@/lib/escrita-viva';
+import { perfilDoAgente } from '@/lib/perfil-do-agente';
+import { LousaLigada } from '@/components/renderers/lousa';
 
 import { capturaAncora, estaColado, longeDoFim, scrollTopParaAncora, type Ancora, type Faixa } from './ancora';
 import { BotaoVoltaAoFim } from './botao-volta-ao-fim';
@@ -158,6 +160,7 @@ function Feed({ itens, lookup, agentSlug, estaRodando = false, rodape }: FeedPro
   });
 
   return (
+    <LousaLigada.Provider value={perfilDoAgente(agentSlug).lousa}>
     <div style={{ position: 'relative', flex: 1, minHeight: 0 }} {...maos}>
       {/* ScrollArea do shadcn (Radix) — 03/08, ordem do Rica: a barra sai da
           borda da COLUNA e vai para a borda da TELA. Quem rola é o viewport do
@@ -283,6 +286,7 @@ function Feed({ itens, lookup, agentSlug, estaRodando = false, rodape }: FeedPro
 
       <BotaoVoltaAoFim temNovas={temNovas} longe={longe} onIrAoFim={irAoFim} />
     </div>
+    </LousaLigada.Provider>
   );
 }
 
