@@ -111,6 +111,7 @@ export function SlotDeEntrada({
         faseVoz={faseVoz}
         vozAparencia={vozAparencia}
         agentName={agentName}
+        recua={temConteudo || pararEmCena}
         {...(aoTocar ? { aoTocar } : {})}
       />
     );

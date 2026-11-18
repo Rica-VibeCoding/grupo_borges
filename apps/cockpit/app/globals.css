@@ -95,7 +95,7 @@
 
   /* -- a lousa do Ted (painel do cliente, 18/11) ---------------------------
    * Quadro verde, letra de giz, moldura de madeira — só no bloco emoldurado
-   * do agente de criança (`lib/lousa.ts`). Giz sobre o verde: 9,9:1. Verde
+   * do agente de criança (`lib/lousa.ts`). Giz sobre o verde passa AAA com folga. Verde
    * escuro e calmo de propósito: criança autista, nada de verde-limão. */
   --ck-lousa-fundo: oklch(0.34 0.05 160);        /* #1e402f quadro */
   --ck-lousa-giz: oklch(0.95 0.012 95);          /* #f1efe6 giz */
@@ -1355,6 +1355,16 @@ body {
  * Sem transition: `background-image` não interpola, e a 3% de branco um degrau
  * instantâneo é invisível. Fingir animação aqui seria custo sem entrega. */
 .ck-veil:hover {
+  background-image: linear-gradient(var(--ck-overlay-hover), var(--ck-overlay-hover));
+}
+
+.ck-chave-da-fala {
+  border: 1px solid var(--ck-edge-composer);
+  background-color: var(--ck-surface-composer);
+}
+/* Foco por teclado ou Controle Assistivo: a borda acende (estética §9.17 — sem anel). */
+.ck-chave-da-fala:focus-visible {
+  border-color: var(--ck-edge-composer-foco);
   background-image: linear-gradient(var(--ck-overlay-hover), var(--ck-overlay-hover));
 }
 

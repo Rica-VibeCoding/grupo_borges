@@ -24,6 +24,15 @@ import { pedeFala } from './stream-voz.ts';
 const ouvintes = new Set<() => void>();
 /** Houve gesto nesta abertura da página — a porta 2. */
 let armado = false;
+/** A fala automática em curso — o que a chave cala na hora (WCAG 1.4.2). */
+let emCurso: { para(): void } | null = null;
+
+/** Desligar a chave cala JÁ: o trecho que está tocando para, e o que ainda
+ *  vinha do servidor é cancelado. Bolha tocada pelo Daniel não é tocada aqui. */
+export function calaFalaSozinha(): void {
+  emCurso?.para();
+  emCurso = null;
+}
 
 function leDoAparelho(slug: string): boolean {
   try {
@@ -47,6 +56,7 @@ export function useFalaLigada(slug: string): [boolean, (ligada: boolean) => void
     () => true,
   );
   const muda = (nova: boolean) => {
+    if (!nova) calaFalaSozinha();
     try {
       localStorage.setItem(chaveDaFala(slug), gravaFalaLigada(nova));
     } catch {
@@ -77,13 +87,19 @@ function fala(texto: string, slug: string): void {
     // Recusa do navegador: fica calado. A bolha segue ali para o toque.
     aoFalhar: () => {},
   });
-  pedeFala(texto, slug, {
+  const pedido = pedeFala(texto, slug, {
     aoMeta: () => {},
     aoPeaks: () => {},
     aoAudio: (_id, url) => sequencia.enfileira(url),
     aoFim: () => sequencia.fecha(),
     aoErro: () => sequencia.para(),
   });
+  emCurso = {
+    para: () => {
+      pedido.cancela();
+      sequencia.para();
+    },
+  };
 }
 
 export function usaFalaSozinha(

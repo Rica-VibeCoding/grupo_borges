@@ -38,6 +38,7 @@ export function BotaoDeVozGrande({
   vozAparencia,
   agentName,
   aoTocar,
+  recua = false,
 }: {
   modo: ModoDaFala;
   gravador: Gravador;
@@ -46,6 +47,9 @@ export function BotaoDeVozGrande({
   agentName: string;
   /** Chamado SÍNCRONO no toque, antes do gravador — é gesto do usuário. */
   aoTocar?: () => void;
+  /** Há vizinho de massa (enviar ou ■): o disco vira contorno, como o pequeno —
+   *  dois discos cheios lado a lado e o dedo que mira um acha o outro. */
+  recua?: boolean;
 }) {
   const [apertado, setApertado] = useState(false);
   const reduzido = useReducedMotion();
@@ -132,11 +136,11 @@ export function BotaoDeVozGrande({
         style={{
           width: DISCO,
           height: DISCO,
-          backgroundColor: ouvindo || travada ? tinta : 'var(--ck-text-primary)',
-          color: 'var(--ck-surface-canvas)',
-          transition: 'background-color var(--ck-dur-enter) var(--ck-ease)',
+          backgroundColor: ouvindo || travada ? tinta : recua ? 'transparent' : 'var(--ck-text-primary)',
+          color: !ouvindo && !travada && recua ? 'var(--ck-text-secondary)' : 'var(--ck-surface-canvas)',
+          transition: 'background-color var(--ck-dur-enter) var(--ck-ease), color var(--ck-dur-enter) var(--ck-ease)',
         }}
-        animate={{ scale: apertado ? 0.86 : ouvindo ? 1.08 : 1 }}
+        animate={{ scale: apertado ? 0.92 : ouvindo ? 1.08 : 1 }}
         transition={apertado ? { duration: 0.1 } : MOLA}
       >
         {travada ? <IconeParar tamanho={18} /> : <IconeOnda tamanho={26} />}

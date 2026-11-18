@@ -6,9 +6,11 @@
  * grande, sempre à vista acima da caixa, e lembrado entre aberturas
  * (`usa-fala-sozinha.ts`). Só existe no agente que fala sozinho.
  *
- * O texto é o ESTADO ("Ted fala"), não a ação: é o que uma criança lê como
- * "agora está assim". Para leitor de tela é um `switch` — o estado vai no
- * `aria-checked` e o nome é a frase visível.
+ * O texto visível é o ESTADO ("Ted fala" / "Ted fica quieto"): é o que uma
+ * criança lê como "agora está assim". Para leitor de tela é um `switch` de
+ * nome FIXO ("Ted fala") com o estado no `aria-checked` — o nome trocando
+ * junto leria "fica quieto, desativado", a dupla negação. Desligar cala na
+ * hora o que já está tocando (`calaFalaSozinha`).
  *
  * Movimento só no toque: o ícone novo entra numa mola curta. Com
  * `prefers-reduced-motion` o `MotionConfig` do composer corta a escala.
@@ -26,19 +28,18 @@ export function ChaveDaFala({ agentSlug, agentName }: { agentSlug: string; agent
         type="button"
         role="switch"
         aria-checked={ligada}
+        aria-label={`${agentName} fala`}
         onClick={() => {
           muda(!ligada);
           // Ligar é gesto: já deixa o áudio destravado para a próxima resposta.
           if (!ligada) destravaFalaSozinha(agentSlug);
         }}
-        className="ck-veil flex items-center"
+        className="ck-veil ck-chave-da-fala flex items-center"
         style={{
           gap: 'var(--ck-space-2)',
           minHeight: 'var(--ck-touch-min)',
           padding: '0 var(--ck-space-4) 0 var(--ck-space-3)',
           borderRadius: 'var(--ck-radius-pill)',
-          border: '1px solid var(--ck-edge-composer)',
-          background: 'var(--ck-surface-composer)',
           color: ligada ? 'var(--ck-text-primary)' : 'var(--ck-text-secondary)',
           fontSize: 'var(--ck-text-md)',
           transition: 'color var(--ck-dur-fast) var(--ck-ease)',

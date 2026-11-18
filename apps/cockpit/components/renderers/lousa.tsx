@@ -9,8 +9,8 @@
  * O ALINHAMENTO É O DESENHO. A moldura `┌ ─ ┐ │ └ ┘` só fecha com a fonte
  * monoespaçada e sem quebra de linha, então a letra ENCOLHE para a linha mais
  * larga caber na largura do quadro (unidade de contêiner `cqi`), com teto no
- * tamanho de leitura. Em 390px uma lousa de 32 colunas sai com ~15px. Se mesmo
- * assim não couber, rola de lado — nunca quebra a caixa.
+ * tamanho de leitura e piso em 13px. Em 390px uma lousa de 32 colunas sai com
+ * ~15px; mais larga que o piso aguenta, rola de lado — nunca quebra a caixa.
  *
  * Para leitor de tela o desenho é ruído ("box drawings light down and right"):
  * o `pre` sai da árvore e entra o texto sem moldura.
@@ -60,7 +60,8 @@ export function Lousa({ texto }: { texto: string }) {
             margin: 0,
             whiteSpace: 'pre',
             fontFamily: 'var(--ck-font-mono)',
-            fontSize: `min(var(--ck-text-md), calc(100cqi / ${(colunas * AVANCO_EM).toFixed(2)}))`,
+            // Piso de 13px: abaixo disso a criança não lê — aí o quadro rola de lado.
+            fontSize: `clamp(var(--ck-text-sm), calc(100cqi / ${(colunas * AVANCO_EM).toFixed(2)}), var(--ck-text-md))`,
             lineHeight: 'var(--ck-leading-body)',
             fontWeight: 500,
             letterSpacing: 0,
