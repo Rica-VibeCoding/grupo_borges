@@ -8,6 +8,7 @@
 import type { RefObject } from 'react';
 import { motion } from 'motion/react';
 import { PECAS } from '../../lib/modo';
+import { perfilDoAgente } from '../../lib/perfil-do-agente';
 import type { usaAnexo } from '../../lib/usa-anexo';
 import { BotaoAnexo } from './gaveta-anexo';
 import { IconeDescartar } from './icones';
@@ -215,6 +216,7 @@ export function BaseDaCaixa({
           agentName={agentName}
           temConteudo={temConteudo}
           pararEmCena={pararEmCena}
+          grande={perfilDoAgente(agentSlug).botaoDeVozGrande}
         />
 
         <SlotDaConversa agentSlug={agentSlug} agentName={agentName} modo={modo} />

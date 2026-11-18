@@ -8,6 +8,7 @@
 import Link from 'next/link';
 import { ALVO_DE_TOQUE, MARGEM_INFERIOR_DA_BASE } from '../../lib/alvo-de-toque';
 import { InputGroupButton } from '../ui/input-group';
+import { BotaoDeVozGrande } from './botao-de-voz-grande';
 import { IconeEnviar, IconeMicrofoneConversa, IconeOnda, IconeParar } from './icones';
 import { emCaptura, type ModoDaFala } from './modo-da-fala';
 import type { Gravador } from './usa-gravador';
@@ -88,6 +89,8 @@ export function SlotDeEntrada({
   agentName,
   temConteudo,
   pararEmCena,
+  grande = false,
+  aoTocar,
 }: {
   modo: ModoDaFala;
   gravador: Gravador;
@@ -96,7 +99,22 @@ export function SlotDeEntrada({
   agentName: string;
   temConteudo: boolean;
   pararEmCena: boolean;
+  /** Painel do cliente: o disco grande com movimento (`botao-de-voz-grande.tsx`). */
+  grande?: boolean;
+  aoTocar?: () => void;
 }) {
+  if (grande) {
+    return (
+      <BotaoDeVozGrande
+        modo={modo}
+        gravador={gravador}
+        faseVoz={faseVoz}
+        vozAparencia={vozAparencia}
+        agentName={agentName}
+        {...(aoTocar ? { aoTocar } : {})}
+      />
+    );
+  }
   /* SLOT DE ENTRADA. Nunca some, nunca cede lugar. Em `travada` o
       gesto acabou e a gravação não: o mesmo pixel que abriu é o que
       fecha e despacha o áudio. */
