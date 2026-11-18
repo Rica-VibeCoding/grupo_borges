@@ -66,6 +66,9 @@ import { MotionConfig, motion } from 'motion/react';
 import { TROCA_DE_FILEIRA } from './troca-de-fileira';
 import { AvisosDoComposer } from './avisos-do-composer';
 import { BaseDaCaixa } from './base-da-caixa';
+import { ChaveDaFala } from './chave-da-fala';
+import { destravaFalaSozinha } from '../feed/usa-fala-sozinha';
+import { perfilDoAgente } from '../../lib/perfil-do-agente';
 import { CaixaDoComposer } from './caixa-do-composer';
 import { CampoDoComposer } from './campo-do-composer';
 import { LinhaDaVoz } from './linha-da-voz';
@@ -232,6 +235,8 @@ export function Composer({
     // a mensagem sairia duas vezes. Quem segura é esta marca, erguida antes do
     // `await` e baixada depois dele.
     if (!retomada && vooEmCursoRef.current) return false;
+    // Ted: o toque de enviar destrava o áudio da resposta (`usa-fala-sozinha.ts`).
+    if (!retomada) destravaFalaSozinha(agentSlug);
     const origem: OrigemEnvio = retomada
       ? origemRetomada
       : origemDoRascunho;
@@ -518,6 +523,7 @@ export function Composer({
       {/* A FILA DA ESPERA — entre o indicador de trabalho e a caixa, nunca
           dentro dela: o campo é o que está sendo escrito agora, a fila é o que
           já saiu das mãos. */}
+      {perfilDoAgente(agentSlug).falaSozinha ? <ChaveDaFala agentSlug={agentSlug} agentName={agentName} /> : null}
       <BlocoDaFila
         estado={fila}
         aoEditar={editarDaFila}

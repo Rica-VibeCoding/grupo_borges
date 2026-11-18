@@ -9,6 +9,7 @@ import type { RefObject } from 'react';
 import { motion } from 'motion/react';
 import { PECAS } from '../../lib/modo';
 import { perfilDoAgente } from '../../lib/perfil-do-agente';
+import { destravaFalaSozinha } from '../feed/usa-fala-sozinha';
 import type { usaAnexo } from '../../lib/usa-anexo';
 import { BotaoAnexo } from './gaveta-anexo';
 import { IconeDescartar } from './icones';
@@ -217,6 +218,7 @@ export function BaseDaCaixa({
           temConteudo={temConteudo}
           pararEmCena={pararEmCena}
           grande={perfilDoAgente(agentSlug).botaoDeVozGrande}
+          aoTocar={() => destravaFalaSozinha(agentSlug)}
         />
 
         <SlotDaConversa agentSlug={agentSlug} agentName={agentName} modo={modo} />

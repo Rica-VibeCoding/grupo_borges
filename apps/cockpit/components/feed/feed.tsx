@@ -33,6 +33,7 @@ import { indiceDoGrupoEmCurso, type ItemDoFeed } from './grupo-ferramentas.ts';
 import { ALTURA_ITEM, SOBRA } from './medidas-do-feed';
 import { useChegadas } from './use-chegadas';
 import { useSeguirOFim } from './use-seguir-o-fim';
+import { usaFalaSozinha } from './usa-fala-sozinha';
 
 export type FeedProps = {
   itens: readonly ItemDoFeed[];
@@ -56,6 +57,7 @@ function Feed({ itens, lookup, agentSlug, estaRodando = false, rodape }: FeedPro
   const grupoEmCurso = useMemo(() => indiceDoGrupoEmCurso(itens), [itens]);
 
   const { chegadas, agoraMs } = useChegadas(itens, chaves, lookup);
+  usaFalaSozinha(itens, chaves, agentSlug, estaRodando);
 
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const coladoRef = useRef(true);

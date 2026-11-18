@@ -261,3 +261,24 @@ export function IconeMais(props: IconeProps) {
     </Tracado>
   );
 }
+
+/** Alto-falante falando (duas ondas) e calado (um ×): a chave "fala / fica
+ *  quieto" do painel do Ted. Duas ondas aqui porque ela vive em 22px. */
+export function IconeAltoFalanteFala(props: IconeProps) {
+  return (
+    <Tracado {...props}>
+      <path d="M4 9.5h3l4-3.2v11.4l-4-3.2H4z" />
+      <path d="M15 9.6a3.6 3.6 0 0 1 0 4.8" />
+      <path d="M17.6 7.2a7 7 0 0 1 0 9.6" />
+    </Tracado>
+  );
+}
+
+export function IconeAltoFalanteCalado(props: IconeProps) {
+  return (
+    <Tracado {...props}>
+      <path d="M4 9.5h3l4-3.2v11.4l-4-3.2H4z" />
+      <path d="M15.5 9.5l5 5M20.5 9.5l-5 5" />
+    </Tracado>
+  );
+}
