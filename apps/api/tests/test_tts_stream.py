@@ -696,3 +696,186 @@ async def test_rotas_motor_422_get_e_voice_vence(tmp_path, monkeypatch) -> None:
             assert response.status_code == 200
             assert '"voice": "pt-BR-Wavenet-A"' in response.text
         assert calls == ["pt-BR-Wavenet-A"] * 3
+
+
+# --- Ted: prova do payload Google pelas duas rotas, sem mudar a frota ------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("path", "motor"), [
+    ("/api/tts/synth", ""),
+    ("/api/tts/synth/stream", ""),
+    ("/api/tts/synth/stream", "chirp"),
+    ("/api/tts/synth/stream", "wavenet"),
+])
+@pytest.mark.parametrize(("slug", "normal", "chirp", "wavenet"), [
+    ("ted", "pt-BR-Neural2-B", "pt-BR-Neural2-B", "pt-BR-Neural2-B"),
+    ("pavan", "pt-BR-Chirp3-HD-Algieba", "pt-BR-Chirp3-HD-Algieba", "pt-BR-Wavenet-B"),
+    ("daniel", "pt-BR-Wavenet-E", "pt-BR-Chirp3-HD-Orus", "pt-BR-Wavenet-E"),
+    ("fred", "pt-BR-Chirp3-HD-Orus", "pt-BR-Chirp3-HD-Orus", "pt-BR-Wavenet-B"),
+    ("sofia", "pt-BR-Chirp3-HD-Orus", "pt-BR-Chirp3-HD-Orus", "pt-BR-Wavenet-B"),
+    ("", "pt-BR-Chirp3-HD-Orus", "pt-BR-Chirp3-HD-Orus", "pt-BR-Wavenet-B"),
+])
+async def test_rotas_payload_google_ted_e_frota(monkeypatch, tmp_path, path, motor, slug, normal, chirp, wavenet):
+    """Exercita resolução + portão + HTTP real do helper (só a rede é dublada).
+
+    Fred/Sofia não têm entrada no mapa: com default Google, mantêm Orus.
+    Uma segunda chamada verifica também a precedência do .env do workspace.
+    """
+    settings = _FakeSettings()
+    settings.google_tts_api_key = "google-teste"
+    settings.tts_voice = "pt-BR-Chirp3-HD-Orus"
+    app = FastAPI()
+    app.state.settings = settings
+    app.include_router(tts.router, prefix="/api")
+    payloads = []
+    client_real = httpx.AsyncClient
+
+    def google(req):
+        payloads.append(json.loads(req.content))
+        return httpx.Response(200, json={"audioContent": "bXAz"})
+
+    async def edge_proibido(*_args):
+        raise AssertionError("voz Google não pode cair no edge")
+
+    monkeypatch.setattr(tts.httpx, "AsyncClient", lambda **kw: client_real(transport=httpx.MockTransport(google), **kw))
+    monkeypatch.setattr(tts, "_synth_edge", edge_proibido)
+    monkeypatch.setattr(tts, "_peaks_from_mp3", lambda _mp3: (0.3, [1]))
+    voice = {"": normal, "chirp": chirp, "wavenet": wavenet}[motor]
+    async with client_real(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        for env_override in (False, True):
+            if env_override:
+                if not slug:
+                    break
+                # Outra voz explícita não deve herdar o +7 do perfil do Ted.
+                _workspace(tmp_path, monkeypatch, slug, "export GOOGLE_TTS_VOICE=pt-BR-Wavenet-A\n")
+                voice = chirp if motor == "chirp" and slug != "ted" else "pt-BR-Wavenet-A"
+            payloads.clear()
+            response = await client.post(path, json={
+                "text": "Oi, Daniel. Vamos brincar?", "slug": slug, "motor": motor,
+            })
+            assert response.status_code == 200
+            assert len(payloads) == (2 if path.endswith("/stream") else 1)
+            for payload in payloads:
+                assert payload["voice"] == {"languageCode": "pt-BR", "name": voice}
+                assert payload["audioConfig"] == {
+                    "audioEncoding": "MP3",
+                    "pitch": 7 if slug == "ted" and not env_override else 0,
+                    "speakingRate": 1.05 if slug == "ted" and not env_override else 1.0,
+                }
+            if path.endswith("/stream"):
+                assert f'"voice": "{voice}"' in response.text
+                assert '"engine": "google"' in response.text
+                assert '"degraded": false' in response.text
+                assert "event: done" in response.text
+            else:
+                assert response.content == b"mp3"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["/api/tts/synth", "/api/tts/synth/stream"])
+@pytest.mark.parametrize("failure", ["sem-chave", "primeira", "segunda"])
+async def test_rotas_ted_fallback_masculino_agudo_declarado(monkeypatch, path, failure):
+    settings = _FakeSettings()
+    settings.google_tts_api_key = "" if failure == "sem-chave" else "google-teste"
+    app = FastAPI()
+    app.state.settings = settings
+    app.include_router(tts.router, prefix="/api")
+    edge_calls = []
+    google_calls = []
+
+    async def google(_text, voice, *_args):
+        google_calls.append(voice)
+        if failure == "primeira" or len(google_calls) == 2:
+            raise RuntimeError("Google indisponível")
+        return b"google"
+
+    class Communicate:
+        def __init__(self, text, voice, *, rate, pitch):
+            edge_calls.append((voice, rate, pitch))
+
+        async def stream(self):
+            yield {"type": "audio", "data": b"edge"}
+
+    monkeypatch.setattr(tts, "_synth_google", google)
+    monkeypatch.setattr(tts.edge_tts, "Communicate", Communicate)
+    monkeypatch.setattr(tts, "_peaks_from_mp3", lambda _mp3: (0.3, [1]))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(path, json={"text": "Oi, Daniel. Vamos brincar?", "slug": "ted"})
+    assert response.status_code == 200
+    if path.endswith("/stream"):
+        assert edge_calls == [("pt-BR-AntonioNeural", "+5%", "+60Hz")] * (1 if failure == "segunda" else 2)
+        event = "degraded" if failure == "segunda" else "meta"
+        data = json.loads(response.text.split(f"event: {event}\ndata: ", 1)[1].split("\n", 1)[0])
+        assert data["engine"] == "edge"
+        assert data["voice"] == "pt-BR-AntonioNeural"
+        assert data["pitch"] == "+60Hz" and data["rate"] == "+5%"
+        if event == "meta":
+            assert data["degraded"] is True
+        assert "event: done" in response.text
+    elif failure == "segunda":
+        assert edge_calls == []  # synth faz uma só chamada Google
+        assert response.content == b"google"
+    else:
+        assert edge_calls == [("pt-BR-AntonioNeural", "+5%", "+60Hz")]
+        assert response.content == b"edge"
+
+
+@pytest.mark.parametrize("slug", ["pavan", "daniel", "fred", "sofia", ""])
+def test_prosodia_edge_da_frota_continua_a_configurada(slug):
+    settings = _FakeSettings()
+    settings.tts_rate, settings.tts_pitch = "+12%", "+20Hz"
+    assert tts._edge_prosody(tts.TtsSynthRequest(text="Oi.", slug=slug), settings) == ("+12%", "+20Hz")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["/api/tts/synth", "/api/tts/synth/stream"])
+@pytest.mark.parametrize(("slug", "voice"), [
+    ("pavan", "pt-BR-AntonioNeural"), ("daniel", "pt-BR-AntonioNeural"),
+    ("fred", "pt-BR-FranciscaNeural"), ("sofia", "pt-BR-FranciscaNeural"),
+    ("", "pt-BR-FranciscaNeural"),
+])
+async def test_rotas_frota_preservam_fallback_e_defaults_edge(monkeypatch, path, slug, voice):
+    app = FastAPI()
+    app.state.settings = _FakeSettings()
+    app.include_router(tts.router, prefix="/api")
+    calls = []
+
+    class Communicate:
+        def __init__(self, text, chosen, *, rate, pitch):
+            calls.append((chosen, rate, pitch))
+
+        async def stream(self):
+            yield {"type": "audio", "data": b"edge"}
+
+    monkeypatch.setattr(tts.edge_tts, "Communicate", Communicate)
+    monkeypatch.setattr(tts, "_peaks_from_mp3", lambda _mp3: (0.3, [1]))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(path, json={"text": "Oi.", "slug": slug})
+    assert response.status_code == 200
+    assert calls == [(voice, "+0%", "+0Hz")]
+
+
+def test_prosodia_edge_ted_preserva_overrides_explicitos():
+    body = tts.TtsSynthRequest(text="Oi.", slug="ted", rate="-5%", pitch="+10Hz")
+    assert tts._edge_prosody(body, _FakeSettings()) == ("-5%", "+10Hz")
+
+
+def test_ted_preserva_override_explicito_antes_do_env(tmp_path, monkeypatch):
+    _workspace(tmp_path, monkeypatch, "ted", "GOOGLE_TTS_VOICE=pt-BR-Chirp3-HD-Orus\n")
+    for motor in ("", "chirp", "wavenet"):
+        body = tts.TtsSynthRequest(text="Oi.", slug="ted", motor=motor, voice="pt-BR-Wavenet-A")
+        assert tts._resolve_voice(body, _FakeSettings()) == "pt-BR-Wavenet-A"
+        assert tts._resolve_stream_voice(body, _FakeSettings()) == "pt-BR-Wavenet-A"
+
+
+@pytest.mark.asyncio
+async def test_catalogo_ted_usa_seletor_natural_sem_anunciar_edge():
+    settings = _FakeSettings()
+    settings.google_tts_api_key = "google-teste"
+    app = FastAPI()
+    app.state.settings = settings
+    app.include_router(tts.router, prefix="/api")
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/tts/motores", params={"slug": "ted"})
+    assert response.json() == {"motores": ["chirp", "wavenet"], "padrao": "chirp"}

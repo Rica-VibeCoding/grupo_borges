@@ -3,7 +3,8 @@
 Engine preferido: Google Cloud TTS — mesma voz que cada agente já usa no
 Telegram (mapa canônico em ze-shared/.claude/skills/voz/
 scripts/tts-google.sh), em dois degraus: Chirp3-HD pra tropa e WaveNet pra quem
-fala muito (Daniel e maestro, ordem do Rica em 12/09). Fallback: Microsoft
+fala muito (Daniel e maestro, ordem do Rica em 12/09). Ted usa Neural2 com
+pitch e velocidade próprios, escolhidos para o painel cliente. Fallback: Microsoft
 edge-tts quando o Google falha ou não há API key. A voz é resolvida por `slug`
 do agente, então a tropa soa no cockpit com a mesma identidade vocal de sempre.
 """
@@ -44,6 +45,8 @@ _VOICE_RE = re.compile(r'^[a-z]{2,}-[A-Z]{2,}(?:-[A-Za-z0-9]+)+$')
 # dois que mais gastam, e a fatura do Chirp3-HD é por caractere. Wavenet-B e
 # Wavenet-E são as duas únicas masculinas de pt-BR no voices.list da API.
 FLEET_VOICES: dict[str, str] = {
+    # Voz escolhida pelo Rica para o Ted do painel cliente (9 anos).
+    "ted": "pt-BR-Neural2-B",
     "daniel": "pt-BR-Wavenet-E",
     "maestro": "pt-BR-Wavenet-B",
     # O caseiro desceu junto e DIVIDE a voz com o maestro: só existem duas.
@@ -75,7 +78,7 @@ _WAVENET_BY_GENDER = {"female": "pt-BR-Wavenet-A", "male": "pt-BR-Wavenet-B"}
 # lista vai pro edge, e ir pro edge é trocar a voz do agente: quando o Daniel
 # desceu pro WaveNet, o portão antigo (só `pt-BR-Chirp3-HD`) mandava a fala dele
 # inteira pro edge-tts, calado. Mexer numa voz da frota é mexer aqui junto.
-_GOOGLE_VOICE_PREFIXES = ("pt-BR-Chirp3-HD", "pt-BR-Wavenet")
+_GOOGLE_VOICE_PREFIXES = ("pt-BR-Chirp3-HD", "pt-BR-Wavenet", "pt-BR-Neural2")
 
 
 def _is_google_voice(voice: str) -> bool:
@@ -88,6 +91,7 @@ def _is_google_voice(voice: str) -> bool:
 # (se Neural) → Antonio. A rota stream declara a troca no evento `meta` (régua
 # da auditoria: nunca trocar a voz em silêncio).
 EDGE_FALLBACK_VOICES: dict[str, str] = {
+    "ted": "pt-BR-AntonioNeural",
     "daniel": "pt-BR-AntonioNeural",
     "maestro": "pt-BR-AntonioNeural",
     "caseiro": "pt-BR-AntonioNeural",
@@ -199,7 +203,10 @@ def _resolve_voice(body: TtsSynthRequest, settings) -> str:
 
 
 def _resolve_stream_voice(body: TtsSynthRequest, settings) -> str:
-    if body.voice or body.motor not in ("chirp", "wavenet"):
+    # Os seletores históricos Natural/chirp e Econômica/wavenet são aliases
+    # da voz escolhida para o Ted: remapear Neural2 tiraria também o tom dele.
+    # O override explícito e o .env continuam tendo a precedência de sempre.
+    if body.slug == "ted" or body.voice or body.motor not in ("chirp", "wavenet"):
         return _resolve_voice(body, settings)
     env_voice = _env_do_agente(body.slug).get("GOOGLE_TTS_VOICE", "")
     fleet_voice = FLEET_VOICES.get(body.slug, "")
@@ -261,13 +268,19 @@ def _registra_uso(origem: str, slug: str, voice: str, text: str, engine: str = "
 async def _synth_google(text: str, voice: str, api_key: str, origem: str, slug: str) -> bytes:
     """Google Cloud TTS REST v1 — mesmo payload do tts-google.sh."""
     language_code = "-".join(voice.split("-")[:2])  # pt-BR-Chirp3-HD-Orus → pt-BR
+    audio_config = {"audioEncoding": "MP3", "pitch": 0, "speakingRate": 1.0}
+    # Neural2 aceita pitch em semitons; Chirp3-HD não. Só o perfil escolhido
+    # do Ted recebe +7/1.05, sem alterar a frota nem um override de outra voz.
+    # https://cloud.google.com/text-to-speech/docs/reference/rest/v1/AudioConfig
+    if slug == "ted" and voice == FLEET_VOICES["ted"]:
+        audio_config.update(pitch=7, speakingRate=1.05)
     async with httpx.AsyncClient(timeout=20.0) as client:
         res = await client.post(
             f"https://texttospeech.googleapis.com/v1/text:synthesize?key={api_key}",
             json={
                 "input": {"text": text},
                 "voice": {"languageCode": language_code, "name": voice},
-                "audioConfig": {"audioEncoding": "MP3", "pitch": 0, "speakingRate": 1.0},
+                "audioConfig": audio_config,
             },
         )
     if res.status_code != 200:
@@ -359,8 +372,7 @@ async def _synth_minimax(text: str, cfg: dict, slug: str) -> bytes:
 
 
 async def _synth_edge(text: str, voice: str, rate: str, pitch: str) -> bytes:
-    """Fallback Microsoft edge-tts. Vozes Chirp3-HD não existem aqui — usa
-    a voz Neural configurada (settings.tts_voice se for Neural, senão default)."""
+    """Fallback Microsoft edge-tts. Voz Google ainda não resolvida vira Antonio."""
     edge_voice = voice if voice.endswith("Neural") else "pt-BR-AntonioNeural"
     buf = io.BytesIO()
     communicate = edge_tts.Communicate(text, edge_voice, rate=rate, pitch=pitch)
@@ -462,6 +474,15 @@ def _resolve_edge_fallback(voice: str, slug: str, settings) -> str:
     return "pt-BR-AntonioNeural"
 
 
+def _edge_prosody(body: TtsSynthRequest, settings) -> tuple[str, str]:
+    # Edge usa Hz, não semitons: +60Hz é uma aproximação aguda para Antonio,
+    # não uma conversão exata do +7 do Google. Rate mantém os mesmos +5%.
+    # Overrides explícitos de rate/pitch continuam valendo no edge.
+    if body.slug == "ted":
+        return body.rate or "+5%", body.pitch or "+60Hz"
+    return body.rate or settings.tts_rate, body.pitch or settings.tts_pitch
+
+
 def _peaks_from_mp3(mp3_bytes: bytes) -> tuple[float, list[float]]:
     """Decodifica o MP3 (ffmpeg, presente na VPS) em PCM f32 24 kHz mono e
     reduz a uma barra de pico (máx. abs.) por janela de ~50ms, normalizada pela
@@ -504,8 +525,7 @@ async def _stream_tts(
     settings,
 ) -> AsyncIterator[str]:
     api_key = getattr(settings, "google_tts_api_key", "") or ""
-    rate = body.rate or settings.tts_rate
-    pitch = body.pitch or settings.tts_pitch
+    rate, pitch = _edge_prosody(body, settings)
 
     # Engine decidida pela primeira sentença (a voz não muda no meio da fala):
     # MiniMax se o agente a configurou, senão Google. Sem key Google ou voz que
@@ -564,6 +584,7 @@ async def _stream_tts(
             "voice": {"edge": edge_voice, "minimax": minimax["voice"] if minimax else ""}.get(engine, voice),
             "engine": engine,
             "degraded": engine != preferido or (motor == "minimax" and minimax is None and not body.voice),
+            **({"rate": rate, "pitch": pitch} if engine == "edge" and body.slug == "ted" else {}),
             "duration_estimate": round(total_estimate, 2),
             "peaks_per_second": int(1000 / _PEAK_INTERVAL_MS),
             "segments": segments,
@@ -602,7 +623,10 @@ async def _stream_tts(
                     yield _sse("error", {"id": i, "message": f"sentença {i} falhou ({current_engine} e edge): {exc2}"})
                     return
                 current_engine = "edge"
-                yield _sse("degraded", {"engine": "edge", "voice": edge_voice, "sentenca": i})
+                yield _sse("degraded", {
+                    "engine": "edge", "voice": edge_voice, "sentenca": i,
+                    **({"rate": rate, "pitch": pitch} if body.slug == "ted" else {}),
+                })
             else:
                 yield _sse("error", {"id": i, "message": f"sentença {i} falhou: {exc}"})
                 return
@@ -623,8 +647,7 @@ async def tts_synth(body: TtsSynthRequest, request: Request) -> Response:
         raise HTTPException(status_code=400, detail="texto vazio após limpeza")
 
     voice = _resolve_voice(body, settings)
-    rate = body.rate or settings.tts_rate
-    pitch = body.pitch or settings.tts_pitch
+    rate, pitch = _edge_prosody(body, settings)
     api_key = getattr(settings, "google_tts_api_key", "") or ""
 
     audio_bytes = b""
@@ -639,9 +662,11 @@ async def tts_synth(body: TtsSynthRequest, request: Request) -> Response:
 
     if not audio_bytes:
         try:
-            audio_bytes = await _synth_edge(text, voice, rate, pitch)
+            # Preserva o fallback antigo da frota; o Ted usa o mapa explícito.
+            fallback_voice = _resolve_edge_fallback(voice, body.slug, settings) if body.slug == "ted" else voice
+            audio_bytes = await _synth_edge(text, fallback_voice, rate, pitch)
             if audio_bytes:
-                edge_voice = voice if voice.endswith("Neural") else "pt-BR-AntonioNeural"
+                edge_voice = fallback_voice if fallback_voice.endswith("Neural") else "pt-BR-AntonioNeural"
                 _registra_uso("cockpit-synth", body.slug, edge_voice, text, "edge")
         except Exception as exc:
             detail = f"TTS falhou (edge: {exc}"
@@ -700,6 +725,9 @@ async def tts_motores(request: Request, slug: str = Query(min_length=1, max_leng
     elif voice.startswith("pt-BR-Wavenet-"):
         padrao = "wavenet"
     elif voice.startswith("pt-BR-Chirp3-HD-"):
+        padrao = "chirp"
+    elif slug == "ted" and voice == FLEET_VOICES["ted"]:
+        # Natural/chirp é o seletor legado; para o Ted ambos usam Neural2.
         padrao = "chirp"
     else:
         padrao = "edge"
