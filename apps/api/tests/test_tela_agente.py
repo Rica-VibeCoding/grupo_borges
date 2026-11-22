@@ -594,6 +594,62 @@ async def assumir_aparelho(c, s, wire, monkeypatch, tamanho=(390, 700)):
     return posse, {"X-Tela-Controle": r.json()["controle"]}
 
 
+async def test_tamanho_com_posse_reaplica_viewport_e_descarta_quadros(viewport_real, monkeypatch):
+    c, svc, s, wire = viewport_real
+    posse, headers = await assumir_aparelho(c, s, wire, monkeypatch)
+    token = s.token
+    geracao = s.cdp.geracao
+    gen = svc.eventos(s)
+    base = f"/api/tela-agente/sessoes/{s.id}"
+    try:
+        assert (await anext(gen))["event"] == "estado"
+        velho = json.loads((await anext(gen))["data"])
+        r = await c.post(base + "/tamanho", headers=headers, json={"largura": 700, "altura": 390})
+        assert r.status_code == 200 and r.json() == {"ajustado": True}
+        assert wire.tamanho == s.cdp.viewport == (700, 390)
+        assert s.cdp.geracao == geracao + 1
+        assert not s.quadros and s.token == token and s.posse is posse
+        posse.fechar.assert_not_awaited()
+        tela.Posse.abrir.assert_awaited_once()
+        r = await c.post(
+            base + "/entrada",
+            headers=headers,
+            json={"tipo": "clique", "quadro": velho["id"], "x": 0.5, "y": 0.5},
+        )
+        assert r.status_code == 409
+        novo = json.loads((await asyncio.wait_for(anext(gen), 2))["data"])
+        assert novo["viewport"] == {"largura": 700, "altura": 390}
+        assert (novo["largura"], novo["altura"]) == (700, 390)
+    finally:
+        await gen.aclose()
+
+
+@pytest.mark.parametrize("controle", ["sem-posse", "ausente", "errado", "perdido", "devolvido"])
+async def test_tamanho_recusa_como_entrada_sem_controle(viewport_real, monkeypatch, controle):
+    c, _, s, wire = viewport_real
+    headers = {}
+    base = f"/api/tela-agente/sessoes/{s.id}"
+    if controle != "sem-posse":
+        posse, headers = await assumir_aparelho(c, s, wire, monkeypatch)
+        if controle == "ausente":
+            headers = {}
+        elif controle == "errado":
+            headers = {"X-Tela-Controle": "incorreto"}
+        elif controle == "perdido":
+            posse.p.returncode = 1
+        elif controle == "devolvido":
+            assert (await c.post(base + "/devolver", headers=headers)).status_code == 200
+    s.quadros["velho"] = (time.monotonic(), "t1", *wire.tamanho)
+    tamanho = wire.tamanho
+    wire.sent.clear()
+    entrada = await c.post(base + "/entrada", headers=headers, json={"tipo": "texto", "texto": "x"})
+    r = await c.post(base + "/tamanho", headers=headers, json={"largura": 700, "altura": 390})
+    assert r.status_code == entrada.status_code == (409 if controle == "perdido" else 403)
+    assert r.json() == entrada.json()
+    assert wire.tamanho == tamanho and not wire.sent
+    assert "velho" in s.quadros
+
+
 @pytest.mark.parametrize("saida", ["devolver", "inatividade", "queda", "sem-fluxo", "cdp"])
 async def test_override_e_retirada_antes_da_trava(viewport_real, monkeypatch, saida):
     c, svc, s, wire = viewport_real

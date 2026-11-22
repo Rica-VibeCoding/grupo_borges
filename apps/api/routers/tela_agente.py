@@ -135,6 +135,18 @@ async def devolver(sid: str, request: Request, x_tela_controle: Controle = None)
     return {"devolvido": True}
 
 
+@router.post("/sessoes/{sid}/tamanho")
+async def tamanho(
+    sid: str, request: Request, aparelho: Aparelho, x_tela_controle: Controle = None
+):
+    s = tela.servico.obter(sid, dono(request))
+    async with s.operacao:
+        tela.servico.controlar(s, x_tela_controle)
+        await executar(s.cdp.redimensionar((aparelho.largura, aparelho.altura)))
+        s.quadros.clear()
+    return {"ajustado": True}
+
+
 @router.post("/sessoes/{sid}/entrada")
 async def entrada(sid: str, request: Request, pedido: Entrada, x_tela_controle: Controle = None):
     s = tela.servico.obter(sid, dono(request))
