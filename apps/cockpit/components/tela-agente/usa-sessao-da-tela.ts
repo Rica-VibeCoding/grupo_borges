@@ -5,6 +5,8 @@
  *
  * Fases, que são o que o Rica lê na barra: `abrindo` → `vendo` ⇄ `controle`;
  * qualquer queda → `caiu` (reabre sozinho, até 3 vezes, só com a aba visível).
+ * `abrindo` tem prazo: o fluxo manda `estado` a cada 2 s, então sem quadro o
+ * `onerror` nunca vem — 5 s sem imagem reabre calado, e na terceira vez cai.
  *
  * Dono: Daniel (pele).
  */
@@ -14,19 +16,16 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
   abrirSessao,
-  assumir as postAssumir,
-  devolver as postDevolver,
   encerrarSessao,
-  enviarEntrada,
   FalhaDaTela,
   textoDaFalha,
   urlDosQuadros,
-  type Entrada,
   type EstadoDoFluxo,
   type Pedido,
   type Quadro,
-  type Tamanho,
 } from '@/lib/tela-agente';
+
+import { usaAcoesDaPosse, type EsperaQuadroNovo } from './acoes-da-posse';
 
 export type Fase = 'abrindo' | 'vendo' | 'controle' | 'caiu';
 
@@ -34,8 +33,9 @@ export type Fase = 'abrindo' | 'vendo' | 'controle' | 'caiu';
 export type Aviso = { texto: string; tipo: 'dica' | 'erro' };
 
 const ESPERAS_DA_RECONEXAO_MS = [1500, 4000, 10000];
-/** Teto da espera pela imagem no tamanho novo: depois disso a fase troca mesmo assim (o back recusa toque velho com 409). */
-const ESPERA_DO_AJUSTE_MS = 2500;
+const PRAZO_DA_PRIMEIRA_IMAGEM_MS = 5000;
+/** Reaberturas caladas por falta de imagem antes de dizer que caiu. */
+const REABERTURAS_CALADAS = 2;
 
 export function usaSessaoDaTela(chrome: string, pedidoDaUrl: string | null) {
   const [fase, setFase] = useState<Fase>('abrindo');
@@ -47,10 +47,13 @@ export function usaSessaoDaTela(chrome: string, pedidoDaUrl: string | null) {
   const [devolvidoEm, setDevolvidoEm] = useState<number | null>(null);
   const [geracao, setGeracao] = useState(0);
   const [sessaoId, setSessaoId] = useState<string | null>(null);
+  /** Desde quando a tela espera a primeira imagem, somando as reaberturas caladas. */
+  const [conectandoDesde, setConectandoDesde] = useState<number | null>(null);
 
   const sessao = useRef<string | null>(null);
   const controle = useRef<string | null>(null);
   const tentativas = useRef(0);
+  const reaberturas = useRef(0);
   const repetiu = useRef(false);
   /** Estava no controle quando caiu? Sobrevive ao `estado` que limpa o token antes da queda. */
   const tevePosse = useRef(false);
@@ -61,7 +64,7 @@ export function usaSessaoDaTela(chrome: string, pedidoDaUrl: string | null) {
    * para tocar. O botão fica ocupado até chegar a imagem de tamanho diferente (ou,
    * se o tamanho não mudou, até um respiro) — só então a fase troca.
    */
-  const esperaQuadroNovo = useRef<{ largura: number; altura: number; pronto: () => void } | null>(null);
+  const esperaQuadroNovo = useRef<EsperaQuadroNovo | null>(null);
   const ultimoQuadro = useRef<Quadro | null>(null);
   const pedidoPendente = useRef<string | null>(pedidoDaUrl);
 
@@ -70,21 +73,27 @@ export function usaSessaoDaTela(chrome: string, pedidoDaUrl: string | null) {
     let vivo = true;
     let fonte: EventSource | null = null;
     let espera: number | undefined;
+    let prazo: number | undefined;
+    let primeiro = true;
 
+    /** Fecha o fluxo e a sessão; cumpre quando o back soltou o Chrome. */
     const solta = () => {
       fonte?.close();
       fonte = null;
       controle.current = null;
-      if (sessao.current) encerrarSessao(sessao.current);
+      const fim = sessao.current ? encerrarSessao(sessao.current) : Promise.resolve();
       sessao.current = null;
       if (vivo) setSessaoId(null);
+      return fim;
     };
 
     const cai = (texto: string | null) => {
       if (!vivo) return;
+      window.clearTimeout(prazo);
+      setConectandoDesde(null);
       const estavaNoControle = tevePosse.current;
       tevePosse.current = false;
-      solta();
+      void solta();
       setQuadro(null);
       setFase('caiu');
       const n = tentativas.current;
@@ -102,13 +111,27 @@ export function usaSessaoDaTela(chrome: string, pedidoDaUrl: string | null) {
     };
 
     setFase('abrindo');
+    setConectandoDesde((d) => d ?? Date.now());
+    /** Conta do fluxo ligado: a latência do POST não come o prazo da imagem. */
+    const armaPrazo = () => {
+      prazo = window.setTimeout(() => {
+        if (!vivo || !primeiro) return;
+        // Aba escondida: solta e espera; o `visibilitychange` reabre na volta.
+        if (document.hidden) return void solta();
+        if (reaberturas.current < REABERTURAS_CALADAS) {
+          reaberturas.current += 1;
+          // Reabre só depois que o back soltou a sessão velha: antes disso o POST leva 409.
+          return void solta().then(() => vivo && setGeracao((g) => g + 1));
+        }
+        cai('O Chrome não mandou imagem.');
+      }, PRAZO_DA_PRIMEIRA_IMAGEM_MS);
+    };
     abrirSessao(chrome, pedidoPendente.current)
       .then((s) => {
         if (!vivo) return encerrarSessao(s.id);
         sessao.current = s.id;
         setSessaoId(s.id);
         setPedido(s.pedido);
-        let primeiro = true;
         fonte = new EventSource(urlDosQuadros(s.id));
         fonte.addEventListener('quadro', (e) => {
           if (!vivo) return;
@@ -122,6 +145,9 @@ export function usaSessaoDaTela(chrome: string, pedidoDaUrl: string | null) {
           if (primeiro) {
             // Voltou depois de queda: o aviso dela sai junto, menos o motivo de ter perdido a posse.
             primeiro = false;
+            window.clearTimeout(prazo);
+            reaberturas.current = 0;
+            setConectandoDesde(null);
             setFase('vendo');
             setAviso(motivoDaPerda.current ? { texto: motivoDaPerda.current, tipo: 'erro' } : null);
             motivoDaPerda.current = null;
@@ -142,6 +168,7 @@ export function usaSessaoDaTela(chrome: string, pedidoDaUrl: string | null) {
           }
         });
         fonte.onerror = () => cai(null);
+        armaPrazo();
       })
       .catch(async (erro: unknown) => {
         const status = erro instanceof FalhaDaTela ? erro.status : undefined;
@@ -164,19 +191,22 @@ export function usaSessaoDaTela(chrome: string, pedidoDaUrl: string | null) {
     const aoVoltar = () => {
       if (!document.hidden && sessao.current === null && vivo) {
         tentativas.current = 0;
+        reaberturas.current = 0;
+        setConectandoDesde(null);
         setGeracao((g) => g + 1);
       }
     };
-    const aoSair = () => solta();
+    const aoSair = () => void solta();
     document.addEventListener('visibilitychange', aoVoltar);
     window.addEventListener('pagehide', aoSair);
 
     return () => {
       vivo = false;
       window.clearTimeout(espera);
+      window.clearTimeout(prazo);
       document.removeEventListener('visibilitychange', aoVoltar);
       window.removeEventListener('pagehide', aoSair);
-      solta();
+      void solta();
     };
   }, [chrome, geracao]);
 
@@ -185,87 +215,24 @@ export function usaSessaoDaTela(chrome: string, pedidoDaUrl: string | null) {
     pedidoPendente.current = pedido && (pedido.status === 'aguardando' || pedido.status === 'em_atendimento') ? pedido.id : null;
   }, [pedido]);
 
-  /** Promessa que cumpre quando chega a imagem no tamanho novo, ou no teto da espera. */
-  const imagemNova = () =>
-    new Promise<void>((cumpre) => {
-      const q = ultimoQuadro.current;
-      if (!q) return cumpre();
-      const pronto = () => {
-        window.clearTimeout(teto);
-        esperaQuadroNovo.current = null;
-        cumpre();
-      };
-      const teto = window.setTimeout(pronto, ESPERA_DO_AJUSTE_MS);
-      esperaQuadroNovo.current = { largura: q.largura, altura: q.altura, pronto };
-    });
-
-  const assumir = useCallback(async (tamanho?: Tamanho | null) => {
-    if (!sessao.current) return;
-    setOcupado('assumindo');
-    setAviso(null);
-    motivoDaPerda.current = null;
-    try {
-      const nova = imagemNova();
-      const { controle: token } = await postAssumir(sessao.current, tamanho);
-      controle.current = token;
-      await nova;
-      tevePosse.current = true;
-      setDevolvidoEm(null);
-      setFase('controle');
-    } catch (erro) {
-      setAviso({ texto: textoDaFalha('assumir', erro instanceof FalhaDaTela ? erro.status : undefined, (erro as Error).message), tipo: 'erro' });
-    } finally {
-      setOcupado(null);
-    }
-  }, []);
-
-  const devolver = useCallback(async () => {
-    if (!sessao.current || !controle.current) return;
-    setOcupado('devolvendo');
-    setAviso(null);
-    try {
-      const nova = imagemNova();
-      await postDevolver(sessao.current, controle.current);
-      controle.current = null;
-      await nova;
-      tevePosse.current = false;
-      setFase('vendo');
-      setDevolvidoEm(Date.now());
-      setPedido((p) => (p ? { ...p, status: 'devolvido' } : p));
-    } catch (erro) {
-      const status = erro instanceof FalhaDaTela ? erro.status : undefined;
-      if (status === 403 || status === 410) {
-        controle.current = null;
-        tevePosse.current = false;
-        setFase('vendo');
-      }
-      setAviso({ texto: textoDaFalha('devolver', status, (erro as Error).message), tipo: 'erro' });
-    } finally {
-      setOcupado(null);
-    }
-  }, []);
-
-  /** Manda uma entrada. Devolve `false` se não foi entregue (o aviso já está na tela). */
-  const enviar = useCallback(async (entrada: Entrada): Promise<boolean> => {
-    if (!sessao.current || !controle.current) return false;
-    try {
-      await enviarEntrada(sessao.current, controle.current, entrada);
-      setAviso(null);
-      return true;
-    } catch (erro) {
-      const status = erro instanceof FalhaDaTela ? erro.status : undefined;
-      if (status === 403 || status === 410) {
-        controle.current = null;
-        tevePosse.current = false;
-        setFase('vendo');
-      }
-      setAviso({ texto: textoDaFalha('entrada', status, (erro as Error).message), tipo: 'erro' });
-      return false;
-    }
-  }, []);
+  const { assumir, devolver, ajustar, enviar } = usaAcoesDaPosse({
+    sessao,
+    controle,
+    tevePosse,
+    motivoDaPerda,
+    esperaQuadroNovo,
+    ultimoQuadro,
+    setFase,
+    setAviso,
+    setOcupado,
+    setDevolvidoEm,
+    setPedido,
+  });
 
   const reconectar = useCallback(() => {
     tentativas.current = 0;
+    reaberturas.current = 0;
+    setConectandoDesde(null);
     setGeracao((g) => g + 1);
   }, []);
 
@@ -276,8 +243,10 @@ export function usaSessaoDaTela(chrome: string, pedidoDaUrl: string | null) {
     aviso,
     ocupado,
     devolvidoEm,
+    conectandoDesde,
     sessao: sessaoId,
     assumir,
+    ajustar,
     devolver,
     enviar,
     reconectar,

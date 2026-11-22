@@ -123,6 +123,14 @@ export function tamanhoDoAparelho(larguraDoQuadro: number, topoDoQuadro: number,
   };
 }
 
+/**
+ * Reaplica o tamanho com a posse já tomada (o aparelho girou). Rota nova do back:
+ * `POST /sessoes/{id}/tamanho`, mesmo corpo do Assumir, com `X-Tela-Controle`.
+ * Back sem a rota responde 404/405 — a tela segue no tamanho do Assumir.
+ */
+export const ajustarTamanho = (sessao: string, controle: string, tamanho: Tamanho) =>
+  pede<{ ajustado: true }>(`/sessoes/${encodeURIComponent(sessao)}/tamanho`, { method: 'POST', body: JSON.stringify(tamanho) }, controle);
+
 export const devolver = (sessao: string, controle: string) =>
   pede<{ devolvido: true }>(`/sessoes/${encodeURIComponent(sessao)}/devolver`, { method: 'POST' }, controle);
 
@@ -135,9 +143,15 @@ export const enviarEntrada = (sessao: string, controle: string, entrada: Entrada
 
 export const fetchAbas = (sessao: string) => pede<Aba[]>(`/sessoes/${encodeURIComponent(sessao)}/abas`);
 
-/** Ao sair. `keepalive` deixa o pedido viver depois que a página fecha. */
-export function encerrarSessao(sessao: string): void {
-  void fetch(`${RAIZ}/sessoes/${encodeURIComponent(sessao)}`, { method: 'DELETE', keepalive: true }).catch(() => undefined);
+/**
+ * Ao sair. `keepalive` deixa o pedido viver depois que a página fecha. A promessa
+ * cumpre quando o back soltou a sessão (ou falhou): reabrir depois dela não leva 409.
+ */
+export function encerrarSessao(sessao: string): Promise<void> {
+  return fetch(`${RAIZ}/sessoes/${encodeURIComponent(sessao)}`, { method: 'DELETE', keepalive: true }).then(
+    () => undefined,
+    () => undefined,
+  );
 }
 
 /**
@@ -203,7 +217,7 @@ export function textoDoPrazo(expiraEm: number, agoraS: number): string {
 }
 
 /** O que falhou, dito para quem está com o dedo na tela. */
-export function textoDaFalha(acao: 'abrir' | 'assumir' | 'devolver' | 'entrada', status: number | undefined, detalhe: string): string {
+export function textoDaFalha(acao: 'abrir' | 'assumir' | 'devolver' | 'entrada' | 'ajustar', status: number | undefined, detalhe: string): string {
   if (acao === 'abrir') {
     if (status === 404) return 'Este Chrome não está no cadastro da tela.';
     if (status === 409) return 'Já tem uma tela aberta para este Chrome, talvez em outra aba ou aparelho. Feche a outra e reconecte.';
@@ -213,6 +227,7 @@ export function textoDaFalha(acao: 'abrir' | 'assumir' | 'devolver' | 'entrada',
   if (acao === 'entrada' && status === 409) return 'A imagem mudou antes do toque. Toque de novo na imagem nova.';
   if (status === 403) return 'A posse acabou. Assuma de novo para continuar.';
   if (status === 410) return 'A tela foi encerrada. Reconecte para continuar.';
+  if (acao === 'ajustar') return 'A página do Chrome ficou no tamanho anterior. Dá para seguir assim.';
   const proximo =
     acao === 'abrir'
       ? 'Não consegui abrir a tela. Toque em Reconectar.'
