@@ -53,6 +53,9 @@ INATIVIDADE = 180
 SEM_FLUXO = 20
 FPS = 2
 ESTADO_INTERVALO = 2
+FORMATO_QUADRO = "jpeg"
+QUALIDADE_QUADRO = 45
+LIMITE_QUADRO = 960
 
 
 async def processo(*args, env=None, limite_s=15):
@@ -192,21 +195,18 @@ class CDP:
                         msg.get("sessionId"),
                     )
                     if msg.get("sessionId") == self.sid:
-                        if self.eventos.full():
-                            self.eventos.get_nowait()
-                        self.eventos.put_nowait(
-                            {
-                                **msg["params"],
-                                "_sid": msg.get("sessionId"),
-                                "_geracao": self.geracao,
-                            }
-                        )
+                        self._enfileirar_quadro(msg["params"])
         except Exception as exc:
             erro = exc
         finally:
             for f in self.pendentes.values():
                 if not f.done():
                     f.set_exception(erro)
+
+    def _enfileirar_quadro(self, frame):
+        if self.eventos.full():
+            self.eventos.get_nowait()
+        self.eventos.put_nowait({**frame, "_sid": self.sid, "_geracao": self.geracao})
 
     async def enviar(self, method, params, sid=None):
         self.i += 1
@@ -329,13 +329,32 @@ class CDP:
         while not self.eventos.empty():
             self.eventos.get_nowait()
         await self.cmd("Page.enable")
+        # Página estática pode nunca repintar. Semeia a mesma fila antes do fluxo;
+        # qualquer quadro vivo posterior o substitui, sem regredir a imagem.
+        frame = await self.cmd(
+            "Page.captureScreenshot",
+            {
+                "format": FORMATO_QUADRO,
+                "quality": QUALIDADE_QUADRO,
+                "captureBeyondViewport": False,
+            },
+        )
+        # captureScreenshot não tem maxWidth/maxHeight. Limita o viewport inteiro
+        # após capturar, sem recortar barras nem depender de zoom/deviceScaleFactor.
+        with Image.open(io.BytesIO(base64.b64decode(frame["data"]))) as img:
+            if max(img.size) > LIMITE_QUADRO:
+                img.thumbnail((LIMITE_QUADRO, LIMITE_QUADRO), Image.Resampling.LANCZOS)
+                out = io.BytesIO()
+                img.save(out, format=FORMATO_QUADRO, quality=QUALIDADE_QUADRO)
+                frame["data"] = base64.b64encode(out.getvalue()).decode()
+        self._enfileirar_quadro(frame)
         await self.cmd(
             "Page.startScreencast",
             {
-                "format": "jpeg",
-                "quality": 45,
-                "maxWidth": 960,
-                "maxHeight": 960,
+                "format": FORMATO_QUADRO,
+                "quality": QUALIDADE_QUADRO,
+                "maxWidth": LIMITE_QUADRO,
+                "maxHeight": LIMITE_QUADRO,
                 "everyNthFrame": 1,
             },
         )

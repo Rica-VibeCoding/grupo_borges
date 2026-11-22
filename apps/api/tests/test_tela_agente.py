@@ -246,6 +246,10 @@ class Wire:
             result = {"sessionId": "sid1"}
         if msg["method"] == "Runtime.evaluate":
             result = {"result": {"value": "visible"}}
+        if msg["method"] == "Page.captureScreenshot":
+            out = io.BytesIO()
+            Image.new("RGB", getattr(self, "tamanho", (1920, 1080))).save(out, format="JPEG")
+            result = {"data": base64.b64encode(out.getvalue()).decode()}
         await self.queue.put({"id": msg["id"], "result": result})
 
     async def close(self):
@@ -442,8 +446,9 @@ async def test_pedido_teste_pula_so_aviso_e_conclui_igual(bancada, monkeypatch):
 class WireViewport(Wire):
     """Chrome dublado mantém métricas e quadros conforme os comandos de protocolo."""
 
-    def __init__(self):
+    def __init__(self, animada=True):
         super().__init__()
+        self.animada = animada
         self.tamanho = (1920, 1080)
         self.falhar_limpeza = False
         self.fechado = False
@@ -490,7 +495,7 @@ class WireViewport(Wire):
             )
             return
         await super().send(raw)
-        if method == "Page.startScreencast":
+        if method == "Page.startScreencast" and self.animada:
             out = io.BytesIO()
             Image.new("RGB", self.tamanho).save(out, format="JPEG")
             await self.queue.put(
@@ -504,6 +509,59 @@ class WireViewport(Wire):
     async def close(self):
         self.fechado = True
         self.tamanho = (1920, 1080)
+
+
+@pytest.mark.parametrize(
+    "tamanho,esperado", [((1920, 1080), (960, 540)), ((1080, 1920), (540, 960)), ((390, 700), (390, 700))]
+)
+async def test_quadro_inicial_sem_repintura_chega_pelo_sse(bancada, monkeypatch, tamanho, esperado):
+    _, svc, _ = bancada
+    wire = WireViewport(animada=False)
+    wire.tamanho = tamanho
+    cdp = tela.CDP(wire)
+    monkeypatch.setattr(tela.CDP, "abrir", AsyncMock(return_value=cdp))
+    s = await nova(bancada)
+    gen = svc.eventos(s)
+    try:
+        assert (await anext(gen))["event"] == "estado"
+        e = await asyncio.wait_for(anext(gen), 1)
+        assert e["event"] == "quadro"
+        q = json.loads(e["data"])
+        assert (q["largura"], q["altura"]) == esperado
+        assert q["aba"] == "t1"
+        assert q["viewport"] == {"largura": tamanho[0] - 15, "altura": tamanho[1]}
+        assert s.quadros[q["id"]][1:] == ("t1", tamanho[0] - 15, tamanho[1])
+        with Image.open(io.BytesIO(base64.b64decode(q["jpeg"]))) as img:
+            assert img.format == "JPEG" and img.size == esperado
+        methods = [m["method"] for m in wire.sent]
+        assert methods.index("Page.captureScreenshot") < methods.index("Page.startScreencast")
+        captura = next(m["params"] for m in wire.sent if m["method"] == "Page.captureScreenshot")
+        fluxo = next(m["params"] for m in wire.sent if m["method"] == "Page.startScreencast")
+        assert captura == {"format": fluxo["format"], "quality": fluxo["quality"], "captureBeyondViewport": False}
+        # A captura não é screencastFrame: não inventar um ACK nem esperar por repintura.
+        assert "Page.screencastFrameAck" not in methods
+        assert cdp.eventos.empty()
+    finally:
+        await gen.aclose()
+
+
+async def test_reinicio_estatico_descarta_quadro_inicial_do_viewport_anterior(bancada, monkeypatch):
+    _, svc, _ = bancada
+    wire = WireViewport(animada=False)
+    cdp = tela.CDP(wire)
+    monkeypatch.setattr(tela.CDP, "abrir", AsyncMock(return_value=cdp))
+    s = await nova(bancada)
+    geracao = cdp.geracao
+    await cdp.redimensionar((390, 700))
+    assert cdp.eventos.qsize() == 1 and cdp.geracao == geracao + 1
+    gen = svc.eventos(s)
+    try:
+        assert (await anext(gen))["event"] == "estado"
+        q = json.loads((await asyncio.wait_for(anext(gen), 1))["data"])
+        assert q["largura"] == q["viewport"]["largura"] == 390
+        assert q["altura"] == q["viewport"]["altura"] == 700
+    finally:
+        await gen.aclose()
 
 
 @pytest.fixture
