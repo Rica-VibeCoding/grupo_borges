@@ -15,7 +15,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 
 import { IconeDescartar, IconeVisto } from '@/components/shell/icones';
-import { textoDoPrazo, type Pedido } from '@/lib/tela-agente';
 
 import type { Fase } from './usa-sessao-da-tela';
 
@@ -184,61 +183,5 @@ function BotaoPrincipal({
     >
       {children}
     </button>
-  );
-}
-
-/**
- * O pedido do agente, no topo, quando há: quem pede, o motivo e quanto falta.
- * Âmbar enquanto espera (é o Rica que ele chama); verde quando fechou.
- */
-export function FaixaDoPedido({ pedido }: { pedido: Pedido }) {
-  const [agora, setAgora] = useState(() => Date.now() / 1000);
-  const aberto = pedido.status === 'aguardando' || pedido.status === 'em_atendimento';
-  useEffect(() => {
-    if (!aberto) return;
-    const t = window.setInterval(() => setAgora(Date.now() / 1000), 1000);
-    return () => window.clearInterval(t);
-  }, [aberto]);
-
-  const nome = pedido.agente.charAt(0).toUpperCase() + pedido.agente.slice(1);
-  const fecho =
-    pedido.status === 'devolvido'
-      ? { texto: `Pedido fechado. O ${nome} seguiu.`, cor: 'var(--ck-state-ok)' }
-      : pedido.status === 'expirado'
-        ? { texto: 'O prazo acabou e o pedido fechou sem resposta.', cor: 'var(--ck-state-fail)' }
-        : pedido.status === 'interrompido'
-          ? { texto: 'O pedido foi interrompido do lado do agente.', cor: 'var(--ck-state-fail)' }
-          : null;
-
-  return (
-    <section
-      aria-label={`Pedido do ${nome}`}
-      className="ck-vps flex flex-col"
-      style={{
-        gap: 'var(--ck-space-1)',
-        padding: 'var(--ck-space-3) var(--ck-space-4)',
-        boxShadow: aberto ? 'inset 0 0 0 1px var(--ck-state-attention)' : undefined,
-      }}
-    >
-      <div className="flex items-baseline" style={{ gap: 'var(--ck-space-3)' }}>
-        <h2 className="min-w-0 flex-1" style={{ fontSize: 'var(--ck-text-sm)', fontWeight: 600, color: aberto ? 'var(--ck-state-attention)' : 'var(--ck-text-secondary)' }}>
-          {aberto ? `${nome} pede sua ajuda` : `Pedido do ${nome}`}
-        </h2>
-        {aberto ? (
-          <span className="ck-tabular shrink-0" style={{ fontSize: 'var(--ck-text-sm)', color: 'var(--ck-text-secondary)' }}>
-            espera {textoDoPrazo(pedido.expira_em, agora)}
-          </span>
-        ) : null}
-      </div>
-      <p className="text-pretty" style={{ fontSize: 'var(--ck-text-base)', color: 'var(--ck-text-primary)' }}>
-        {pedido.motivo}
-      </p>
-      {fecho ? (
-        <p className="flex items-center" style={{ gap: 'var(--ck-space-1)', fontSize: 'var(--ck-text-sm)', color: fecho.cor }}>
-          {pedido.status === 'devolvido' ? <IconeVisto tamanho={14} className="shrink-0" /> : <IconeDescartar tamanho={14} className="shrink-0" />}
-          {fecho.texto}
-        </p>
-      ) : null}
-    </section>
   );
 }

@@ -2,7 +2,9 @@
  * A tela do agente: o Chrome dele ao vivo, com Assumir e Devolver.
  *
  * De cima para baixo, na ordem em que o Rica precisa: o pedido do agente (quando
- * há) · o quadro · o teclado (só no controle). O estado e a ação (Assumir,
+ * há) · o quadro · o teclado (só no controle). No controle o cabeçalho e o
+ * pedido encolhem a uma linha cada: a página não rola (o toque vai ao Chrome),
+ * então toda altura de cima é altura tirada do quadro. O estado e a ação (Assumir,
  * Devolver…) ficam num rodapé fixo, na zona do polegar, que não some ao rolar.
  * Mesma casca da tela Abertos (mesa, coluna centrada), mais larga porque o quadro
  * é paisagem.
@@ -23,7 +25,8 @@ import { useEffect, useRef, useState } from 'react';
 import { IconeDescartar } from '@/components/shell/icones';
 import { tamanhoDoAparelho, type Tamanho } from '@/lib/tela-agente';
 
-import { BarraDeEstado, FaixaDoPedido } from './barra-de-estado';
+import { BarraDeEstado } from './barra-de-estado';
+import { FaixaDoPedido } from './faixa-do-pedido';
 import { QuadroAoVivo } from './quadro-ao-vivo';
 import { TecladoDaTela } from './teclado-da-tela';
 import { usaSessaoDaTela } from './usa-sessao-da-tela';
@@ -38,6 +41,12 @@ function tecladoAberto(): boolean {
   const digita = campo instanceof HTMLInputElement || campo instanceof HTMLTextAreaElement || (campo instanceof HTMLElement && campo.isContentEditable);
   return digita && window.matchMedia('(pointer: coarse)').matches;
 }
+
+/** Altura sem o arredondamento do `offsetHeight`: três somados erravam 1px e pediam o tamanho de novo. */
+const altura = (el: HTMLElement | null) => el?.getBoundingClientRect().height ?? 0;
+
+/** Mesma largura e até 2px de altura: não vale redesenhar a página do agente no meio do toque. */
+const quaseIgual = (a: Tamanho, b: Tamanho | null) => b !== null && a.largura === b.largura && Math.abs(a.altura - b.altura) <= 2;
 
 /** Mesma largura da coluna e do rodapé: o quadro é paisagem e pede mais que a de leitura. */
 const LARGURA_DA_COLUNA = 'calc(var(--ck-read-wide) * 1.5)';
@@ -61,10 +70,16 @@ export function TelaDoAgente({
   const rolagem = useRef<HTMLDivElement>(null);
   const rodape = useRef<HTMLElement>(null);
   const avisos = useRef<HTMLDivElement>(null);
+  /** O motivo do pedido: some no controle (cartão recolhido). Nulo quando já recolheu. */
+  const corpoDoPedido = useRef<HTMLDivElement>(null);
+  /** No controle o link e o título dividem a linha: no Assumir, a medida desconta a linha do link. */
+  const cabecalho = useRef<HTMLElement>(null);
+  const titulo = useRef<HTMLHeadingElement>(null);
   /** O último tamanho mandado ao back: girar e voltar ao mesmo não pede de novo. */
-  const ultimoTamanho = useRef<string | null>(null);
+  const ultimoTamanho = useRef<Tamanho | null>(null);
   /** Largura da área quando o tamanho foi medido: o giro durante o Assumir não se perde. */
   const larguraMedida = useRef<number | null>(null);
+  const temPedido = tela.pedido !== null;
   const assumiuSozinho = useRef(false);
   /**
    * Sobe quando o Assumir sozinho foi descartado (a sessão caiu no meio): a sessão
@@ -79,7 +94,13 @@ export function TelaDoAgente({
     if (!area) return null;
     const janela = window.visualViewport?.height ?? window.innerHeight;
     // Topo do quadro com a página no começo: rolada, a conta pediria a janela inteira.
-    const topo = area.getBoundingClientRect().top + (rolagem.current?.scrollTop ?? 0);
+    // Já com o pedido recolhido e o cabeçalho numa linha: no Assumir os dois ainda
+    // estão inteiros, e no controle o Rica pode ter aberto o pedido — o tamanho não muda.
+    // A previsão erra para mais quando o título ganha linha ao dividir a dele (comum a
+    // 320px) ou a frase do rodapé quebra: a conferência ao entrar no controle corrige.
+    const linhaDoLink = aoAssumir ? altura(cabecalho.current) - altura(titulo.current) : 0;
+    const recolhe = altura(corpoDoPedido.current) + Math.max(0, linhaDoLink);
+    const topo = area.getBoundingClientRect().top + (rolagem.current?.scrollTop ?? 0) - recolhe;
     // O aviso do rodapé sai ao assumir: aí não desconta a altura dele. No giro ele fica.
     const rodapeFixo = (rodape.current?.offsetHeight ?? 0) - (aoAssumir ? (avisos.current?.offsetHeight ?? 0) : 0);
     larguraMedida.current = area.clientWidth;
@@ -88,7 +109,7 @@ export function TelaDoAgente({
 
   function assume(repetirSeRecusado = 0) {
     const t = medida(true);
-    ultimoTamanho.current = t ? `${t.largura}x${t.altura}` : null;
+    ultimoTamanho.current = t;
     return tela.assumir(t, repetirSeRecusado);
   }
 
@@ -111,6 +132,8 @@ export function TelaDoAgente({
   // Girou ou mudou a janela com a posse: reaplica o tamanho. Só a largura dispara —
   // a altura varia com a barra do Safari e o teclado, e isso não é giro. Girou com
   // o teclado do celular aberto: a altura lida viria encolhida, então espera o campo soltar.
+  // Ao entrar no controle confere uma vez a previsão do Assumir (cabeçalho e pedido
+  // já encolhidos); o cartão do pedido que chega com a posse tomada também reaplica.
   const ajustar = tela.ajustar;
   useEffect(() => {
     const area = areaDoQuadro.current;
@@ -126,9 +149,8 @@ export function TelaDoAgente({
       }
       esperaOTeclado = false;
       const t = medida();
-      const chave = t ? `${t.largura}x${t.altura}` : null;
-      if (!t || chave === ultimoTamanho.current) return;
-      ultimoTamanho.current = chave;
+      if (!t || quaseIgual(t, ultimoTamanho.current)) return;
+      ultimoTamanho.current = t;
       void ajustar(t);
     };
     const agenda = () => {
@@ -144,12 +166,15 @@ export function TelaDoAgente({
     const aoSoltarOCampo = () => esperaOTeclado && agenda();
     observa.observe(area);
     document.addEventListener('focusout', aoSoltarOCampo);
+    // Igual à medida do Assumir (até o arredondamento) não pede de novo.
+    agenda();
     return () => {
       observa.disconnect();
       document.removeEventListener('focusout', aoSoltarOCampo);
       window.clearTimeout(espera);
     };
-  }, [noControle, ajustar]);
+    // `temPedido` não é lido aqui: reassinar com ele é o que confere o cartão novo.
+  }, [noControle, ajustar, temPedido]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -170,11 +195,16 @@ export function TelaDoAgente({
             paddingLeft: 'calc(var(--ck-space-3) + var(--ck-safe-left))',
           }}
         >
-          <header className="flex flex-col" style={{ gap: 'var(--ck-space-2)' }}>
+          <header
+            ref={cabecalho}
+            className={noControle ? 'flex items-baseline' : 'flex flex-col'}
+            style={{ gap: noControle ? 'var(--ck-space-3)' : 'var(--ck-space-2)' }}
+          >
             {/* Alvo de 44px com o desenho do link da tela Abertos. */}
             <Link
               href={`/abertos?m=${encodeURIComponent(maquina)}`}
-              className="ck-foco-fio inline-flex items-center self-start"
+              // Em coluna não estica a linha inteira; na linha do controle segue a base do título.
+              className={`ck-foco-fio inline-flex shrink-0 items-center ${noControle ? 'self-baseline' : 'self-start'}`}
               style={{
                 minHeight: 'var(--ck-touch-min)',
                 marginBlock: 'calc((var(--ck-touch-min) - 1lh) / -2)',
@@ -184,7 +214,7 @@ export function TelaDoAgente({
             >
               ← Abertos
             </Link>
-            <h1 className="flex flex-wrap items-baseline text-balance" style={{ columnGap: 'var(--ck-space-2)' }}>
+            <h1 ref={titulo} className="flex min-w-0 flex-wrap items-baseline text-balance" style={{ columnGap: 'var(--ck-space-2)' }}>
               <span style={{ fontSize: 'var(--ck-text-lg)', fontWeight: 400, letterSpacing: 'var(--ck-track-title)', color: 'var(--ck-text-primary)' }}>
                 {rotulo}
               </span>
@@ -192,7 +222,7 @@ export function TelaDoAgente({
             </h1>
           </header>
 
-          {tela.pedido ? <FaixaDoPedido pedido={tela.pedido} /> : null}
+          {tela.pedido ? <FaixaDoPedido pedido={tela.pedido} noControle={noControle} refDoCorpo={corpoDoPedido} /> : null}
 
           <div ref={areaDoQuadro}>
             <QuadroAoVivo
