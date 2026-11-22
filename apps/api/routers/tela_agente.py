@@ -156,8 +156,7 @@ async def entrada(sid: str, request: Request, pedido: Entrada, x_tela_controle: 
 
 @router.delete("/sessoes/{sid}")
 async def fechar(sid: str, request: Request):
-    s = tela.servico.obter(sid, dono(request))
-    await tela.servico.fechar(s)
+    await tela.servico.encerrar(sid, dono(request))
     return {"encerrada": True}
 
 

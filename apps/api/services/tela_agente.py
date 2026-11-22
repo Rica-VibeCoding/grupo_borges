@@ -7,6 +7,7 @@ import base64
 import contextlib
 import io
 import json
+import logging
 import os
 import time
 import uuid
@@ -18,6 +19,8 @@ import httpx
 from fastapi import HTTPException
 from PIL import Image
 from websockets.asyncio.client import connect
+
+log = logging.getLogger(__name__)
 
 BH = Path(
     os.getenv(
@@ -331,23 +334,27 @@ class CDP:
         await self.cmd("Page.enable")
         # Página estática pode nunca repintar. Semeia a mesma fila antes do fluxo;
         # qualquer quadro vivo posterior o substitui, sem regredir a imagem.
-        frame = await self.cmd(
-            "Page.captureScreenshot",
-            {
-                "format": FORMATO_QUADRO,
-                "quality": QUALIDADE_QUADRO,
-                "captureBeyondViewport": False,
-            },
-        )
-        # captureScreenshot não tem maxWidth/maxHeight. Limita o viewport inteiro
-        # após capturar, sem recortar barras nem depender de zoom/deviceScaleFactor.
-        with Image.open(io.BytesIO(base64.b64decode(frame["data"]))) as img:
-            if max(img.size) > LIMITE_QUADRO:
-                img.thumbnail((LIMITE_QUADRO, LIMITE_QUADRO), Image.Resampling.LANCZOS)
-                out = io.BytesIO()
-                img.save(out, format=FORMATO_QUADRO, quality=QUALIDADE_QUADRO)
-                frame["data"] = base64.b64encode(out.getvalue()).decode()
-        self._enfileirar_quadro(frame)
+        try:
+            frame = await self.cmd(
+                "Page.captureScreenshot",
+                {
+                    "format": FORMATO_QUADRO,
+                    "quality": QUALIDADE_QUADRO,
+                    "captureBeyondViewport": False,
+                },
+            )
+            # captureScreenshot não tem maxWidth/maxHeight. Limita o viewport inteiro
+            # após capturar, sem recortar barras nem depender de zoom/deviceScaleFactor.
+            with Image.open(io.BytesIO(base64.b64decode(frame["data"]))) as img:
+                if max(img.size) > LIMITE_QUADRO:
+                    img.thumbnail((LIMITE_QUADRO, LIMITE_QUADRO), Image.Resampling.LANCZOS)
+                    out = io.BytesIO()
+                    img.save(out, format=FORMATO_QUADRO, quality=QUALIDADE_QUADRO)
+                    frame["data"] = base64.b64encode(out.getvalue()).decode()
+            self._enfileirar_quadro(frame)
+        except Exception:
+            # O quadro inicial é melhor-esforço; nunca impedir o fluxo ou a devolução.
+            log.warning("Captura inicial indisponível; seguindo com o screencast", exc_info=True)
         await self.cmd(
             "Page.startScreencast",
             {
@@ -389,6 +396,7 @@ class Sessao:
     sequencia: int = 0
     pedido_id: str | None = None
     operacao: asyncio.Lock = field(default_factory=asyncio.Lock)
+    encerramento: asyncio.Lock = field(default_factory=asyncio.Lock)
     vigia: asyncio.Task | None = None
 
 
@@ -481,26 +489,38 @@ class ServicoTela:
                 if posse:
                     await posse.fechar()
 
-    async def fechar(self, s):
-        if s.fechada:
+    async def encerrar(self, sid, dono):
+        s = self.sessoes.get(sid)
+        if s is None:
             return
-        s.fechada = True
+        if s.dono != dono:
+            raise HTTPException(403, "tela de outra identidade")
+        await self.fechar(s)
+
+    async def fechar(self, s):
         import anyio
 
         with anyio.CancelScope(shield=True):
-            if s.vigia and s.vigia is not asyncio.current_task():
-                s.vigia.cancel()
-            async with s.operacao:
-                try:
-                    with contextlib.suppress(Exception):
-                        await self.devolver(s)
-                finally:
-                    await s.cdp.fechar()
-                    self.sessoes.pop(s.id, None)
-                    if s.pedido_id:
-                        p = pedidos.pedidos.get(s.pedido_id)
-                        if p and not p.terminado.is_set():
-                            p.status = "aguardando"
+            # SSE, vigia e DELETE aguardam a mesma limpeza, inclusive após fechada=True.
+            async with s.encerramento:
+                if s.fechada:
+                    return
+                s.fechada = True
+                if s.vigia and s.vigia is not asyncio.current_task():
+                    s.vigia.cancel()
+                async with s.operacao:
+                    try:
+                        with contextlib.suppress(Exception):
+                            await self.devolver(s)
+                    finally:
+                        try:
+                            await s.cdp.fechar()
+                        finally:
+                            self.sessoes.pop(s.id, None)
+                            if s.pedido_id:
+                                p = pedidos.pedidos.get(s.pedido_id)
+                                if p and not p.terminado.is_set():
+                                    p.status = "aguardando"
 
     async def _vigiar(self, s):
         try:

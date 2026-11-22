@@ -182,6 +182,68 @@ async def test_quadro_e_desconexao_soltam_trava(bancada, monkeypatch):
     assert s.id not in svc.sessoes
 
 
+async def test_delete_aguarda_limpeza_do_sse_e_libera_nova_sessao(bancada, monkeypatch):
+    c, svc, cdp = bancada
+    s = await nova(bancada)
+    posse, _ = await assumir_fake(s, monkeypatch)
+    liberando, liberar = asyncio.Event(), asyncio.Event()
+
+    async def soltar():
+        liberando.set()
+        await liberar.wait()
+
+    posse.fechar.side_effect = soltar
+    gen = svc.eventos(s)
+    assert (await anext(gen))["event"] == "estado"
+    limpeza = asyncio.create_task(gen.aclose())
+    await asyncio.wait_for(liberando.wait(), 1)
+    assert s.fechada and s.id in svc.sessoes
+    base = f"/api/tela-agente/sessoes/{s.id}"
+    removendo = asyncio.create_task(c.delete(base))
+    try:
+        await asyncio.sleep(0.01)
+        assert not removendo.done()
+        # Enquanto limpa, a reserva impede outra conexão ao mesmo Chrome.
+        assert (await c.post("/api/tela-agente/chromes/campanha-arsenal/sessoes")).status_code == 409
+        with pytest.raises(HTTPException) as exc:
+            await svc.encerrar(s.id, "outra-pessoa")
+        assert exc.value.status_code == 403
+    finally:
+        liberar.set()
+        await asyncio.wait_for(limpeza, 1)
+    r = await asyncio.wait_for(removendo, 1)
+    assert r.status_code == 200 and r.json() == {"encerrada": True}
+    posse.fechar.assert_awaited_once()
+    cdp.fechar.assert_awaited_once()
+    assert s.id not in svc.sessoes
+    assert (await c.delete(base)).status_code == 200
+    # Retorno do DELETE é a barreira de limpeza: reabrir logo em seguida funciona.
+    assert (await c.post("/api/tela-agente/chromes/campanha-arsenal/sessoes")).status_code == 201
+
+
+async def test_delete_preserva_identidade_e_e_idempotente(bancada):
+    c, svc, _ = bancada
+    s = await nova(bancada)
+    s.dono = "outra-pessoa"
+    base = f"/api/tela-agente/sessoes/{s.id}"
+    assert (await c.delete(base)).status_code == 403
+    assert not s.fechada
+    s.dono = "dev-loopback"
+    for _ in range(2):
+        assert (await c.delete(base)).status_code == 200
+    assert (await c.delete("/api/tela-agente/sessoes/inexistente")).status_code == 200
+
+
+async def test_limpeza_remove_reserva_mesmo_se_fechar_cdp_falhar(bancada):
+    c, svc, cdp = bancada
+    s = await nova(bancada)
+    cdp.fechar.side_effect = RuntimeError("CDP já desconectado")
+    with pytest.raises(RuntimeError):
+        await svc.fechar(s)
+    assert s.id not in svc.sessoes
+    assert (await c.delete(f"/api/tela-agente/sessoes/{s.id}")).status_code == 200
+
+
 @pytest.mark.parametrize("motivo", ["inatividade", "sem-fluxo", "cdp"])
 async def test_vigia_libera_sem_depender_do_fluxo(bancada, monkeypatch, motivo):
     _, svc, cdp = bancada
@@ -592,6 +654,92 @@ async def assumir_aparelho(c, s, wire, monkeypatch, tamanho=(390, 700)):
     )
     assert r.status_code == 200, r.text
     return posse, {"X-Tela-Controle": r.json()["controle"]}
+
+
+def falhar_captura(monkeypatch, cdp, falha):
+    cmd = cdp.cmd
+
+    async def enviar(method, *args, **kwargs):
+        if method == "Page.captureScreenshot":
+            if falha == "imagem-invalida":
+                return {"data": base64.b64encode(b"jpeg invalido").decode()}
+            raise falha("captura inicial indisponível")
+        return await cmd(method, *args, **kwargs)
+
+    monkeypatch.setattr(cdp, "cmd", enviar)
+
+
+@pytest.mark.parametrize("falha", [TimeoutError, RuntimeError, "imagem-invalida"])
+async def test_devolver_com_captura_falha_libera_e_conclui_pedido(viewport_real, bancada, monkeypatch, caplog, falha):
+    c, svc, s, wire = viewport_real
+    p = await criar_pedido(bancada, teste=True)
+    posse, headers = await assumir_aparelho(c, s, wire, monkeypatch)
+    gen = tela.pedidos.esperar(p)
+    assert (await anext(gen))["event"] == "estado"
+    falhar_captura(monkeypatch, s.cdp, falha)
+    wire.sent.clear()
+    try:
+        r = await c.post(f"/api/tela-agente/sessoes/{s.id}/devolver", headers=headers)
+        assert r.status_code == 200 and r.json() == {"devolvido": True}
+        fim = await asyncio.wait_for(anext(gen), 1)
+        assert fim["event"] == "terminado" and json.loads(fim["data"])["status"] == "devolvido"
+        assert s.posse is None and s.token is None and s.cdp.viewport is None
+        assert not wire.fechado and wire.tamanho == (1920, 1080)
+        posse.fechar.assert_awaited_once()
+        assert any(m["method"] == "Page.startScreencast" for m in wire.sent)
+        assert "Captura inicial indisponível" in caplog.text
+    finally:
+        await gen.aclose()
+
+
+@pytest.mark.parametrize("falha", [TimeoutError, RuntimeError, "imagem-invalida"])
+async def test_girar_com_captura_falha_reinicia_fluxo_e_aceita_toque(viewport_real, monkeypatch, falha):
+    c, svc, s, wire = viewport_real
+    posse, headers = await assumir_aparelho(c, s, wire, monkeypatch)
+    gen = svc.eventos(s)
+    base = f"/api/tela-agente/sessoes/{s.id}"
+    try:
+        assert (await anext(gen))["event"] == "estado"
+        velho = json.loads((await anext(gen))["data"])
+        falhar_captura(monkeypatch, s.cdp, falha)
+        wire.sent.clear()
+        r = await c.post(base + "/tamanho", headers=headers, json={"largura": 700, "altura": 390})
+        assert r.status_code == 200 and not s.quadros
+        assert any(m["method"] == "Page.startScreencast" for m in wire.sent)
+        e = await asyncio.wait_for(anext(gen), 2)
+        q = json.loads(e["data"])
+        assert e["event"] == "quadro" and q["id"] != velho["id"]
+        assert q["viewport"] == {"largura": 700, "altura": 390}
+        r = await c.post(base + "/entrada", headers=headers,
+                         json={"tipo": "clique", "quadro": q["id"], "x": 0.5, "y": 0.5})
+        assert r.status_code == 200 and s.posse is posse
+        posse.fechar.assert_not_awaited()
+    finally:
+        await gen.aclose()
+
+
+@pytest.mark.parametrize("acao", ["abrir", "assumir", "aba"])
+@pytest.mark.parametrize("falha", [TimeoutError, RuntimeError])
+async def test_captura_inicial_falha_nao_impede_abrir_assumir_ou_aba(bancada, monkeypatch, acao, falha):
+    c, svc, _ = bancada
+    wire = WireViewport()
+    cdp = tela.CDP(wire)
+    monkeypatch.setattr(tela.CDP, "abrir", AsyncMock(return_value=cdp))
+    falhar_captura(monkeypatch, cdp, falha)
+    s = await nova(bancada)
+    s.fluxo = True
+    if acao == "assumir":
+        await assumir_aparelho(c, s, wire, monkeypatch)
+    elif acao == "aba":
+        await assumir_fake(s, monkeypatch)
+        await svc.entrada(s, s.token, router.Aba(tipo="aba", aba="t1"))
+    gen = svc.eventos(s)
+    try:
+        assert (await anext(gen))["event"] == "estado"
+        assert (await asyncio.wait_for(anext(gen), 1))["event"] == "quadro"
+        assert not wire.fechado
+    finally:
+        await gen.aclose()
 
 
 async def test_tamanho_com_posse_reaplica_viewport_e_descarta_quadros(viewport_real, monkeypatch):
