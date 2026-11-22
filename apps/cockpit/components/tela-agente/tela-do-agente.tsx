@@ -18,7 +18,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { IconeDescartar } from '@/components/shell/icones';
 import { tamanhoDoAparelho, type Tamanho } from '@/lib/tela-agente';
@@ -28,6 +28,8 @@ import { QuadroAoVivo } from './quadro-ao-vivo';
 import { TecladoDaTela } from './teclado-da-tela';
 import { usaSessaoDaTela } from './usa-sessao-da-tela';
 
+/** Assumir sozinho que leva 409 (o agente ainda soltando a trava): repete antes de desistir. */
+const REPETICOES_DO_ASSUMIR_SOZINHO = 3;
 /** Espera o giro assentar antes de pedir o tamanho novo: a largura passa por medidas no meio. */
 const ESPERA_DO_GIRO_MS = 400;
 /** Campo focado num aparelho de toque: o teclado virtual está aberto e encolhe a janela. */
@@ -64,6 +66,11 @@ export function TelaDoAgente({
   /** Largura da área quando o tamanho foi medido: o giro durante o Assumir não se perde. */
   const larguraMedida = useRef<number | null>(null);
   const assumiuSozinho = useRef(false);
+  /**
+   * Sobe quando o Assumir sozinho foi descartado (a sessão caiu no meio): a sessão
+   * nova tenta de novo — uma vez só, para um Assumir que derruba a sessão não virar ciclo.
+   */
+  const [refazSozinho, setRefazSozinho] = useState(0);
 
   // A área do quadro neste aparelho: no controle, a página do agente é desenhada
   // nesse tamanho (no iPhone, em coluna). O rodapé fixo sai da altura que sobra.
@@ -79,22 +86,27 @@ export function TelaDoAgente({
     return tamanhoDoAparelho(area.clientWidth, topo, janela - rodapeFixo);
   }
 
-  function assume() {
+  function assume(repetirSeRecusado = 0) {
     const t = medida(true);
     ultimoTamanho.current = t ? `${t.largura}x${t.altura}` : null;
-    void tela.assumir(t);
+    return tela.assumir(t, repetirSeRecusado);
   }
 
   // Link do pedido: o Rica veio para resolver, então a posse vem junto com a primeira imagem.
-  // Uma vez por visita: depois de devolver ou perder a posse, quem assume é o dedo.
+  // Uma vez por visita: depois de devolver, perder a posse ou levar 409 em todas as
+  // tentativas, quem assume é o dedo. Só a queda da sessão no meio devolve a vez.
   const pedido = tela.pedido;
   const pedidoAberto = pedido !== null && pedido.id === pedidoDaUrl && (pedido.status === 'aguardando' || pedido.status === 'em_atendimento');
   useEffect(() => {
-    if (assumiuSozinho.current || !pedidoAberto || tela.fase !== 'vendo' || tela.ocupado) return;
+    if (assumiuSozinho.current || !pedidoAberto || tela.fase !== 'vendo' || tela.ocupado || !tela.sessao) return;
     assumiuSozinho.current = true;
-    assume();
+    void assume(REPETICOES_DO_ASSUMIR_SOZINHO).then((fim) => {
+      if (fim !== 'descartado' || refazSozinho > 0) return;
+      assumiuSozinho.current = false;
+      setRefazSozinho((n) => n + 1);
+    });
     // `assume` lê refs na hora: não precisa reassinar.
-  }, [pedidoAberto, tela.fase, tela.ocupado]);
+  }, [pedidoAberto, tela.fase, tela.ocupado, tela.sessao, refazSozinho]);
 
   // Girou ou mudou a janela com a posse: reaplica o tamanho. Só a largura dispara —
   // a altura varia com a barra do Safari e o teclado, e isso não é giro. Girou com
@@ -234,7 +246,7 @@ export function TelaDoAgente({
             ocupado={tela.ocupado}
             devolvidoEm={tela.devolvidoEm}
             conectandoDesde={tela.conectandoDesde}
-            aoAssumir={assume}
+            aoAssumir={() => void assume()}
             aoDevolver={() => void tela.devolver()}
             aoReconectar={tela.reconectar}
             // Reabre dentro da página: o reload largaria no back a sessão do POST ainda no ar (409 na volta).

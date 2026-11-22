@@ -80,7 +80,10 @@ export function BarraDeEstado({
     fase === 'controle'
       ? 'O agente espera você devolver.'
       : fase === 'vendo'
-        ? 'O agente segue usando. Assuma para tocar.'
+        ? // O Assumir pode levar alguns segundos (repete se o agente ainda solta a trava).
+          ocupado === 'assumindo'
+          ? 'Assumindo o Chrome…'
+          : 'O agente segue usando. Assuma para tocar.'
         : fase === 'abrindo' && demorou
           ? 'A imagem do Chrome está demorando. Tentando de novo sozinho.'
           : null;

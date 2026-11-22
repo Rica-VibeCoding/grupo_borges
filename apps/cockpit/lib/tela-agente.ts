@@ -220,7 +220,7 @@ export function textoDoPrazo(expiraEm: number, agoraS: number): string {
 export function textoDaFalha(acao: 'abrir' | 'assumir' | 'devolver' | 'entrada' | 'ajustar', status: number | undefined, detalhe: string): string {
   if (acao === 'abrir') {
     if (status === 404) return 'Este Chrome não está no cadastro da tela.';
-    if (status === 409) return 'Já tem uma tela aberta para este Chrome, talvez em outra aba ou aparelho. Feche a outra e reconecte.';
+    if (status === 409) return 'Já tem uma tela aberta para este Chrome, talvez em outra aba ou aparelho. Se tiver, feche a outra.';
     if (status === 502) return 'O Chrome não respondeu: pode estar fechado ou a máquina fora do ar. Reconecte em instantes.';
   }
   if (acao === 'assumir' && status === 409) return 'Um agente está usando este Chrome agora. Tente assumir de novo em instantes.';

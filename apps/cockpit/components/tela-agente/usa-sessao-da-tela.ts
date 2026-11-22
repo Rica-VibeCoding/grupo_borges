@@ -36,6 +36,15 @@ const ESPERAS_DA_RECONEXAO_MS = [1500, 4000, 10000];
 const PRAZO_DA_PRIMEIRA_IMAGEM_MS = 5000;
 /** Reaberturas caladas por falta de imagem antes de dizer que caiu. */
 const REABERTURAS_CALADAS = 2;
+/**
+ * 409 ao abrir: a sessão anterior ainda está soltando o Chrome. Fechar o fluxo
+ * encerra a sessão no back na hora (o DELETE leva 410), mas ela só sai da lista
+ * depois da limpeza — então repete calado antes de dizer que caiu.
+ */
+const REPETICOES_DO_409 = 3;
+const ESPERA_DO_409_MS = 700;
+/** Teto da espera pelo DELETE da sessão velha antes de abrir a nova. */
+const TETO_DA_SOLTURA_MS = 4000;
 
 export function usaSessaoDaTela(chrome: string, pedidoDaUrl: string | null) {
   const [fase, setFase] = useState<Fase>('abrindo');
@@ -54,7 +63,9 @@ export function usaSessaoDaTela(chrome: string, pedidoDaUrl: string | null) {
   const controle = useRef<string | null>(null);
   const tentativas = useRef(0);
   const reaberturas = useRef(0);
-  const repetiu = useRef(false);
+  const repeticoes = useRef(0);
+  /** Cumpre quando o back soltou a sessão anterior (ou no teto): a próxima só abre depois. */
+  const soltura = useRef<Promise<void>>(Promise.resolve());
   /** Estava no controle quando caiu? Sobrevive ao `estado` que limpa o token antes da queda. */
   const tevePosse = useRef(false);
   /** Por que a posse voltou ao agente. O back fecha a sessão logo depois; o motivo sobrevive à reconexão. */
@@ -76,15 +87,26 @@ export function usaSessaoDaTela(chrome: string, pedidoDaUrl: string | null) {
     let prazo: number | undefined;
     let primeiro = true;
 
-    /** Fecha o fluxo e a sessão; cumpre quando o back soltou o Chrome. */
+    /**
+     * Encerra a sessão e cumpre quando o back soltou o Chrome. O DELETE vai antes
+     * de fechar o fluxo: fechado antes, o back começa a limpeza sozinho, o DELETE
+     * leva 410 na hora e o POST seguinte, 409.
+     */
     const solta = () => {
-      fonte?.close();
+      const f = fonte;
+      const id = sessao.current;
       fonte = null;
       controle.current = null;
-      const fim = sessao.current ? encerrarSessao(sessao.current) : Promise.resolve();
       sessao.current = null;
+      // O Assumir ou o Devolver em voo é da sessão que saiu: a espera dele acaba aqui.
+      esperaQuadroNovo.current?.pronto();
       if (vivo) setSessaoId(null);
-      return fim;
+      // Fluxo que já caiu fecha na hora: aberto, o navegador o religaria sozinho.
+      if (!id || f?.readyState !== EventSource.OPEN) f?.close();
+      if (!id) return soltura.current;
+      const teto = new Promise<void>((cumpre) => window.setTimeout(cumpre, TETO_DA_SOLTURA_MS));
+      soltura.current = Promise.race([encerrarSessao(id), teto]).then(() => f?.close());
+      return soltura.current;
     };
 
     const cai = (texto: string | null) => {
@@ -93,6 +115,7 @@ export function usaSessaoDaTela(chrome: string, pedidoDaUrl: string | null) {
       setConectandoDesde(null);
       const estavaNoControle = tevePosse.current;
       tevePosse.current = false;
+      repeticoes.current = 0;
       void solta();
       setQuadro(null);
       setFase('caiu');
@@ -111,6 +134,8 @@ export function usaSessaoDaTela(chrome: string, pedidoDaUrl: string | null) {
     };
 
     setFase('abrindo');
+    // Ocupado de sessão anterior não segura o botão da nova (o finally dele não limpa mais).
+    setOcupado(null);
     setConectandoDesde((d) => d ?? Date.now());
     /** Conta do fluxo ligado: a latência do POST não come o prazo da imagem. */
     const armaPrazo = () => {
@@ -120,23 +145,30 @@ export function usaSessaoDaTela(chrome: string, pedidoDaUrl: string | null) {
         if (document.hidden) return void solta();
         if (reaberturas.current < REABERTURAS_CALADAS) {
           reaberturas.current += 1;
+          repeticoes.current = 0;
           // Reabre só depois que o back soltou a sessão velha: antes disso o POST leva 409.
           return void solta().then(() => vivo && setGeracao((g) => g + 1));
         }
         cai('O Chrome não mandou imagem.');
       }, PRAZO_DA_PRIMEIRA_IMAGEM_MS);
     };
-    abrirSessao(chrome, pedidoPendente.current)
+    // A sessão anterior (reabertura, Reconectar) solta o Chrome antes do POST novo.
+    soltura.current
+      .then(() => (vivo ? abrirSessao(chrome, pedidoPendente.current) : null))
       .then((s) => {
+        if (!s) return;
         if (!vivo) return encerrarSessao(s.id);
         sessao.current = s.id;
         setSessaoId(s.id);
         setPedido(s.pedido);
-        fonte = new EventSource(urlDosQuadros(s.id));
-        fonte.addEventListener('quadro', (e) => {
-          if (!vivo) return;
+        const f = new EventSource(urlDosQuadros(s.id));
+        fonte = f;
+        // Fluxo solto (fechando depois do DELETE) não fala mais com a tela.
+        const atual = () => vivo && fonte === f;
+        f.addEventListener('quadro', (e) => {
+          if (!atual()) return;
           tentativas.current = 0;
-          repetiu.current = false;
+          repeticoes.current = 0;
           const novo = JSON.parse((e as MessageEvent).data) as Quadro;
           const espera = esperaQuadroNovo.current;
           if (espera && (novo.largura !== espera.largura || novo.altura !== espera.altura)) espera.pronto();
@@ -153,8 +185,8 @@ export function usaSessaoDaTela(chrome: string, pedidoDaUrl: string | null) {
             motivoDaPerda.current = null;
           }
         });
-        fonte.addEventListener('estado', (e) => {
-          if (!vivo) return;
+        f.addEventListener('estado', (e) => {
+          if (!atual()) return;
           const estado = JSON.parse((e as MessageEvent).data) as EstadoDoFluxo;
           setPedido(estado.pedido);
           // Perdeu a posse do lado de lá (3 min sem toque, por exemplo).
@@ -167,22 +199,23 @@ export function usaSessaoDaTela(chrome: string, pedidoDaUrl: string | null) {
             setAviso({ texto: motivoDaPerda.current, tipo: 'erro' });
           }
         });
-        fonte.onerror = () => cai(null);
+        f.onerror = () => atual() && cai(null);
         armaPrazo();
       })
-      .catch(async (erro: unknown) => {
+      .catch((erro: unknown) => {
+        if (!vivo) return;
         const status = erro instanceof FalhaDaTela ? erro.status : undefined;
         // Link de pedido já resolvido: abre a tela mesmo assim, sem o pedido.
         if (status === 409 && pedidoPendente.current) {
           pedidoPendente.current = null;
-          if (vivo) setGeracao((g) => g + 1);
+          setGeracao((g) => g + 1);
           return;
         }
-        // A tela anterior (recarga, aba que acabou de fechar) ainda está saindo: uma
-        // segunda tentativa calada antes de dizer que caiu.
-        if (status === 409 && !repetiu.current) {
-          repetiu.current = true;
-          espera = window.setTimeout(() => vivo && setGeracao((g) => g + 1), 1200);
+        // A sessão anterior (reabertura calada, recarga, aba que acabou de fechar)
+        // ainda está soltando o Chrome: repete calado antes de dizer que caiu.
+        if (status === 409 && repeticoes.current < REPETICOES_DO_409) {
+          repeticoes.current += 1;
+          espera = window.setTimeout(() => vivo && setGeracao((g) => g + 1), ESPERA_DO_409_MS);
           return;
         }
         cai(textoDaFalha('abrir', status, (erro as Error).message));
@@ -192,6 +225,7 @@ export function usaSessaoDaTela(chrome: string, pedidoDaUrl: string | null) {
       if (!document.hidden && sessao.current === null && vivo) {
         tentativas.current = 0;
         reaberturas.current = 0;
+        repeticoes.current = 0;
         setConectandoDesde(null);
         setGeracao((g) => g + 1);
       }
@@ -232,6 +266,7 @@ export function usaSessaoDaTela(chrome: string, pedidoDaUrl: string | null) {
   const reconectar = useCallback(() => {
     tentativas.current = 0;
     reaberturas.current = 0;
+    repeticoes.current = 0;
     setConectandoDesde(null);
     setGeracao((g) => g + 1);
   }, []);
