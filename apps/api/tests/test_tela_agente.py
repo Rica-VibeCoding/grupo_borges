@@ -428,8 +428,19 @@ async def test_aviso_usa_resumo_real_sem_credencial_na_api(monkeypatch):
     assert await tela.avisar("teste", "TESTE aviso")
     args = stub.call_args.args
     assert (tela.BH.parents[4] / "scripts" / "resumo" / "resumo.py").is_file()
-    assert args[-3:] == (str(tela.BH.parents[4] / "scripts" / "resumo"), "teste", "TESTE aviso")
+    assert args[-4:] == (str(tela.BH.parents[4] / "scripts" / "resumo"), "teste", "TESTE aviso", "TESTE aviso")
+    compile(args[2], "<registro no resumo>", "exec")
     assert "nivel='urgente'" in args[2]
+    assert "tipo='decisao'" in args[2]
+    assert "titulo=" in args[2] and "detalhe=sys.argv[3]" in args[2]
+
+
+def test_titulo_do_pedido_longo_preserva_acao_sem_jargao():
+    texto = ("Resolver o desafio de imagens (hCaptcha) na aba da Receita "
+             "(servicos.receitafederal.gov.br) para representar a Conecta. Depois tocar em Devolver.")
+    titulo = tela.titulo_aviso(texto)
+    assert titulo == 'Tela do agente: resolver desafio de imagens na Receita'
+    assert len(titulo) <= 90
 
 
 async def test_router_montado_exige_identidade_tailscale(monkeypatch):

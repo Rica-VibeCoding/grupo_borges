@@ -699,6 +699,19 @@ class ServicoTela:
 servico = ServicoTela()
 
 
+def titulo_aviso(texto):
+    motivo = texto.splitlines()[0].strip() if texto.strip() else ''
+    busca = motivo.casefold()
+    if 'captcha' in busca or 'desafio de imagens' in busca:
+        return 'Tela do agente: resolver desafio de imagens' + (' na Receita' if 'receita' in busca else '')
+    if 'forma de pagamento' in busca:
+        return 'Tela do agente: cadastrar forma de pagamento' + (' no Google Ads' if 'google ads' in busca else '')
+    if any(acao in busca for acao in ('entrar', 'login', 'acessar')):
+        servico = next((nome for nome in ('Mercado Livre', 'Vercel', 'Google') if nome.casefold() in busca), None)
+        return 'Tela do agente: acessar a conta' + (f' em {servico}' if servico else '')
+    return motivo if len(motivo) <= 90 else 'Tela do agente precisa da sua ação; conferir o pedido no detalhe'
+
+
 async def avisar(agente, texto):
     """Resumo persiste o evento e confirma o envio urgente; sem token neste serviço."""
     import sys
@@ -706,10 +719,11 @@ async def avisar(agente, texto):
     resumo = BH.parents[4] / "scripts" / "resumo"
     codigo = (
         "import sys;sys.path.insert(0,sys.argv[1]);from resumo import registrar_evento;"
-        "sys.exit(0 if registrar_evento(sys.argv[2],'tela-agente',sys.argv[3],nivel='urgente') else 1)"
+        "sys.exit(0 if registrar_evento(sys.argv[2],'tela-agente',sys.argv[3],nivel='urgente',tipo='decisao',"
+        "titulo=sys.argv[4],detalhe=sys.argv[3]) is True else 1)"
     )
     try:
-        await processo(sys.executable, "-c", codigo, str(resumo), agente, texto, limite_s=20)
+        await processo(sys.executable, "-c", codigo, str(resumo), agente, texto, titulo_aviso(texto), limite_s=20)
         return True
     except (HTTPException, TimeoutError, OSError):
         return False
